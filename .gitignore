@@ -1,2 +1,13 @@
 data
 *.csv
+
+# SSH private keys (keep public keys for reference)
+ssh/wago_sync
+
+# Python
+__pycache__/
+*.pyc
+venv/
+
+# Sync state
+.last_sync

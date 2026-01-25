@@ -1,0 +1,37 @@
+FROM python:3.11-slim
+
+# Install rsync and openssh-client for remote sync
+RUN apt-get update && apt-get install -y \
+    rsync \
+    openssh-client \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create directories
+RUN mkdir -p /scripts /data /ssh
+
+# Install Python dependencies
+COPY scripts/requirements.txt /tmp/
+RUN pip install --no-cache-dir -r /tmp/requirements.txt
+
+# Copy scripts (sync script will be mounted as volume for easier updates)
+COPY scripts/import_data.py /scripts/
+COPY scripts/sync_and_import.sh /scripts/
+RUN chmod +x /scripts/sync_and_import.sh
+
+# Set working directory
+WORKDIR /scripts
+
+# Environment defaults
+ENV SYNC_INTERVAL=300 \
+    REMOTE_HOST=192.168.1.10 \
+    REMOTE_USER=admin \
+    REMOTE_PATH=/media/sd/CSV_Files/ \
+    DATA_DIR=/data \
+    SSH_KEY=/ssh/wago_sync \
+    INFLUXDB_URL=http://influxdb:8086 \
+    INFLUXDB_TOKEN=wago-secret-token \
+    INFLUXDB_ORG=wago \
+    INFLUXDB_BUCKET=building_automation
+
+# Entry point: run sync loop
+CMD ["sh", "-c", "echo 'Starting WAGO sync daemon (interval: ${SYNC_INTERVAL}s)' && while true; do /scripts/sync_and_import.sh || echo 'Sync failed, will retry...'; sleep ${SYNC_INTERVAL:-300}; done"]

@@ -5,11 +5,14 @@ Import WAGO CSV data into InfluxDB.
 Data Model:
 - Measurement: hvac (from logfile_dp_*.csv)
 - Measurement: rooms (from Temperatures*.csv)
+
+Supports incremental mode for syncing new data only.
 """
 
 import os
 import glob
-from datetime import datetime, timezone
+import argparse
+from datetime import datetime, timezone, timedelta
 from influxdb_client import InfluxDBClient, Point, WritePrecision
 from influxdb_client.client.write_api import SYNCHRONOUS
 
@@ -304,9 +307,45 @@ def clear_bucket(client):
     print("Cleared existing data")
 
 
+def get_last_sync_time() -> datetime | None:
+    """Read last sync timestamp from state file."""
+    state_file = os.path.join(DATA_DIR, ".last_sync")
+    if os.path.exists(state_file):
+        try:
+            with open(state_file) as f:
+                return datetime.fromisoformat(f.read().strip().replace('Z', '+00:00'))
+        except (ValueError, IOError):
+            return None
+    return None
+
+
+def get_modified_files(file_list: list[str], since: datetime | None) -> list[str]:
+    """Filter files to only those modified since the given timestamp."""
+    if since is None:
+        return file_list
+
+    modified = []
+    for filepath in file_list:
+        try:
+            mtime = datetime.fromtimestamp(os.path.getmtime(filepath))
+            # Add a small buffer (1 minute) to avoid missing files
+            if mtime > since.replace(tzinfo=None) - timedelta(minutes=1):
+                modified.append(filepath)
+        except OSError:
+            # If we can't get mtime, include the file to be safe
+            modified.append(filepath)
+    return modified
+
+
 def main():
+    parser = argparse.ArgumentParser(description="Import WAGO CSV data into InfluxDB")
+    parser.add_argument('--incremental', action='store_true',
+                        help='Incremental import: skip bucket clearing, only process new files')
+    args = parser.parse_args()
+
+    mode = "incremental" if args.incremental else "full"
     print("=" * 60)
-    print("WAGO CSV Data Importer (v3 - Latin-1 encoding fix)")
+    print(f"WAGO CSV Data Importer (v4 - {mode} mode)")
     print("=" * 60)
 
     client = InfluxDBClient(url=INFLUXDB_URL, token=INFLUXDB_TOKEN, org=INFLUXDB_ORG)
@@ -318,13 +357,31 @@ def main():
         print(f"Error connecting: {e}")
         return
 
-    print("\nClearing existing data...")
-    clear_bucket(client)
+    # Get last sync time for incremental mode
+    last_sync = None
+    if args.incremental:
+        last_sync = get_last_sync_time()
+        if last_sync:
+            print(f"\nIncremental mode: processing files modified since {last_sync.isoformat()}")
+        else:
+            print("\nIncremental mode: no previous sync found, processing all files")
+    else:
+        print("\nClearing existing data...")
+        clear_bucket(client)
 
     write_api = client.write_api(write_options=SYNCHRONOUS)
 
-    room_files = sorted(glob.glob(os.path.join(DATA_DIR, "Temperatures*.csv")))
-    hvac_files = sorted(glob.glob(os.path.join(DATA_DIR, "logfile_dp_*.csv")))
+    # Get all files
+    all_room_files = sorted(glob.glob(os.path.join(DATA_DIR, "Temperatures*.csv")))
+    all_hvac_files = sorted(glob.glob(os.path.join(DATA_DIR, "logfile_dp_*.csv")))
+
+    # Filter to modified files in incremental mode
+    if args.incremental and last_sync:
+        room_files = get_modified_files(all_room_files, last_sync)
+        hvac_files = get_modified_files(all_hvac_files, last_sync)
+    else:
+        room_files = all_room_files
+        hvac_files = all_hvac_files
 
     print(f"\nFound {len(room_files)} room temperature files")
     print(f"Found {len(hvac_files)} HVAC logfiles")

@@ -38,6 +38,33 @@ services:
       influxdb:
         condition: service_healthy
 
+  sync:
+    build:
+      context: .
+      dockerfile: Dockerfile.sync
+    container_name: wago-sync
+    volumes:
+      - ./data:/data
+      - ./scripts:/scripts:ro
+      - ./ssh:/ssh:ro
+    environment:
+      - INFLUXDB_URL=http://influxdb:8086
+      - INFLUXDB_TOKEN=wago-secret-token
+      - INFLUXDB_ORG=wago
+      - INFLUXDB_BUCKET=building_automation
+      - DATA_DIR=/data
+      - SSH_KEY=/ssh/wago_sync
+      - SYNC_INTERVAL=300
+      - REMOTE_HOST=192.168.1.10
+      - REMOTE_USER=admin
+      - REMOTE_PATH=/media/sd/CSV_Files/
+    depends_on:
+      influxdb:
+        condition: service_healthy
+    restart: unless-stopped
+    profiles:
+      - sync
+
 volumes:
   influxdb-data:
   influxdb-config:
