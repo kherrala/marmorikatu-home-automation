@@ -36,12 +36,13 @@ def normalize_header(header: str) -> str:
 
 
 # Room sensor mappings - using normalized headers with °
+# Renamed: MH Aatu→Seela, MH Onni→Aarni, MH Essi→aikuiset, MH AK→alakerta
 ROOM_SENSOR_MAP = {
     # Bedrooms (Makuuhuone = MH)
-    "MH Aatu[C°]": ("bedroom", "MH_Aatu"),
-    "MH Onni[C°]": ("bedroom", "MH_Onni"),
-    "MH Essi[C°]": ("bedroom", "MH_Essi"),
-    "MH AK[C°]": ("bedroom", "MH_Aikuiset"),
+    "MH Aatu[C°]": ("bedroom", "MH_Seela"),
+    "MH Onni[C°]": ("bedroom", "MH_Aarni"),
+    "MH Essi[C°]": ("bedroom", "MH_aikuiset"),
+    "MH AK[C°]": ("bedroom", "MH_alakerta"),
 
     # Common areas
     "Yk Aula[C°]": ("common", "Ylakerran_aula"),
@@ -53,10 +54,10 @@ ROOM_SENSOR_MAP = {
     "Kellari Eteinen[C°]": ("basement", "Kellari_eteinen"),
 
     # PID control values
-    "MH Aatu PID[%]": ("pid", "MH_Aatu_PID"),
-    "MH Onni PID[%]": ("pid", "MH_Onni_PID"),
-    "MH Essi PID[%]": ("pid", "MH_Essi_PID"),
-    "MH AK PID[%]": ("pid", "MH_Aikuiset_PID"),
+    "MH Aatu PID[%]": ("pid", "MH_Seela_PID"),
+    "MH Onni PID[%]": ("pid", "MH_Aarni_PID"),
+    "MH Essi PID[%]": ("pid", "MH_aikuiset_PID"),
+    "MH AK PID[%]": ("pid", "MH_alakerta_PID"),
     "Yk Aula PID[%]": ("pid", "Ylakerran_aula_PID"),
     "Keittiö PID[%]": ("pid", "Keittio_PID"),
     "Eteinen PID[%]": ("pid", "Eteinen_PID"),
@@ -104,8 +105,8 @@ HVAC_SENSOR_MAP = {
     # Humidity
     "RH suht kosteus[%]": ("humidity", "Suhteellinen_kosteus"),
     "RH kastepiste[c°]": ("humidity", "Kastepiste"),
-    "RH Lämpötila[c°]": ("humidity", "RH_anturi_lampotila"),
-    "RH Lampotila[c°]": ("humidity", "RH_anturi_lampotila"),
+    "RH Lämpötila[c°]": ("ivk_temp", "RH_lampotila"),
+    "RH Lampotila[c°]": ("ivk_temp", "RH_lampotila"),
     "TH Lämpötila[c°]": ("humidity", "TH_anturi_lampotila"),
     "TH Lampotila[c°]": ("humidity", "TH_anturi_lampotila"),
 
