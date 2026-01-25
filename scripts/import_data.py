@@ -37,36 +37,38 @@ def normalize_header(header: str) -> str:
 
 # Room sensor mappings - using normalized headers with °
 # Renamed: MH Aatu→Seela, MH Onni→Aarni, MH Essi→aikuiset, MH AK→alakerta
+# Format: (room_type, field_name, floor_level)
+# Floor levels: 2 = upstairs, 1 = ground floor, 0 = basement
 ROOM_SENSOR_MAP = {
     # Bedrooms (Makuuhuone = MH)
-    "MH Aatu[C°]": ("bedroom", "MH_Seela"),
-    "MH Onni[C°]": ("bedroom", "MH_Aarni"),
-    "MH Essi[C°]": ("bedroom", "MH_aikuiset"),
-    "MH AK[C°]": ("bedroom", "MH_alakerta"),
+    "MH Aatu[C°]": ("bedroom", "MH_Seela", 2),
+    "MH Onni[C°]": ("bedroom", "MH_Aarni", 2),
+    "MH Essi[C°]": ("bedroom", "MH_aikuiset", 2),
+    "MH AK[C°]": ("bedroom", "MH_alakerta", 1),
 
     # Common areas
-    "Yk Aula[C°]": ("common", "Ylakerran_aula"),
-    "Keittiö[C°]": ("common", "Keittio"),
-    "Eteinen[C°]": ("common", "Eteinen"),
+    "Yk Aula[C°]": ("common", "Ylakerran_aula", 2),
+    "Keittiö[C°]": ("common", "Keittio", 1),
+    "Eteinen[C°]": ("common", "Eteinen", 1),
 
     # Basement
-    "Kellari[C°]": ("basement", "Kellari"),
-    "Kellari Eteinen[C°]": ("basement", "Kellari_eteinen"),
+    "Kellari[C°]": ("basement", "Kellari", 0),
+    "Kellari Eteinen[C°]": ("basement", "Kellari_eteinen", 0),
 
     # PID control values
-    "MH Aatu PID[%]": ("pid", "MH_Seela_PID"),
-    "MH Onni PID[%]": ("pid", "MH_Aarni_PID"),
-    "MH Essi PID[%]": ("pid", "MH_aikuiset_PID"),
-    "MH AK PID[%]": ("pid", "MH_alakerta_PID"),
-    "Yk Aula PID[%]": ("pid", "Ylakerran_aula_PID"),
-    "Keittiö PID[%]": ("pid", "Keittio_PID"),
-    "Eteinen PID[%]": ("pid", "Eteinen_PID"),
-    "Kellari PID[%]": ("pid", "Kellari_PID"),
-    "Kellari Eteinen PID[%]": ("pid", "Kellari_eteinen_PID"),
+    "MH Aatu PID[%]": ("pid", "MH_Seela_PID", 2),
+    "MH Onni PID[%]": ("pid", "MH_Aarni_PID", 2),
+    "MH Essi PID[%]": ("pid", "MH_aikuiset_PID", 2),
+    "MH AK PID[%]": ("pid", "MH_alakerta_PID", 1),
+    "Yk Aula PID[%]": ("pid", "Ylakerran_aula_PID", 2),
+    "Keittiö PID[%]": ("pid", "Keittio_PID", 1),
+    "Eteinen PID[%]": ("pid", "Eteinen_PID", 1),
+    "Kellari PID[%]": ("pid", "Kellari_PID", 0),
+    "Kellari Eteinen PID[%]": ("pid", "Kellari_eteinen_PID", 0),
 
-    # Energy
-    "Lisälämmitin vuosienergia[Kwh]": ("energy", "Lisalammitin_vuosienergia"),
-    "Maalämpöpumppu vuosienergia[Kwh]": ("energy", "Maalampopumppu_vuosienergia"),
+    # Energy (no floor - building-wide)
+    "Lisälämmitin vuosienergia[Kwh]": ("energy", "Lisalammitin_vuosienergia", None),
+    "Maalämpöpumppu vuosienergia[Kwh]": ("energy", "Maalampopumppu_vuosienergia", None),
 }
 
 # HVAC sensor mappings
@@ -172,11 +174,12 @@ def import_room_temps(write_api, filepath: str, batch_size: int = 5000):
     if not headers or not data_lines:
         return 0, 0
 
-    # Map headers to sensor info
+    # Map headers to sensor info (room_type, field_name, floor)
     header_map = {}
     for i, header in enumerate(headers[1:], 1):  # Skip Time
         if header in ROOM_SENSOR_MAP:
-            header_map[i] = ROOM_SENSOR_MAP[header]
+            room_type, field_name, floor = ROOM_SENSOR_MAP[header]
+            header_map[i] = (room_type, field_name, floor)
 
     if not header_map:
         print(f"  Warning: No mapped headers found in {filename}")
@@ -194,16 +197,21 @@ def import_room_temps(write_api, filepath: str, batch_size: int = 5000):
             values = line.split(',')
             timestamp = parse_timestamp(values[0])
 
-            # Group by room type
+            # Group by room type and floor
             room_points = {}
 
-            for col_idx, (room_type, field_name) in header_map.items():
+            for col_idx, (room_type, field_name, floor) in header_map.items():
                 if col_idx < len(values):
                     value = parse_float(values[col_idx])
                     if value is not None and (room_type == "pid" or room_type == "energy" or is_valid_temp(value)):
-                        if room_type not in room_points:
-                            room_points[room_type] = Point("rooms").time(timestamp, WritePrecision.S).tag("room_type", room_type)
-                        room_points[room_type] = room_points[room_type].field(field_name, value)
+                        # Create unique key for room_type + floor combination
+                        point_key = (room_type, floor)
+                        if point_key not in room_points:
+                            point = Point("rooms").time(timestamp, WritePrecision.S).tag("room_type", room_type)
+                            if floor is not None:
+                                point = point.tag("floor", str(floor))
+                            room_points[point_key] = point
+                        room_points[point_key] = room_points[point_key].field(field_name, value)
 
             for point in room_points.values():
                 points.append(point)

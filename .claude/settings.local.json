@@ -14,7 +14,8 @@
       "Bash(wc:*)",
       "Bash(ls:*)",
       "Bash(tree:*)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(paste:*)"
     ]
   }
 }
