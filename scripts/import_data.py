@@ -1,0 +1,357 @@
+#!/usr/bin/env python3
+"""
+Import WAGO CSV data into InfluxDB.
+
+Data Model:
+- Measurement: hvac (from logfile_dp_*.csv)
+- Measurement: rooms (from Temperatures*.csv)
+"""
+
+import os
+import glob
+from datetime import datetime, timezone
+from influxdb_client import InfluxDBClient, Point, WritePrecision
+from influxdb_client.client.write_api import SYNCHRONOUS
+
+# InfluxDB connection settings
+INFLUXDB_URL = os.environ.get("INFLUXDB_URL", "http://localhost:8086")
+INFLUXDB_TOKEN = os.environ.get("INFLUXDB_TOKEN", "wago-secret-token")
+INFLUXDB_ORG = os.environ.get("INFLUXDB_ORG", "wago")
+INFLUXDB_BUCKET = os.environ.get("INFLUXDB_BUCKET", "building_automation")
+DATA_DIR = os.environ.get("DATA_DIR", "./data")
+
+
+def normalize_header(header: str) -> str:
+    """Normalize header by replacing special chars for consistent matching."""
+    # Remove BOM if present
+    header = header.lstrip('\ufeff')
+    # Normalize different degree symbols and encodings
+    header = header.replace('º', '°')  # Latin-1 masculine ordinal to degree
+    header = header.replace('\xba', '°')  # Raw byte
+    header = header.replace('�', '°')  # Replacement char
+    return header.strip()
+
+
+# Room sensor mappings - using normalized headers with °
+ROOM_SENSOR_MAP = {
+    # Bedrooms (Makuuhuone = MH)
+    "MH Aatu[C°]": ("bedroom", "MH_Aatu"),
+    "MH Onni[C°]": ("bedroom", "MH_Onni"),
+    "MH Essi[C°]": ("bedroom", "MH_Essi"),
+    "MH AK[C°]": ("bedroom", "MH_Aikuiset"),
+
+    # Common areas
+    "Yk Aula[C°]": ("common", "Ylakerran_aula"),
+    "Keittiö[C°]": ("common", "Keittio"),
+    "Eteinen[C°]": ("common", "Eteinen"),
+
+    # Basement
+    "Kellari[C°]": ("basement", "Kellari"),
+    "Kellari Eteinen[C°]": ("basement", "Kellari_eteinen"),
+
+    # PID control values
+    "MH Aatu PID[%]": ("pid", "MH_Aatu_PID"),
+    "MH Onni PID[%]": ("pid", "MH_Onni_PID"),
+    "MH Essi PID[%]": ("pid", "MH_Essi_PID"),
+    "MH AK PID[%]": ("pid", "MH_Aikuiset_PID"),
+    "Yk Aula PID[%]": ("pid", "Ylakerran_aula_PID"),
+    "Keittiö PID[%]": ("pid", "Keittio_PID"),
+    "Eteinen PID[%]": ("pid", "Eteinen_PID"),
+    "Kellari PID[%]": ("pid", "Kellari_PID"),
+    "Kellari Eteinen PID[%]": ("pid", "Kellari_eteinen_PID"),
+
+    # Energy
+    "Lisälämmitin vuosienergia[Kwh]": ("energy", "Lisalammitin_vuosienergia"),
+    "Maalämpöpumppu vuosienergia[Kwh]": ("energy", "Maalampopumppu_vuosienergia"),
+}
+
+# HVAC sensor mappings
+HVAC_SENSOR_MAP = {
+    # Voltages
+    "U1[V]": ("voltage", "U1_jannite"),
+    "U2[V]": ("voltage", "U2_jannite"),
+    "U3[V]": ("voltage", "U3_jannite"),
+
+    # Power
+    "P Lämpöpumppu[Kw]": ("power", "Lampopumppu_teho"),
+    "P Lampopumppu[Kw]": ("power", "Lampopumppu_teho"),
+    "P Lisävastus[kw]": ("power", "Lisavastus_teho"),
+    "P Lisavastus[kw]": ("power", "Lisavastus_teho"),
+
+    # Energy
+    "E Lämpöpumppu[Kwh]": ("energy", "Lampopumppu_energia"),
+    "E Lampopumppu[Kwh]": ("energy", "Lampopumppu_energia"),
+    "E Lisävastus[Kwh]": ("energy", "Lisavastus_energia"),
+    "E Lisavastus[Kwh]": ("energy", "Lisavastus_energia"),
+
+    # IVK temperatures (with various degree symbol encodings)
+    "IVK ulkolämpö[c°]": ("ivk_temp", "Ulkolampotila"),
+    "IVK ulkolampo[c°]": ("ivk_temp", "Ulkolampotila"),
+    "IVK tulo ennen lämmitystä[c°]": ("ivk_temp", "Tuloilma_ennen_lammitysta"),
+    "IVK tulo ennen lammitysta[c°]": ("ivk_temp", "Tuloilma_ennen_lammitysta"),
+    "IVK positolämpötila[c°]": ("ivk_temp", "Tuloilma_asetusarvo"),
+    "IVK positolampotila[c°]": ("ivk_temp", "Tuloilma_asetusarvo"),
+    "IVK tulo jälkeen lämmityksen[c°]": ("ivk_temp", "Tuloilma_jalkeen_lammityksen"),
+    "IVK tulo jalkeen lammityksen[c°]": ("ivk_temp", "Tuloilma_jalkeen_lammityksen"),
+    "IVK Jäteilma[c°]": ("ivk_temp", "Jateilma"),
+    "IVK Jateilma[c°]": ("ivk_temp", "Jateilma"),
+    "Tuloilma jäähdytyksen jälkeen[c°]": ("ivk_temp", "Tuloilma_jalkeen_jaahdytyksen"),
+    "Tuloilma jaahdytyksen jalkeen[c°]": ("ivk_temp", "Tuloilma_jalkeen_jaahdytyksen"),
+
+    # Humidity
+    "RH suht kosteus[%]": ("humidity", "Suhteellinen_kosteus"),
+    "RH kastepiste[c°]": ("humidity", "Kastepiste"),
+    "RH Lämpötila[c°]": ("humidity", "RH_anturi_lampotila"),
+    "RH Lampotila[c°]": ("humidity", "RH_anturi_lampotila"),
+    "TH Lämpötila[c°]": ("humidity", "TH_anturi_lampotila"),
+    "TH Lampotila[c°]": ("humidity", "TH_anturi_lampotila"),
+
+    # Actuator
+    "Toimilaite SP[c°]": ("actuator", "Toimilaite_asetusarvo"),
+    "Toimilaite pakotus[c°]": ("actuator", "Toimilaite_pakotus"),
+    "Toimilaite ohjaus[c°]": ("actuator", "Toimilaite_ohjaus"),
+}
+
+
+def parse_timestamp(time_str: str) -> datetime:
+    """Parse timestamp from CSV."""
+    for fmt in ["%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%d.%m.%Y %H:%M:%S", "%d.%m.%Y %H:%M"]:
+        try:
+            return datetime.strptime(time_str.strip(), fmt)
+        except ValueError:
+            continue
+    raise ValueError(f"Could not parse timestamp: {time_str}")
+
+
+def parse_float(value: str) -> float | None:
+    """Parse float value."""
+    if not value or value.strip() == "":
+        return None
+    try:
+        val = float(value.strip().replace(",", "."))
+        if abs(val) > 1e10:  # Filter sensor errors
+            return None
+        return val
+    except ValueError:
+        return None
+
+
+def is_valid_temp(value: float) -> bool:
+    """Check if temperature is in valid range."""
+    return value is not None and -50 < value < 100
+
+
+def read_csv_latin1(filepath: str) -> tuple[list[str], list[str]]:
+    """Read CSV file with Latin-1 encoding."""
+    with open(filepath, 'r', encoding='latin-1') as f:
+        content = f.read()
+
+    lines = content.strip().split('\n')
+    if len(lines) < 2:
+        return [], []
+
+    # Normalize headers
+    headers = [normalize_header(h) for h in lines[0].split(',')]
+    return headers, lines[1:]
+
+
+def import_room_temps(write_api, filepath: str, batch_size: int = 5000):
+    """Import room temperature CSV."""
+    filename = os.path.basename(filepath)
+
+    try:
+        headers, data_lines = read_csv_latin1(filepath)
+    except Exception as e:
+        print(f"  Error reading {filename}: {e}")
+        return 0, 1
+
+    if not headers or not data_lines:
+        return 0, 0
+
+    # Map headers to sensor info
+    header_map = {}
+    for i, header in enumerate(headers[1:], 1):  # Skip Time
+        if header in ROOM_SENSOR_MAP:
+            header_map[i] = ROOM_SENSOR_MAP[header]
+
+    if not header_map:
+        print(f"  Warning: No mapped headers found in {filename}")
+        print(f"  Headers: {headers[:5]}...")
+        return 0, 0
+
+    points = []
+    row_count = 0
+
+    for line in data_lines:
+        if not line.strip():
+            continue
+
+        try:
+            values = line.split(',')
+            timestamp = parse_timestamp(values[0])
+
+            # Group by room type
+            room_points = {}
+
+            for col_idx, (room_type, field_name) in header_map.items():
+                if col_idx < len(values):
+                    value = parse_float(values[col_idx])
+                    if value is not None and (room_type == "pid" or room_type == "energy" or is_valid_temp(value)):
+                        if room_type not in room_points:
+                            room_points[room_type] = Point("rooms").time(timestamp, WritePrecision.S).tag("room_type", room_type)
+                        room_points[room_type] = room_points[room_type].field(field_name, value)
+
+            for point in room_points.values():
+                points.append(point)
+                row_count += 1
+
+            if len(points) >= batch_size:
+                write_api.write(bucket=INFLUXDB_BUCKET, org=INFLUXDB_ORG, record=points)
+                points = []
+
+        except Exception:
+            pass
+
+    if points:
+        write_api.write(bucket=INFLUXDB_BUCKET, org=INFLUXDB_ORG, record=points)
+
+    return row_count, 0
+
+
+def import_hvac(write_api, filepath: str, batch_size: int = 5000):
+    """Import HVAC logfile CSV."""
+    filename = os.path.basename(filepath)
+
+    try:
+        headers, data_lines = read_csv_latin1(filepath)
+    except Exception as e:
+        print(f"  Error reading {filename}: {e}")
+        return 0, 1
+
+    if not headers or not data_lines:
+        return 0, 0
+
+    # Map headers
+    header_map = {}
+    for i, header in enumerate(headers[1:], 1):
+        if header in HVAC_SENSOR_MAP:
+            header_map[i] = HVAC_SENSOR_MAP[header]
+        else:
+            # Fallback: create field name from header
+            clean = header.split('[')[0].strip().replace(' ', '_').replace('ä', 'a').replace('ö', 'o').replace('å', 'a')
+            if clean:
+                header_map[i] = ("other", clean)
+
+    points = []
+    row_count = 0
+
+    for line in data_lines:
+        if not line.strip():
+            continue
+
+        try:
+            values = line.split(',')
+            timestamp = parse_timestamp(values[0])
+
+            sensor_points = {}
+
+            for col_idx, (group, field_name) in header_map.items():
+                if col_idx < len(values):
+                    value = parse_float(values[col_idx])
+                    if value is not None:
+                        # Validate based on group
+                        valid = True
+                        if group == "ivk_temp":
+                            valid = is_valid_temp(value)
+                        elif group == "humidity" and "kosteus" in field_name.lower():
+                            valid = 0 <= value <= 100
+                        elif group == "power":
+                            valid = 0 <= value < 100
+
+                        if valid:
+                            if group not in sensor_points:
+                                sensor_points[group] = Point("hvac").time(timestamp, WritePrecision.S).tag("sensor_group", group)
+                            sensor_points[group] = sensor_points[group].field(field_name, value)
+
+            for point in sensor_points.values():
+                points.append(point)
+                row_count += 1
+
+            if len(points) >= batch_size:
+                write_api.write(bucket=INFLUXDB_BUCKET, org=INFLUXDB_ORG, record=points)
+                points = []
+
+        except Exception:
+            pass
+
+    if points:
+        write_api.write(bucket=INFLUXDB_BUCKET, org=INFLUXDB_ORG, record=points)
+
+    return row_count, 0
+
+
+def clear_bucket(client):
+    """Clear all data from bucket."""
+    delete_api = client.delete_api()
+    start = datetime(1970, 1, 1, tzinfo=timezone.utc)
+    stop = datetime(2030, 1, 1, tzinfo=timezone.utc)
+
+    for measurement in ["hvac", "rooms", "hvac_system", "room_temperatures"]:
+        try:
+            delete_api.delete(start, stop, f'_measurement="{measurement}"', bucket=INFLUXDB_BUCKET, org=INFLUXDB_ORG)
+        except Exception:
+            pass
+    print("Cleared existing data")
+
+
+def main():
+    print("=" * 60)
+    print("WAGO CSV Data Importer (v3 - Latin-1 encoding fix)")
+    print("=" * 60)
+
+    client = InfluxDBClient(url=INFLUXDB_URL, token=INFLUXDB_TOKEN, org=INFLUXDB_ORG)
+
+    try:
+        health = client.health()
+        print(f"InfluxDB status: {health.status}")
+    except Exception as e:
+        print(f"Error connecting: {e}")
+        return
+
+    print("\nClearing existing data...")
+    clear_bucket(client)
+
+    write_api = client.write_api(write_options=SYNCHRONOUS)
+
+    room_files = sorted(glob.glob(os.path.join(DATA_DIR, "Temperatures*.csv")))
+    hvac_files = sorted(glob.glob(os.path.join(DATA_DIR, "logfile_dp_*.csv")))
+
+    print(f"\nFound {len(room_files)} room temperature files")
+    print(f"Found {len(hvac_files)} HVAC logfiles")
+    print("-" * 60)
+
+    total = 0
+
+    print("\n--- Room Temperature Files ---")
+    for i, fp in enumerate(room_files, 1):
+        fn = os.path.basename(fp)
+        print(f"[{i}/{len(room_files)}] {fn}...", end=" ", flush=True)
+        rows, _ = import_room_temps(write_api, fp)
+        total += rows
+        print(f"{rows} points")
+
+    print("\n--- HVAC Logfiles ---")
+    for i, fp in enumerate(hvac_files, 1):
+        fn = os.path.basename(fp)
+        print(f"[{i}/{len(hvac_files)}] {fn}...", end=" ", flush=True)
+        rows, _ = import_hvac(write_api, fp)
+        total += rows
+        print(f"{rows} points")
+
+    print("-" * 60)
+    print(f"Total: {total:,} data points")
+    client.close()
+
+
+if __name__ == "__main__":
+    main()

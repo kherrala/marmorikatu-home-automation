@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(chmod:*)",
+      "Bash(./start.sh)",
+      "Bash(docker compose:*)",
+      "Bash(curl:*)",
+      "Bash(source:*)",
+      "Bash(python scripts/import_data.py:*)",
+      "Bash(python3:*)",
+      "Bash(cat:*)",
+      "Bash(xxd:*)",
+      "Bash(git -C /Users/kyostiherrala/IdeaProjects/wago-csv-explorer log --oneline)",
+      "Bash(wc:*)",
+      "Bash(ls:*)",
+      "Bash(tree:*)",
+      "Bash(find:*)"
+    ]
+  }
+}

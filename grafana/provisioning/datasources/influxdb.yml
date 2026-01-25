@@ -1,0 +1,16 @@
+apiVersion: 1
+
+datasources:
+  - name: InfluxDB
+    uid: influxdb
+    type: influxdb
+    access: proxy
+    url: http://influxdb:8086
+    jsonData:
+      version: Flux
+      organization: wago
+      defaultBucket: building_automation
+      tlsSkipVerify: true
+    secureJsonData:
+      token: wago-secret-token
+    isDefault: true
