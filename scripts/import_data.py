@@ -11,10 +11,14 @@ Supports incremental mode for syncing new data only.
 
 import os
 import glob
+import json
 import argparse
 from datetime import datetime, timezone, timedelta
 from influxdb_client import InfluxDBClient, Point, WritePrecision
 from influxdb_client.client.write_api import SYNCHRONOUS
+
+# State file for tracking import progress
+STATE_FILE = os.path.join(os.environ.get("DATA_DIR", "./data"), ".import_state.json")
 
 # InfluxDB connection settings
 INFLUXDB_URL = os.environ.get("INFLUXDB_URL", "http://localhost:8086")
@@ -22,6 +26,23 @@ INFLUXDB_TOKEN = os.environ.get("INFLUXDB_TOKEN", "wago-secret-token")
 INFLUXDB_ORG = os.environ.get("INFLUXDB_ORG", "wago")
 INFLUXDB_BUCKET = os.environ.get("INFLUXDB_BUCKET", "building_automation")
 DATA_DIR = os.environ.get("DATA_DIR", "./data")
+
+
+def load_import_state() -> dict:
+    """Load import state from file."""
+    if os.path.exists(STATE_FILE):
+        try:
+            with open(STATE_FILE, 'r') as f:
+                return json.load(f)
+        except (json.JSONDecodeError, IOError):
+            pass
+    return {"files": {}}
+
+
+def save_import_state(state: dict):
+    """Save import state to file."""
+    with open(STATE_FILE, 'w') as f:
+        json.dump(state, f, indent=2)
 
 
 def normalize_header(header: str) -> str:
@@ -64,6 +85,7 @@ ROOM_SENSOR_MAP = {
     "Keittiö PID[%]": ("pid", "Keittio_PID", 1),
     "Eteinen PID[%]": ("pid", "Eteinen_PID", 1),
     "Kellari PID[%]": ("pid", "Kellari_PID", 0),
+    "Kellari PID[C°]": ("pid", "Kellari_PID", 0),  # CSV has wrong unit
     "Kellari Eteinen PID[%]": ("pid", "Kellari_eteinen_PID", 0),
 
     # Energy (no floor - building-wide)
@@ -147,32 +169,45 @@ def is_valid_temp(value: float) -> bool:
     return value is not None and -50 < value < 100
 
 
-def read_csv_latin1(filepath: str) -> tuple[list[str], list[str]]:
-    """Read CSV file with Latin-1 encoding."""
+def read_csv_latin1(filepath: str, start_line: int = 0) -> tuple[list[str], list[str], int]:
+    """Read CSV file with Latin-1 encoding, optionally starting from a specific line.
+
+    Returns: (headers, data_lines, total_lines)
+    """
     with open(filepath, 'r', encoding='latin-1') as f:
-        content = f.read()
+        lines = f.readlines()
 
-    lines = content.strip().split('\n')
     if len(lines) < 2:
-        return [], []
+        return [], [], 0
 
-    # Normalize headers
-    headers = [normalize_header(h) for h in lines[0].split(',')]
-    return headers, lines[1:]
+    total_lines = len(lines)
+
+    # Normalize headers (always read from first line)
+    headers = [normalize_header(h) for h in lines[0].strip().split(',')]
+
+    # Skip to start_line for data (start_line=0 means read all data starting after header)
+    # start_line represents the last processed line number (1-indexed, where 1 is first data line)
+    data_start = max(1, start_line + 1)  # +1 because start_line is last processed
+    data_lines = [line.strip() for line in lines[data_start:] if line.strip()]
+
+    return headers, data_lines, total_lines - 1  # -1 to exclude header
 
 
-def import_room_temps(write_api, filepath: str, batch_size: int = 5000):
-    """Import room temperature CSV."""
+def import_room_temps(write_api, filepath: str, batch_size: int = 5000, start_line: int = 0):
+    """Import room temperature CSV, optionally starting from a specific line."""
     filename = os.path.basename(filepath)
 
     try:
-        headers, data_lines = read_csv_latin1(filepath)
+        headers, data_lines, total_lines = read_csv_latin1(filepath, start_line)
     except Exception as e:
         print(f"  Error reading {filename}: {e}")
-        return 0, 1
+        return 0, 1, 0
 
-    if not headers or not data_lines:
-        return 0, 0
+    if not headers:
+        return 0, 0, 0
+
+    if not data_lines:
+        return 0, 0, total_lines  # No new data but return total for state tracking
 
     # Map headers to sensor info (room_type, field_name, floor)
     header_map = {}
@@ -184,7 +219,7 @@ def import_room_temps(write_api, filepath: str, batch_size: int = 5000):
     if not header_map:
         print(f"  Warning: No mapped headers found in {filename}")
         print(f"  Headers: {headers[:5]}...")
-        return 0, 0
+        return 0, 0, 0
 
     points = []
     row_count = 0
@@ -227,21 +262,24 @@ def import_room_temps(write_api, filepath: str, batch_size: int = 5000):
     if points:
         write_api.write(bucket=INFLUXDB_BUCKET, org=INFLUXDB_ORG, record=points)
 
-    return row_count, 0
+    return row_count, 0, total_lines
 
 
-def import_hvac(write_api, filepath: str, batch_size: int = 5000):
-    """Import HVAC logfile CSV."""
+def import_hvac(write_api, filepath: str, batch_size: int = 5000, start_line: int = 0):
+    """Import HVAC logfile CSV, optionally starting from a specific line."""
     filename = os.path.basename(filepath)
 
     try:
-        headers, data_lines = read_csv_latin1(filepath)
+        headers, data_lines, total_lines = read_csv_latin1(filepath, start_line)
     except Exception as e:
         print(f"  Error reading {filename}: {e}")
-        return 0, 1
+        return 0, 1, 0
 
-    if not headers or not data_lines:
-        return 0, 0
+    if not headers:
+        return 0, 0, 0
+
+    if not data_lines:
+        return 0, 0, total_lines
 
     # Map headers
     header_map = {}
@@ -299,7 +337,7 @@ def import_hvac(write_api, filepath: str, batch_size: int = 5000):
     if points:
         write_api.write(bucket=INFLUXDB_BUCKET, org=INFLUXDB_ORG, record=points)
 
-    return row_count, 0
+    return row_count, 0, total_lines
 
 
 def clear_bucket(client):
@@ -349,12 +387,12 @@ def get_modified_files(file_list: list[str], since: datetime | None) -> list[str
 def main():
     parser = argparse.ArgumentParser(description="Import WAGO CSV data into InfluxDB")
     parser.add_argument('--incremental', action='store_true',
-                        help='Incremental import: skip bucket clearing, only process new files')
+                        help='Incremental import: skip bucket clearing, only process new data')
     args = parser.parse_args()
 
     mode = "incremental" if args.incremental else "full"
     print("=" * 60)
-    print(f"WAGO CSV Data Importer (v4 - {mode} mode)")
+    print(f"WAGO CSV Data Importer (v5 - {mode} mode)")
     print("=" * 60)
 
     client = InfluxDBClient(url=INFLUXDB_URL, token=INFLUXDB_TOKEN, org=INFLUXDB_ORG)
@@ -366,17 +404,15 @@ def main():
         print(f"Error connecting: {e}")
         return
 
-    # Get last sync time for incremental mode
-    last_sync = None
+    # Load import state for line tracking
+    state = load_import_state() if args.incremental else {"files": {}}
+
     if args.incremental:
-        last_sync = get_last_sync_time()
-        if last_sync:
-            print(f"\nIncremental mode: processing files modified since {last_sync.isoformat()}")
-        else:
-            print("\nIncremental mode: no previous sync found, processing all files")
+        print(f"\nIncremental mode: reading only new lines from files")
     else:
         print("\nClearing existing data...")
         clear_bucket(client)
+        state = {"files": {}}  # Reset state for full import
 
     write_api = client.write_api(write_options=SYNCHRONOUS)
 
@@ -384,38 +420,75 @@ def main():
     all_room_files = sorted(glob.glob(os.path.join(DATA_DIR, "Temperatures*.csv")))
     all_hvac_files = sorted(glob.glob(os.path.join(DATA_DIR, "logfile_dp_*.csv")))
 
-    # Filter to modified files in incremental mode
-    if args.incremental and last_sync:
-        room_files = get_modified_files(all_room_files, last_sync)
-        hvac_files = get_modified_files(all_hvac_files, last_sync)
+    # In incremental mode, filter to files that may have new data
+    if args.incremental:
+        last_sync = get_last_sync_time()
+        if last_sync:
+            room_files = get_modified_files(all_room_files, last_sync)
+            hvac_files = get_modified_files(all_hvac_files, last_sync)
+        else:
+            room_files = all_room_files
+            hvac_files = all_hvac_files
     else:
         room_files = all_room_files
         hvac_files = all_hvac_files
 
-    print(f"\nFound {len(room_files)} room temperature files")
-    print(f"Found {len(hvac_files)} HVAC logfiles")
+    print(f"\nFound {len(room_files)} room temperature files to process")
+    print(f"Found {len(hvac_files)} HVAC logfiles to process")
     print("-" * 60)
 
     total = 0
+    new_lines_total = 0
 
     print("\n--- Room Temperature Files ---")
     for i, fp in enumerate(room_files, 1):
         fn = os.path.basename(fp)
-        print(f"[{i}/{len(room_files)}] {fn}...", end=" ", flush=True)
-        rows, _ = import_room_temps(write_api, fp)
+        start_line = state["files"].get(fn, {}).get("lines", 0) if args.incremental else 0
+        print(f"[{i}/{len(room_files)}] {fn}", end="", flush=True)
+        if start_line > 0:
+            print(f" (from line {start_line + 1})", end="", flush=True)
+        print("...", end=" ", flush=True)
+
+        rows, _, total_lines = import_room_temps(write_api, fp, start_line=start_line)
         total += rows
-        print(f"{rows} points")
+
+        # Update state
+        state["files"][fn] = {"lines": total_lines, "type": "room"}
+
+        if rows > 0:
+            print(f"{rows} new points")
+            new_lines_total += rows
+        else:
+            print("up to date")
 
     print("\n--- HVAC Logfiles ---")
     for i, fp in enumerate(hvac_files, 1):
         fn = os.path.basename(fp)
-        print(f"[{i}/{len(hvac_files)}] {fn}...", end=" ", flush=True)
-        rows, _ = import_hvac(write_api, fp)
+        start_line = state["files"].get(fn, {}).get("lines", 0) if args.incremental else 0
+        print(f"[{i}/{len(hvac_files)}] {fn}", end="", flush=True)
+        if start_line > 0:
+            print(f" (from line {start_line + 1})", end="", flush=True)
+        print("...", end=" ", flush=True)
+
+        rows, _, total_lines = import_hvac(write_api, fp, start_line=start_line)
         total += rows
-        print(f"{rows} points")
+
+        # Update state
+        state["files"][fn] = {"lines": total_lines, "type": "hvac"}
+
+        if rows > 0:
+            print(f"{rows} new points")
+            new_lines_total += rows
+        else:
+            print("up to date")
+
+    # Save state
+    save_import_state(state)
 
     print("-" * 60)
-    print(f"Total: {total:,} data points")
+    print(f"Total: {total:,} data points imported")
+    if args.incremental:
+        print(f"New data: {new_lines_total:,} points")
     client.close()
 
 
