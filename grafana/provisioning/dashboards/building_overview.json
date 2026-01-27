@@ -60,7 +60,20 @@
           },
           "unit": "celsius"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Ulkolampotila" },
+            "properties": [{ "id": "displayName", "value": "Ulkolämpötila" }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Jateilma" },
+            "properties": [{ "id": "displayName", "value": "Jäteilma" }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Tuloilma_ennen_lammitysta" },
+            "properties": [{ "id": "displayName", "value": "Tuloilma (ennen lämmitystä)" }]
+          }
+        ]
       },
       "gridPos": {
         "h": 10,
@@ -150,7 +163,20 @@
           },
           "unit": "celsius"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Tuloilma_asetusarvo" },
+            "properties": [{ "id": "displayName", "value": "Poistoilma" }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Tuloilma_jalkeen_jaahdytyksen" },
+            "properties": [{ "id": "displayName", "value": "Tuloilma (jäähdytetty)" }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Tuloilma_jalkeen_lammityksen" },
+            "properties": [{ "id": "displayName", "value": "Tuloilma (lämmitetty)" }]
+          }
+        ]
       },
       "gridPos": {
         "h": 10,
@@ -236,7 +262,16 @@
           },
           "unit": "celsius"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "RH_lampotila" },
+            "properties": [{ "id": "displayName", "value": "RH lämpötila" }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Kastepiste" },
+            "properties": [{ "id": "displayName", "value": "Kastepiste" }]
+          }
+        ]
       },
       "gridPos": {
         "h": 10,
@@ -283,7 +318,7 @@
           "custom": {
             "axisCenteredZero": false,
             "axisColorMode": "text",
-            "axisLabel": "Temperature (°C)",
+            "axisLabel": "Lämpötila (°C)",
             "axisPlacement": "auto",
             "barAlignment": 0,
             "drawStyle": "line",
@@ -326,7 +361,24 @@
           },
           "unit": "celsius"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "MH_Seela" },
+            "properties": [{ "id": "displayName", "value": "MH Seela" }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "MH_Aarni" },
+            "properties": [{ "id": "displayName", "value": "MH Aarni" }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "MH_aikuiset" },
+            "properties": [{ "id": "displayName", "value": "MH aikuiset" }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "MH_alakerta" },
+            "properties": [{ "id": "displayName", "value": "MH alakerta" }]
+          }
+        ]
       },
       "gridPos": {
         "h": 12,
@@ -373,7 +425,7 @@
           "custom": {
             "axisCenteredZero": false,
             "axisColorMode": "text",
-            "axisLabel": "Temperature (°C)",
+            "axisLabel": "Lämpötila (°C)",
             "axisPlacement": "auto",
             "barAlignment": 0,
             "drawStyle": "line",
@@ -416,7 +468,20 @@
           },
           "unit": "celsius"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Ylakerran_aula" },
+            "properties": [{ "id": "displayName", "value": "Yläkerran aula" }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Keittio" },
+            "properties": [{ "id": "displayName", "value": "Keittiö" }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Eteinen" },
+            "properties": [{ "id": "displayName", "value": "Eteinen" }]
+          }
+        ]
       },
       "gridPos": {
         "h": 12,
@@ -463,7 +528,7 @@
           "custom": {
             "axisCenteredZero": false,
             "axisColorMode": "text",
-            "axisLabel": "Temperature (°C)",
+            "axisLabel": "Lämpötila (°C)",
             "axisPlacement": "auto",
             "barAlignment": 0,
             "drawStyle": "line",
@@ -502,7 +567,16 @@
           },
           "unit": "celsius"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Kellari" },
+            "properties": [{ "id": "displayName", "value": "Kellari" }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Kellari_eteinen" },
+            "properties": [{ "id": "displayName", "value": "Kellarin eteinen" }]
+          }
+        ]
       },
       "gridPos": {
         "h": 12,
@@ -549,7 +623,7 @@
           "custom": {
             "axisCenteredZero": false,
             "axisColorMode": "text",
-            "axisLabel": "Humidity (%)",
+            "axisLabel": "Kosteus (%)",
             "axisPlacement": "auto",
             "barAlignment": 0,
             "drawStyle": "line",
@@ -590,7 +664,12 @@
           },
           "unit": "percent"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Suhteellinen_kosteus" },
+            "properties": [{ "id": "displayName", "value": "Suhteellinen kosteus" }]
+          }
+        ]
       },
       "gridPos": {
         "h": 12,
@@ -637,7 +716,7 @@
           "custom": {
             "axisCenteredZero": false,
             "axisColorMode": "text",
-            "axisLabel": "Power (kW)",
+            "axisLabel": "Teho (kW)",
             "axisPlacement": "auto",
             "barAlignment": 0,
             "drawStyle": "line",
@@ -676,7 +755,16 @@
           },
           "unit": "kwatt"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Lampopumppu_teho" },
+            "properties": [{ "id": "displayName", "value": "Lämpöpumppu teho" }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Lisavastus_teho" },
+            "properties": [{ "id": "displayName", "value": "Lisävastus teho" }]
+          }
+        ]
       },
       "gridPos": {
         "h": 8,
@@ -723,7 +811,7 @@
           "custom": {
             "axisCenteredZero": false,
             "axisColorMode": "text",
-            "axisLabel": "Energy (kWh)",
+            "axisLabel": "Energia (kWh)",
             "axisPlacement": "auto",
             "barAlignment": 0,
             "drawStyle": "line",
@@ -762,7 +850,16 @@
           },
           "unit": "kwatth"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Lampopumppu_energia" },
+            "properties": [{ "id": "displayName", "value": "Lämpöpumppu energia" }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Lisavastus_energia" },
+            "properties": [{ "id": "displayName", "value": "Lisävastus energia" }]
+          }
+        ]
       },
       "gridPos": {
         "h": 8,
@@ -1001,7 +1098,44 @@
           },
           "unit": "percent"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "MH_Seela_PID" },
+            "properties": [{ "id": "displayName", "value": "MH Seela" }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "MH_Aarni_PID" },
+            "properties": [{ "id": "displayName", "value": "MH Aarni" }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "MH_aikuiset_PID" },
+            "properties": [{ "id": "displayName", "value": "MH aikuiset" }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "MH_alakerta_PID" },
+            "properties": [{ "id": "displayName", "value": "MH alakerta" }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Ylakerran_aula_PID" },
+            "properties": [{ "id": "displayName", "value": "Yläkerran aula" }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Keittio_PID" },
+            "properties": [{ "id": "displayName", "value": "Keittiö" }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Eteinen_PID" },
+            "properties": [{ "id": "displayName", "value": "Eteinen" }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Kellari_PID" },
+            "properties": [{ "id": "displayName", "value": "Kellari" }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Kellari_eteinen_PID" },
+            "properties": [{ "id": "displayName", "value": "Kellarin eteinen" }]
+          }
+        ]
       },
       "gridPos": {
         "h": 8,
@@ -1025,7 +1159,7 @@
           "sort": "none"
         }
       },
-      "title": "Lammityksen tila huoneittain",
+      "title": "Lämmityksen tila huoneittain",
       "type": "state-timeline",
       "targets": [
         {
