@@ -30,10 +30,13 @@ INFLUXDB_BUCKET = os.environ.get("INFLUXDB_BUCKET", "building_automation")
 # Sensor name mappings (MAC -> friendly name)
 # Can be overridden via RUUVI_SENSOR_NAMES env var as JSON
 DEFAULT_SENSOR_NAMES = {
-    "EF:AA:DF:C0:4F:8C": "Ruuvi ulkona",
-    "E6:DC:F8:EC:78:3B": "Ruuvi sisällä",
-    "F1:19:ED:0F:9A:F6": "Ruuvi autotalli",
-    "D1:86:61:6E:DF:E4": "Ruuvi kellari",
+    "D1:86:61:6E:DF:E4": "Sauna",
+    "D3:1D:6A:1E:7C:4E": "Takka",
+    "D7:6C:BC:6D:29:46": "Olohuone",
+    "E6:DC:F8:EC:78:3B": "Keittiö",
+    "EE:3A:F4:B9:74:E5": "Jääkaappi",
+    "EF:AA:DF:C0:4F:8C": "Pakastin",
+    "F1:19:ED:0F:9A:F6": "Ulkolämpötila",
 }
 
 # Load sensor names from environment or use defaults
