@@ -309,8 +309,18 @@ Main dashboard for WAGO building automation data:
 | IVK Ulko- ja jäteilma | Outdoor and exhaust air temperatures |
 | IVK Tuloilma ja asetusarvot | Supply air and setpoints |
 | RH lämpötila ja kastepiste | RH temperature and dew point |
+
+### Energy Consumption
+
+Dashboard for HVAC heat recovery efficiency and energy consumption:
+
+| Panel | Description |
+|-------|-------------|
+| LTO hyötysuhde (tuntuva lämpö) | Heat recovery efficiency (sensible heat) |
+| LTO hyötysuhde (entalpia) | Heat recovery efficiency (enthalpy-based) |
+| LTO talteen otettu teho | Recovered heat power (kW) |
 | Tehonkulutus | Power consumption (heat pump, auxiliary) |
-| Energiankulutus | Energy consumption |
+| Energiankulutus (kumulatiivinen) | Cumulative energy consumption |
 
 ### Ruuvi Sensors
 
@@ -331,6 +341,138 @@ Dashboard for Ruuvi Bluetooth sensor data:
 ### Time Range
 
 Default: Last 7 days (Building), Last 24 hours (Ruuvi). Use Grafana time picker to adjust.
+
+## Energy Calculations
+
+The Energy Consumption dashboard calculates HVAC heat recovery (LTO) efficiency using data from multiple sources.
+
+### Data Alignment
+
+Due to different sampling rates, data must be aligned before calculations:
+
+| Source | Sampling Rate | Notes |
+|--------|---------------|-------|
+| HVAC temperatures | Every 5 minutes | Irregular start times |
+| HVAC humidity | Every 2 hours | On fixed schedule |
+| Ruuvi sensors | ~1 second | May have gaps during outages |
+
+All timestamps are truncated to 2-hour clock boundaries (00:00, 02:00, 04:00, etc.) using integer division on nanosecond timestamps:
+
+```flux
+time(v: ((int(v: r._time) / 7200000000000) * 7200000000000))
+```
+
+Data within each 2-hour bucket is averaged, then joined across sources.
+
+### System Parameters
+
+| Parameter | Value | Description |
+|-----------|-------|-------------|
+| Airflow rate | 414 m³/h | Ventilation system airflow |
+| Air density | 1.2 kg/m³ | At standard conditions |
+| Mass flow rate | 0.138 kg/s | = 414 × 1.2 / 3600 |
+| Specific heat (dry air) | 1.006 kJ/(kg·K) | cp for air at ~20°C |
+
+### Sensible Heat Efficiency
+
+Calculates efficiency based on dry air temperature differences only:
+
+```
+η_sensible = (T_supply - T_outdoor) / (T_exhaust - T_outdoor) × 100%
+```
+
+Where:
+- **T_supply** = `Tuloilma_ennen_lammitysta` - Supply air temperature after heat recovery (before heating coil)
+- **T_outdoor** = `Ulkolampotila` - Outdoor air temperature
+- **T_exhaust** = `Tuloilma_asetusarvo` - Supply air setpoint (proxy for indoor/exhaust air temperature before HRU)
+
+This represents how much of the temperature difference between exhaust and outdoor air is recovered to the supply air.
+
+### Enthalpy-based Efficiency
+
+Accounts for both sensible and latent heat by calculating moist air enthalpy:
+
+```
+η_enthalpy = (h_supply - h_outdoor) / (h_exhaust - h_outdoor) × 100%
+```
+
+#### Enthalpy Calculation
+
+Moist air specific enthalpy (kJ/kg dry air):
+
+```
+h = 1.006 × T + w × (2501 + 1.86 × T)
+```
+
+Where:
+- **T** = Temperature (°C)
+- **w** = Humidity ratio (kg water / kg dry air)
+- **1.006** = Specific heat of dry air (kJ/(kg·K))
+- **2501** = Latent heat of vaporization at 0°C (kJ/kg)
+- **1.86** = Specific heat of water vapor (kJ/(kg·K))
+
+#### Humidity Ratio Calculation
+
+```
+w = 0.622 × (RH/100) × p_sat / (p_atm - (RH/100) × p_sat)
+```
+
+Where:
+- **RH** = Relative humidity (%)
+- **p_atm** = Atmospheric pressure (101325 Pa)
+- **p_sat** = Saturation vapor pressure (Pa)
+
+#### Saturation Vapor Pressure (Tetens Formula)
+
+```
+p_sat = 610.78 × 10^(7.5 × T / (237.3 + T))
+```
+
+Where **T** is temperature in °C.
+
+#### Data Sources for Enthalpy Calculation
+
+| Variable | Source | Measurement | Fallback |
+|----------|--------|-------------|----------|
+| T_outdoor | HVAC | `Ulkolampotila` | Required |
+| T_supply | HVAC | `Tuloilma_ennen_lammitysta` | Required |
+| T_exhaust | HVAC | `Tuloilma_asetusarvo` (supply setpoint as proxy) | Required |
+| RH_exhaust | HVAC | `Suhteellinen_kosteus` | Required |
+| RH_outdoor | Ruuvi | `Ulkolämpötila` sensor, `humidity` field | 85% RH |
+
+**Note:** When Ruuvi outdoor humidity data is unavailable, a fallback value of 85% RH is used (typical for Finnish winter conditions). This allows the enthalpy calculation to continue during sensor outages.
+
+### Recovered Heat Power
+
+Calculates instantaneous heat power recovered by the heat exchanger:
+
+```
+Q = ṁ × cp × ΔT = 0.1387 kW/K × (T_supply - T_outdoor)
+```
+
+Where:
+- **ṁ × cp** = 0.138 kg/s × 1.006 kJ/(kg·K) ≈ 0.1387 kW/K
+- **ΔT** = Temperature rise across the heat recovery unit
+
+The coefficient 0.1387 kW/K means that for every 1°C temperature rise in the supply air, approximately 139 W of heat is recovered.
+
+### Efficiency Thresholds
+
+The efficiency graphs display threshold lines:
+
+| Threshold | Value | Meaning |
+|-----------|-------|---------|
+| Green | < 50% | Below expected performance |
+| Yellow | 50-70% | Normal operating range |
+| Red | > 70% | Good heat recovery performance |
+
+Note: Higher efficiency is better. Typical rotary heat exchangers achieve 70-85% efficiency.
+
+### Sensor Notes
+
+- `Tuloilma_asetusarvo` (supply air setpoint) is used as a proxy for exhaust air temperature before the HRU, as there is no dedicated sensor for this measurement
+- `Jateilma` measures exhaust air *after* the heat recovery unit (post-HRU) and is not suitable for efficiency calculation
+- `Suhteellinen_kosteus` measures relative humidity at the exhaust side of the HRU
 
 ## File Structure
 
@@ -358,6 +500,7 @@ wago-csv-explorer/
         └── dashboards/
             ├── dashboards.yml
             ├── building_overview.json  # WAGO building automation
+            ├── energy_consumption.json # Heat recovery efficiency & energy
             └── ruuvi_sensors.json      # Ruuvi sensor data
 ```
 
