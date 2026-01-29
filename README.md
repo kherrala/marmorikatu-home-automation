@@ -495,42 +495,41 @@ An MCP (Model Context Protocol) server is included for integrating with Claude D
 | `get_air_quality` | Get CO2, PM2.5, VOC, NOx from kitchen sensor |
 | `compare_indoor_outdoor` | Compare indoor vs outdoor temperatures |
 
-### Setup with Docker
+### Quick Start
 
-1. Build the MCP container:
+1. Start the MCP server along with other services:
    ```bash
-   docker compose build mcp
+   docker compose up -d
    ```
 
-2. Configure Claude Desktop (`~/.config/claude/claude_desktop_config.json` on Linux/Mac or `%APPDATA%\Claude\claude_desktop_config.json` on Windows):
-   ```json
-   {
-     "mcpServers": {
-       "building-automation": {
-         "command": "/path/to/wago-csv-explorer/scripts/mcp-claude-desktop.sh"
-       }
-     }
-   }
-   ```
+2. The MCP server will be available at: `http://localhost:3001/sse`
 
-3. Restart Claude Desktop
+3. Configure Claude Desktop (Settings → Developer → MCP Servers → Add):
+   - **Name**: Building Automation
+   - **URL**: `http://localhost:3001/sse`
 
-### Setup without Docker (Local Python)
+4. Restart Claude Desktop if needed
 
-1. Configure Claude Desktop:
-   ```json
-   {
-     "mcpServers": {
-       "building-automation": {
-         "command": "/path/to/wago-csv-explorer/scripts/mcp-local.sh"
-       }
-     }
-   }
-   ```
+### Endpoints
 
-2. The script will automatically create a virtual environment and install dependencies
+| Endpoint | Description |
+|----------|-------------|
+| `http://localhost:3001/sse` | MCP SSE endpoint for Claude Desktop |
+| `http://localhost:3001/health` | Health check endpoint |
+
+### Verify Server is Running
+
+```bash
+# Check health
+curl http://localhost:3001/health
+
+# View logs
+docker compose logs -f mcp
+```
 
 ### Example Queries in Claude Desktop
+
+Once connected, you can ask Claude questions like:
 
 - "What's the current outdoor temperature?"
 - "Show me the heat recovery efficiency for the last week"
@@ -538,6 +537,7 @@ An MCP (Model Context Protocol) server is included for integrating with Claude D
 - "Compare indoor and outdoor temperatures over the last 24 hours"
 - "How much energy has the heat pump consumed this month?"
 - "List all room temperatures and heating demand"
+- "Run a Flux query to get the last 24 hours of humidity data"
 
 ## File Structure
 
@@ -554,9 +554,7 @@ wago-csv-explorer/
 ├── scripts/
 │   ├── import_data.py          # WAGO CSV data import script
 │   ├── ruuvi_mqtt_subscriber.py # Ruuvi MQTT to InfluxDB
-│   ├── mcp_server.py           # MCP server for Claude Desktop
-│   ├── mcp-claude-desktop.sh   # Docker wrapper for Claude Desktop
-│   ├── mcp-local.sh            # Local Python wrapper for Claude Desktop
+│   ├── mcp_server.py           # MCP server for Claude Desktop (SSE)
 │   ├── sync_and_import.sh      # Remote sync script
 │   └── requirements.txt        # Python dependencies
 ├── ssh/

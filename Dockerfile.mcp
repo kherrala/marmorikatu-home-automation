@@ -5,7 +5,7 @@ WORKDIR /app
 
 # Install dependencies
 COPY scripts/requirements.txt /app/
-RUN pip install --no-cache-dir -r requirements.txt mcp
+RUN pip install --no-cache-dir -r requirements.txt mcp uvicorn starlette
 
 # Copy server script
 COPY scripts/mcp_server.py /app/
@@ -15,6 +15,15 @@ ENV INFLUXDB_URL=http://influxdb:8086
 ENV INFLUXDB_TOKEN=wago-secret-token
 ENV INFLUXDB_ORG=wago
 ENV INFLUXDB_BUCKET=building_automation
+ENV MCP_HOST=0.0.0.0
+ENV MCP_PORT=3001
+
+# Expose the MCP server port
+EXPOSE 3001
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:3001/health')" || exit 1
 
 # Run the MCP server
 CMD ["python", "/app/mcp_server.py"]

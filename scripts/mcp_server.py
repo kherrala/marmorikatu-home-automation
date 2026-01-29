@@ -4,6 +4,8 @@ MCP Server for Building Automation Data Analytics.
 
 Provides tools for Claude Desktop to query and analyze measurement data
 from InfluxDB (HVAC, room temperatures, Ruuvi sensors).
+
+Runs as an SSE (Server-Sent Events) server for URL-based MCP integration.
 """
 
 import os
@@ -11,11 +13,15 @@ import json
 from datetime import datetime, timezone
 from typing import Any
 import asyncio
+import uvicorn
 
 from mcp.server import Server
-from mcp.server.stdio import stdio_server
+from mcp.server.sse import SseServerTransport
 from mcp.types import Tool, TextContent, Resource
 from influxdb_client import InfluxDBClient
+from starlette.applications import Starlette
+from starlette.routing import Route, Mount
+from starlette.responses import JSONResponse
 
 # Configuration
 INFLUXDB_URL = os.environ.get("INFLUXDB_URL", "http://localhost:8086")
@@ -837,11 +843,49 @@ from(bucket: "{INFLUXDB_BUCKET}")
     return [TextContent(type="text", text=f"Unknown tool: {name}")]
 
 
-async def main():
+def create_starlette_app():
+    """Create Starlette app with SSE transport for MCP."""
+    sse = SseServerTransport("/messages/")
+
+    async def handle_sse(request):
+        async with sse.connect_sse(
+            request.scope, request.receive, request._send
+        ) as streams:
+            await app.run(
+                streams[0], streams[1], app.create_initialization_options()
+            )
+
+    async def handle_messages(request):
+        await sse.handle_post_message(request.scope, request.receive, request._send)
+
+    async def health_check(request):
+        return JSONResponse({"status": "ok", "service": "building-automation-mcp"})
+
+    starlette_app = Starlette(
+        debug=False,
+        routes=[
+            Route("/health", health_check),
+            Route("/sse", handle_sse),
+            Mount("/messages/", routes=[Route("/", handle_messages, methods=["POST"])]),
+        ],
+    )
+
+    return starlette_app
+
+
+def main():
     """Run the MCP server."""
-    async with stdio_server() as (read_stream, write_stream):
-        await app.run(read_stream, write_stream, app.create_initialization_options())
+    host = os.environ.get("MCP_HOST", "0.0.0.0")
+    port = int(os.environ.get("MCP_PORT", "3001"))
+
+    print(f"Starting Building Automation MCP Server")
+    print(f"  URL: http://{host}:{port}/sse")
+    print(f"  Health: http://{host}:{port}/health")
+    print(f"  InfluxDB: {INFLUXDB_URL}")
+
+    starlette_app = create_starlette_app()
+    uvicorn.run(starlette_app, host=host, port=port, log_level="info")
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
