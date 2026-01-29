@@ -474,6 +474,71 @@ Note: Higher efficiency is better. Typical rotary heat exchangers achieve 70-85%
 - `Jateilma` measures exhaust air *after* the heat recovery unit (post-HRU) and is not suitable for efficiency calculation
 - `Suhteellinen_kosteus` measures relative humidity at the exhaust side of the HRU
 
+## MCP Server for Claude Desktop
+
+An MCP (Model Context Protocol) server is included for integrating with Claude Desktop, enabling natural language queries about building automation data.
+
+### Available Tools
+
+| Tool | Description |
+|------|-------------|
+| `describe_schema` | Get complete data model with all measurements, fields, and units |
+| `list_measurements` | List available measurements (hvac, rooms, ruuvi) |
+| `describe_measurement` | Get details about a specific measurement |
+| `query_data` | Execute custom Flux queries |
+| `get_latest` | Get most recent values for specified fields |
+| `get_statistics` | Get min/max/mean/count for a field over time |
+| `get_time_range` | Get data availability for a measurement |
+| `get_heat_recovery_efficiency` | Calculate HRU efficiency with summary stats |
+| `get_energy_consumption` | Get energy consumption summary |
+| `get_room_temperatures` | Get all room temps and heating demand |
+| `get_air_quality` | Get CO2, PM2.5, VOC, NOx from kitchen sensor |
+| `compare_indoor_outdoor` | Compare indoor vs outdoor temperatures |
+
+### Setup with Docker
+
+1. Build the MCP container:
+   ```bash
+   docker compose build mcp
+   ```
+
+2. Configure Claude Desktop (`~/.config/claude/claude_desktop_config.json` on Linux/Mac or `%APPDATA%\Claude\claude_desktop_config.json` on Windows):
+   ```json
+   {
+     "mcpServers": {
+       "building-automation": {
+         "command": "/path/to/wago-csv-explorer/scripts/mcp-claude-desktop.sh"
+       }
+     }
+   }
+   ```
+
+3. Restart Claude Desktop
+
+### Setup without Docker (Local Python)
+
+1. Configure Claude Desktop:
+   ```json
+   {
+     "mcpServers": {
+       "building-automation": {
+         "command": "/path/to/wago-csv-explorer/scripts/mcp-local.sh"
+       }
+     }
+   }
+   ```
+
+2. The script will automatically create a virtual environment and install dependencies
+
+### Example Queries in Claude Desktop
+
+- "What's the current outdoor temperature?"
+- "Show me the heat recovery efficiency for the last week"
+- "What's the air quality in the kitchen?"
+- "Compare indoor and outdoor temperatures over the last 24 hours"
+- "How much energy has the heat pump consumed this month?"
+- "List all room temperatures and heating demand"
+
 ## File Structure
 
 ```
@@ -481,6 +546,7 @@ wago-csv-explorer/
 ├── docker-compose.yml          # Container orchestration
 ├── Dockerfile.sync             # Sync container image
 ├── Dockerfile.ruuvi            # Ruuvi MQTT subscriber image
+├── Dockerfile.mcp              # MCP server image
 ├── start.sh                    # Quick start script
 ├── data/                       # CSV data files (git-ignored)
 │   ├── Temperatures*.csv       # Room temperature logs
@@ -488,6 +554,9 @@ wago-csv-explorer/
 ├── scripts/
 │   ├── import_data.py          # WAGO CSV data import script
 │   ├── ruuvi_mqtt_subscriber.py # Ruuvi MQTT to InfluxDB
+│   ├── mcp_server.py           # MCP server for Claude Desktop
+│   ├── mcp-claude-desktop.sh   # Docker wrapper for Claude Desktop
+│   ├── mcp-local.sh            # Local Python wrapper for Claude Desktop
 │   ├── sync_and_import.sh      # Remote sync script
 │   └── requirements.txt        # Python dependencies
 ├── ssh/

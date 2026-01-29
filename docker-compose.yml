@@ -94,6 +94,24 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile.mcp
+    container_name: wago-mcp
+    environment:
+      - INFLUXDB_URL=http://influxdb:8086
+      - INFLUXDB_TOKEN=wago-secret-token
+      - INFLUXDB_ORG=wago
+      - INFLUXDB_BUCKET=building_automation
+    depends_on:
+      influxdb:
+        condition: service_healthy
+    stdin_open: true
+    tty: true
+    profiles:
+      - mcp
+
 volumes:
   influxdb-data:
   influxdb-config:

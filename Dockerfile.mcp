@@ -1,0 +1,20 @@
+# MCP Server for Building Automation Analytics
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# Install dependencies
+COPY scripts/requirements.txt /app/
+RUN pip install --no-cache-dir -r requirements.txt mcp
+
+# Copy server script
+COPY scripts/mcp_server.py /app/
+
+# Environment variables (defaults, override in docker-compose)
+ENV INFLUXDB_URL=http://influxdb:8086
+ENV INFLUXDB_TOKEN=wago-secret-token
+ENV INFLUXDB_ORG=wago
+ENV INFLUXDB_BUCKET=building_automation
+
+# Run the MCP server
+CMD ["python", "/app/mcp_server.py"]
