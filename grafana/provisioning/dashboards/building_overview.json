@@ -17,6 +17,18 @@
       "tooltip": "View power and energy consumption details",
       "type": "link",
       "url": "/d/wago-energy/energy-consumption"
+    },
+    {
+      "asDropdown": false,
+      "icon": "dashboard",
+      "includeVars": true,
+      "keepTime": true,
+      "tags": [],
+      "targetBlank": false,
+      "title": "Light Status",
+      "tooltip": "View light switch status by floor",
+      "type": "link",
+      "url": "/d/wago-lights/light-switch-status"
     }
   ],
   "liveNow": false,

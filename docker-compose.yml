@@ -112,6 +112,25 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  lights:
+    build:
+      context: .
+      dockerfile: Dockerfile.lights
+    container_name: wago-lights
+    environment:
+      - LIGHTS_API_URL=http://host.docker.internal:8080/api/lights
+      - POLL_INTERVAL=300
+      - INFLUXDB_URL=http://influxdb:8086
+      - INFLUXDB_TOKEN=wago-secret-token
+      - INFLUXDB_ORG=wago
+      - INFLUXDB_BUCKET=building_automation
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      influxdb:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   influxdb-data:
   influxdb-config:

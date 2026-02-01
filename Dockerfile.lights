@@ -1,0 +1,12 @@
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# Install dependencies
+RUN pip install --no-cache-dir requests influxdb-client
+
+# Copy the polling script
+COPY scripts/lights_poller.py /app/lights_poller.py
+
+# Run the poller
+CMD ["python", "-u", "/app/lights_poller.py"]
