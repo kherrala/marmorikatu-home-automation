@@ -514,7 +514,7 @@
             "type": "influxdb",
             "uid": "influxdb"
           },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvac\")\n  |> filter(fn: (r) => r._field == \"Ulkolampotila\" or r._field == \"Tuloilma_ennen_lammitysta\" or r._field == \"Tuloilma_asetusarvo\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> filter(fn: (r) => exists r.Ulkolampotila and exists r.Tuloilma_ennen_lammitysta and exists r.Tuloilma_asetusarvo)\n  |> filter(fn: (r) => r.Tuloilma_asetusarvo != r.Ulkolampotila)\n  |> map(fn: (r) => ({\n    _time: r._time,\n    _value: (r.Tuloilma_ennen_lammitysta - r.Ulkolampotila) / (r.Tuloilma_asetusarvo - r.Ulkolampotila) * 100.0,\n    _field: \"Hyötysuhde\"\n  }))\n  |> filter(fn: (r) => r._value > 0.0 and r._value <= 100.0)",
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvac\")\n  |> filter(fn: (r) => r._field == \"Ulkolampotila\" or r._field == \"Tuloilma_ennen_lammitysta\" or r._field == \"Tuloilma_asetusarvo\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> filter(fn: (r) => exists r.Ulkolampotila and exists r.Tuloilma_ennen_lammitysta and exists r.Tuloilma_asetusarvo)\n  |> filter(fn: (r) => r.Tuloilma_asetusarvo != r.Ulkolampotila)\n  |> map(fn: (r) => ({\n    _time: r._time,\n    _value: (r.Tuloilma_ennen_lammitysta - r.Ulkolampotila) / (r.Tuloilma_asetusarvo - r.Ulkolampotila) * 100.0,\n    _field: \"Hyötysuhde\"\n  }))\n  |> filter(fn: (r) => r._value > 0.0 and r._value <= 100.0)\n  |> group(columns: [\"_field\"])",
           "refId": "A"
         }
       ]
@@ -610,7 +610,7 @@
             "type": "influxdb",
             "uid": "influxdb"
           },
-          "query": "import \"math\"\nimport \"join\"\n\ntemps = from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvac\")\n  |> filter(fn: (r) => r._field == \"Ulkolampotila\" or r._field == \"Tuloilma_ennen_lammitysta\" or r._field == \"Tuloilma_asetusarvo\")\n  |> map(fn: (r) => ({r with _time: time(v: ((int(v: r._time) / 7200000000000) * 7200000000000))}))\n  |> group(columns: [\"_time\", \"_field\"])\n  |> mean()\n  |> group()\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> filter(fn: (r) => exists r.Ulkolampotila and exists r.Tuloilma_ennen_lammitysta and exists r.Tuloilma_asetusarvo)\n\nhum = from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvac\")\n  |> filter(fn: (r) => r._field == \"Suhteellinen_kosteus\")\n  |> map(fn: (r) => ({r with _time: time(v: ((int(v: r._time) / 7200000000000) * 7200000000000))}))\n  |> group(columns: [\"_time\"])\n  |> mean()\n  |> group()\n  |> keep(columns: [\"_time\", \"_value\"])\n\nruuvi = from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"ruuvi\" and r.sensor_name == \"Ulkolämpötila\")\n  |> filter(fn: (r) => r._field == \"humidity\")\n  |> map(fn: (r) => ({r with _time: time(v: ((int(v: r._time) / 7200000000000) * 7200000000000))}))\n  |> group(columns: [\"_time\"])\n  |> mean()\n  |> group()\n  |> keep(columns: [\"_time\", \"_value\"])\n\nstep1 = join.inner(left: temps, right: hum, on: (l, r) => l._time == r._time, as: (l, r) => ({l with Suhteellinen_kosteus: r._value}))\n\njoin.left(left: step1, right: ruuvi, on: (l, r) => l._time == r._time, as: (l, r) => ({\n    _time: l._time,\n    Ulkolampotila: l.Ulkolampotila,\n    Tuloilma_ennen_lammitysta: l.Tuloilma_ennen_lammitysta,\n    Tuloilma_asetusarvo: l.Tuloilma_asetusarvo,\n    Suhteellinen_kosteus: l.Suhteellinen_kosteus,\n    RH_outdoor: if exists r._value then r._value else 85.0\n  }))\n  |> map(fn: (r) => {\n    psat_out = 610.78 * math.pow(x: 10.0, y: 7.5 * r.Ulkolampotila / (237.3 + r.Ulkolampotila))\n    psat_exh = 610.78 * math.pow(x: 10.0, y: 7.5 * r.Tuloilma_asetusarvo / (237.3 + r.Tuloilma_asetusarvo))\n    w_out = 0.622 * (r.RH_outdoor / 100.0) * psat_out / (101325.0 - (r.RH_outdoor / 100.0) * psat_out)\n    w_exh = 0.622 * (r.Suhteellinen_kosteus / 100.0) * psat_exh / (101325.0 - (r.Suhteellinen_kosteus / 100.0) * psat_exh)\n    h_out = 1.006 * r.Ulkolampotila + w_out * (2501.0 + 1.86 * r.Ulkolampotila)\n    h_sup = 1.006 * r.Tuloilma_ennen_lammitysta + w_out * (2501.0 + 1.86 * r.Tuloilma_ennen_lammitysta)\n    h_exh = 1.006 * r.Tuloilma_asetusarvo + w_exh * (2501.0 + 1.86 * r.Tuloilma_asetusarvo)\n    eta = if h_exh != h_out then (h_sup - h_out) / (h_exh - h_out) * 100.0 else 0.0\n    return {_time: r._time, _value: eta, _field: \"Hyötysuhde\"}\n  })\n  |> filter(fn: (r) => r._value > 0.0 and r._value <= 100.0)",
+          "query": "import \"math\"\nimport \"join\"\n\ntemps = from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvac\")\n  |> filter(fn: (r) => r._field == \"Ulkolampotila\" or r._field == \"Tuloilma_ennen_lammitysta\" or r._field == \"Tuloilma_asetusarvo\")\n  |> map(fn: (r) => ({r with _time: time(v: ((int(v: r._time) / 7200000000000) * 7200000000000))}))\n  |> group(columns: [\"_time\", \"_field\"])\n  |> mean()\n  |> group()\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> filter(fn: (r) => exists r.Ulkolampotila and exists r.Tuloilma_ennen_lammitysta and exists r.Tuloilma_asetusarvo)\n\nhum = from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvac\")\n  |> filter(fn: (r) => r._field == \"Suhteellinen_kosteus\")\n  |> map(fn: (r) => ({r with _time: time(v: ((int(v: r._time) / 7200000000000) * 7200000000000))}))\n  |> group(columns: [\"_time\"])\n  |> mean()\n  |> group()\n  |> keep(columns: [\"_time\", \"_value\"])\n\nruuvi = from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"ruuvi\" and r.sensor_name == \"Ulkolämpötila\")\n  |> filter(fn: (r) => r._field == \"humidity\")\n  |> map(fn: (r) => ({r with _time: time(v: ((int(v: r._time) / 7200000000000) * 7200000000000))}))\n  |> group(columns: [\"_time\"])\n  |> mean()\n  |> group()\n  |> keep(columns: [\"_time\", \"_value\"])\n\nstep1 = join.inner(left: temps, right: hum, on: (l, r) => l._time == r._time, as: (l, r) => ({l with Suhteellinen_kosteus: r._value}))\n\njoin.left(left: step1, right: ruuvi, on: (l, r) => l._time == r._time, as: (l, r) => ({\n    _time: l._time,\n    Ulkolampotila: l.Ulkolampotila,\n    Tuloilma_ennen_lammitysta: l.Tuloilma_ennen_lammitysta,\n    Tuloilma_asetusarvo: l.Tuloilma_asetusarvo,\n    Suhteellinen_kosteus: l.Suhteellinen_kosteus,\n    RH_outdoor: if exists r._value then r._value else 85.0\n  }))\n  |> map(fn: (r) => {\n    psat_out = 610.78 * math.pow(x: 10.0, y: 7.5 * r.Ulkolampotila / (237.3 + r.Ulkolampotila))\n    psat_exh = 610.78 * math.pow(x: 10.0, y: 7.5 * r.Tuloilma_asetusarvo / (237.3 + r.Tuloilma_asetusarvo))\n    w_out = 0.622 * (r.RH_outdoor / 100.0) * psat_out / (101325.0 - (r.RH_outdoor / 100.0) * psat_out)\n    w_exh = 0.622 * (r.Suhteellinen_kosteus / 100.0) * psat_exh / (101325.0 - (r.Suhteellinen_kosteus / 100.0) * psat_exh)\n    h_out = 1.006 * r.Ulkolampotila + w_out * (2501.0 + 1.86 * r.Ulkolampotila)\n    h_sup = 1.006 * r.Tuloilma_ennen_lammitysta + w_out * (2501.0 + 1.86 * r.Tuloilma_ennen_lammitysta)\n    h_exh = 1.006 * r.Tuloilma_asetusarvo + w_exh * (2501.0 + 1.86 * r.Tuloilma_asetusarvo)\n    eta = if h_exh != h_out then (h_sup - h_out) / (h_exh - h_out) * 100.0 else 0.0\n    return {_time: r._time, _value: eta, _field: \"Hyötysuhde\"}\n  })\n  |> filter(fn: (r) => r._value > 0.0 and r._value <= 100.0)\n  |> group(columns: [\"_field\"])",
           "refId": "A"
         }
       ]
@@ -649,7 +649,7 @@
             "spanNulls": 3600000,
             "stacking": {
               "group": "A",
-              "mode": "none"
+              "mode": "normal"
             },
             "thresholdsStyle": {
               "mode": "off"
@@ -668,7 +668,20 @@
           },
           "unit": "kwatt"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "LTO talteen otettu teho" },
+            "properties": [
+              { "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Lämmityspatteri (maapiiri)" },
+            "properties": [
+              { "id": "color", "value": { "fixedColor": "orange", "mode": "fixed" } }
+            ]
+          }
+        ]
       },
       "gridPos": {
         "h": 10,
@@ -689,7 +702,7 @@
           "sort": "desc"
         }
       },
-      "title": "LTO talteen otettu teho",
+      "title": "LTO talteen otettu teho ja lämmityspatteri",
       "type": "timeseries",
       "targets": [
         {
@@ -697,8 +710,16 @@
             "type": "influxdb",
             "uid": "influxdb"
           },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvac\")\n  |> filter(fn: (r) => r._field == \"Ulkolampotila\" or r._field == \"Tuloilma_ennen_lammitysta\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> filter(fn: (r) => exists r.Ulkolampotila and exists r.Tuloilma_ennen_lammitysta)\n  |> map(fn: (r) => ({\n    _time: r._time,\n    _value: 0.1387 * (r.Tuloilma_ennen_lammitysta - r.Ulkolampotila),\n    _field: \"Talteen otettu teho\"\n  }))\n  |> filter(fn: (r) => r._value >= 0.0)",
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvac\")\n  |> filter(fn: (r) => r._field == \"Ulkolampotila\" or r._field == \"Tuloilma_ennen_lammitysta\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> filter(fn: (r) => exists r.Ulkolampotila and exists r.Tuloilma_ennen_lammitysta)\n  |> map(fn: (r) => ({\n    _time: r._time,\n    _value: 0.1387 * (r.Tuloilma_ennen_lammitysta - r.Ulkolampotila),\n    _field: \"LTO talteen otettu teho\"\n  }))\n  |> filter(fn: (r) => r._value >= 0.0)\n  |> group(columns: [\"_field\"])",
           "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvac\")\n  |> filter(fn: (r) => r._field == \"Tuloilma_ennen_lammitysta\" or r._field == \"Tuloilma_jalkeen_lammityksen\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> filter(fn: (r) => exists r.Tuloilma_ennen_lammitysta and exists r.Tuloilma_jalkeen_lammityksen)\n  |> map(fn: (r) => ({\n    _time: r._time,\n    _value: 0.1387 * (r.Tuloilma_jalkeen_lammityksen - r.Tuloilma_ennen_lammitysta),\n    _field: \"Lämmityspatteri (maapiiri)\"\n  }))\n  |> filter(fn: (r) => r._value >= 0.0)\n  |> group(columns: [\"_field\"])",
+          "refId": "B"
         }
       ]
     },
