@@ -25,6 +25,18 @@
       "keepTime": true,
       "tags": [],
       "targetBlank": false,
+      "title": "Ruuvi Sensors",
+      "tooltip": "View Ruuvi Bluetooth sensor data",
+      "type": "link",
+      "url": "/d/ruuvi-sensors/ruuvi-sensors"
+    },
+    {
+      "asDropdown": false,
+      "icon": "dashboard",
+      "includeVars": true,
+      "keepTime": true,
+      "tags": [],
+      "targetBlank": false,
       "title": "Light Status",
       "tooltip": "View light switch status by floor",
       "type": "link",
@@ -92,24 +104,46 @@
         "overrides": [
           {
             "matcher": { "id": "byName", "options": "MH_Seela" },
-            "properties": [{ "id": "displayName", "value": "MH Seela" }]
+            "properties": [
+              { "id": "displayName", "value": "MH Seela" },
+              { "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } }
+            ]
           },
           {
             "matcher": { "id": "byName", "options": "MH_Aarni" },
-            "properties": [{ "id": "displayName", "value": "MH Aarni" }]
+            "properties": [
+              { "id": "displayName", "value": "MH Aarni" },
+              { "id": "color", "value": { "fixedColor": "yellow", "mode": "fixed" } }
+            ]
           },
           {
             "matcher": { "id": "byName", "options": "MH_aikuiset" },
-            "properties": [{ "id": "displayName", "value": "MH aikuiset" }]
+            "properties": [
+              { "id": "displayName", "value": "MH aikuiset" },
+              { "id": "color", "value": { "fixedColor": "orange", "mode": "fixed" } }
+            ]
           },
           {
             "matcher": { "id": "byName", "options": "MH_alakerta" },
-            "properties": [{ "id": "displayName", "value": "MH alakerta" }]
+            "properties": [
+              { "id": "displayName", "value": "MH alakerta" },
+              { "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Ulkolämpötila" },
+            "properties": [
+              { "id": "custom.axisPlacement", "value": "right" },
+              { "id": "custom.axisLabel", "value": "Ulkolämpötila (°C)" },
+              { "id": "color", "value": { "fixedColor": "light-blue", "mode": "fixed" } },
+              { "id": "custom.lineStyle", "value": { "fill": "dash", "dash": [10, 5] } },
+              { "id": "custom.fillOpacity", "value": 0 }
+            ]
           }
         ]
       },
       "gridPos": {
-        "h": 12,
+        "h": 16,
         "w": 12,
         "x": 0,
         "y": 0
@@ -137,6 +171,14 @@
           },
           "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"rooms\")\n  |> filter(fn: (r) => r.room_type == \"bedroom\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])",
           "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvac\")\n  |> filter(fn: (r) => r._field == \"Ulkolampotila\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> map(fn: (r) => ({r with _field: \"Ulkolämpötila\"}))\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])",
+          "refId": "B"
         }
       ]
     },
@@ -199,28 +241,53 @@
         "overrides": [
           {
             "matcher": { "id": "byName", "options": "Ylakerran_aula" },
-            "properties": [{ "id": "displayName", "value": "Yläkerran aula" }]
+            "properties": [
+              { "id": "displayName", "value": "Yläkerran aula" },
+              { "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } }
+            ]
           },
           {
             "matcher": { "id": "byName", "options": "Keittio" },
-            "properties": [{ "id": "displayName", "value": "Keittiö" }]
+            "properties": [
+              { "id": "displayName", "value": "Keittiö" },
+              { "id": "color", "value": { "fixedColor": "yellow", "mode": "fixed" } }
+            ]
           },
           {
             "matcher": { "id": "byName", "options": "Eteinen" },
-            "properties": [{ "id": "displayName", "value": "Eteinen" }]
+            "properties": [
+              { "id": "displayName", "value": "Eteinen" },
+              { "id": "color", "value": { "fixedColor": "orange", "mode": "fixed" } }
+            ]
           },
           {
             "matcher": { "id": "byName", "options": "Keittiö (Ruuvi)" },
-            "properties": [{ "id": "custom.lineStyle", "value": { "fill": "dash", "dash": [10, 5] } }]
+            "properties": [
+              { "id": "custom.lineStyle", "value": { "fill": "dash", "dash": [10, 5] } },
+              { "id": "color", "value": { "fixedColor": "super-light-yellow", "mode": "fixed" } }
+            ]
           },
           {
             "matcher": { "id": "byName", "options": "Olohuone (Ruuvi)" },
-            "properties": [{ "id": "custom.lineStyle", "value": { "fill": "dash", "dash": [10, 5] } }]
+            "properties": [
+              { "id": "custom.lineStyle", "value": { "fill": "dash", "dash": [10, 5] } },
+              { "id": "color", "value": { "fixedColor": "purple", "mode": "fixed" } }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Ulkolämpötila" },
+            "properties": [
+              { "id": "custom.axisPlacement", "value": "right" },
+              { "id": "custom.axisLabel", "value": "Ulkolämpötila (°C)" },
+              { "id": "color", "value": { "fixedColor": "light-blue", "mode": "fixed" } },
+              { "id": "custom.lineStyle", "value": { "fill": "dash", "dash": [10, 5] } },
+              { "id": "custom.fillOpacity", "value": 0 }
+            ]
           }
         ]
       },
       "gridPos": {
-        "h": 12,
+        "h": 16,
         "w": 12,
         "x": 12,
         "y": 0
@@ -256,6 +323,14 @@
           },
           "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"ruuvi\")\n  |> filter(fn: (r) => r._field == \"temperature\")\n  |> filter(fn: (r) => r.sensor_name == \"Keittiö\" or r.sensor_name == \"Olohuone\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> map(fn: (r) => ({r with _field: r.sensor_name + \" (Ruuvi)\"}))\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])",
           "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvac\")\n  |> filter(fn: (r) => r._field == \"Ulkolampotila\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> map(fn: (r) => ({r with _field: \"Ulkolämpötila\"}))\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])",
+          "refId": "C"
         }
       ]
     },
@@ -326,7 +401,7 @@
         "h": 12,
         "w": 12,
         "x": 0,
-        "y": 12
+        "y": 16
       },
       "id": 7,
       "options": {
@@ -430,7 +505,7 @@
         "h": 12,
         "w": 12,
         "x": 12,
-        "y": 12
+        "y": 16
       },
       "id": 14,
       "options": {
@@ -563,7 +638,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 24
+        "y": 28
       },
       "id": 10,
       "options": {
@@ -706,7 +781,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 32
+        "y": 36
       },
       "id": 11,
       "options": {
@@ -754,7 +829,7 @@
     "time_options": ["5m", "15m", "1h", "6h", "12h", "24h", "2d", "7d", "30d"]
   },
   "timezone": "Europe/Helsinki",
-  "title": "Building Automation Overview",
+  "title": "Temperature Overview",
   "uid": "wago-overview",
   "version": 3,
   "weekStart": ""

@@ -13,10 +13,22 @@
       "keepTime": true,
       "tags": [],
       "targetBlank": false,
-      "title": "Building Overview",
-      "tooltip": "Back to main building automation dashboard",
+      "title": "Temperature Overview",
+      "tooltip": "Back to temperature overview dashboard",
       "type": "link",
-      "url": "/d/wago-overview/building-automation-overview"
+      "url": "/d/wago-overview/temperature-overview"
+    },
+    {
+      "asDropdown": false,
+      "icon": "dashboard",
+      "includeVars": true,
+      "keepTime": true,
+      "tags": [],
+      "targetBlank": false,
+      "title": "Ruuvi Sensors",
+      "tooltip": "View Ruuvi Bluetooth sensor data",
+      "type": "link",
+      "url": "/d/ruuvi-sensors/ruuvi-sensors"
     },
     {
       "asDropdown": false,

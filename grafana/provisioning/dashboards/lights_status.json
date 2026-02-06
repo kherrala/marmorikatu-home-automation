@@ -8,15 +8,39 @@
   "links": [
     {
       "asDropdown": false,
-      "icon": "external link",
+      "icon": "home",
       "includeVars": true,
       "keepTime": true,
       "tags": [],
       "targetBlank": false,
-      "title": "Building Overview",
-      "tooltip": "View building automation overview",
+      "title": "Temperature Overview",
+      "tooltip": "View temperature overview dashboard",
       "type": "link",
-      "url": "/d/wago-overview/building-automation-overview"
+      "url": "/d/wago-overview/temperature-overview"
+    },
+    {
+      "asDropdown": false,
+      "icon": "dashboard",
+      "includeVars": true,
+      "keepTime": true,
+      "tags": [],
+      "targetBlank": false,
+      "title": "HVAC",
+      "tooltip": "View HVAC ventilation dashboard",
+      "type": "link",
+      "url": "/d/wago-hvac/hvac"
+    },
+    {
+      "asDropdown": false,
+      "icon": "dashboard",
+      "includeVars": true,
+      "keepTime": true,
+      "tags": [],
+      "targetBlank": false,
+      "title": "Ruuvi Sensors",
+      "tooltip": "View Ruuvi Bluetooth sensor data",
+      "type": "link",
+      "url": "/d/ruuvi-sensors/ruuvi-sensors"
     }
   ],
   "liveNow": false,

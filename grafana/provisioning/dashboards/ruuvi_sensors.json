@@ -5,7 +5,44 @@
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
-  "links": [],
+  "links": [
+    {
+      "asDropdown": false,
+      "icon": "home",
+      "includeVars": true,
+      "keepTime": true,
+      "tags": [],
+      "targetBlank": false,
+      "title": "Temperature Overview",
+      "tooltip": "View temperature overview dashboard",
+      "type": "link",
+      "url": "/d/wago-overview/temperature-overview"
+    },
+    {
+      "asDropdown": false,
+      "icon": "dashboard",
+      "includeVars": true,
+      "keepTime": true,
+      "tags": [],
+      "targetBlank": false,
+      "title": "HVAC",
+      "tooltip": "View HVAC ventilation dashboard",
+      "type": "link",
+      "url": "/d/wago-hvac/hvac"
+    },
+    {
+      "asDropdown": false,
+      "icon": "dashboard",
+      "includeVars": true,
+      "keepTime": true,
+      "tags": [],
+      "targetBlank": false,
+      "title": "Light Status",
+      "tooltip": "View light switch status by floor",
+      "type": "link",
+      "url": "/d/wago-lights/light-switch-status"
+    }
+  ],
   "liveNow": false,
   "panels": [
     {
