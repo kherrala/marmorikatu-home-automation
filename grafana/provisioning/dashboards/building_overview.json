@@ -18,6 +18,7 @@
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
+  "id": 1,
   "links": [
     {
       "asDropdown": false,
@@ -56,7 +57,6 @@
       "url": "/d/wago-lights/light-switch-status"
     }
   ],
-  "liveNow": false,
   "panels": [
     {
       "datasource": {
@@ -72,7 +72,7 @@
             "steps": [
               {
                 "color": "green",
-                "value": null
+                "value": 0
               },
               {
                 "color": "red",
@@ -82,10 +82,47 @@
           },
           "unit": "celsius"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*_heat$"
+            },
+            "properties": [
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "rgba(100,116,139,0.6)",
+                      "value": 0
+                    },
+                    {
+                      "color": "rgba(249,115,22,0.7)",
+                      "value": 1
+                    },
+                    {
+                      "color": "rgba(239,68,68,0.7)",
+                      "value": 80
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
-        "h": 15,
+        "h": 16,
         "w": 12,
         "x": 0,
         "y": 0
@@ -93,6 +130,7 @@
       "id": 16,
       "options": {
         "inlineEditing": false,
+        "panZoom": false,
         "root": {
           "background": {
             "color": {
@@ -144,8 +182,8 @@
               "name": "Sauna label",
               "placement": {
                 "height": 18,
-                "left": 40,
-                "top": 62,
+                "left": 30,
+                "top": 32,
                 "width": 90
               },
               "type": "metric-value"
@@ -181,8 +219,8 @@
               "name": "Sauna",
               "placement": {
                 "height": 25,
-                "left": 40,
-                "top": 80,
+                "left": 30,
+                "top": 50,
                 "width": 90
               },
               "type": "metric-value"
@@ -218,8 +256,8 @@
               "name": "Sauna age",
               "placement": {
                 "height": 16,
-                "left": 40,
-                "top": 105,
+                "left": 30,
+                "top": 75,
                 "width": 90
               },
               "type": "metric-value"
@@ -255,7 +293,7 @@
               "placement": {
                 "height": 18,
                 "left": 400,
-                "top": 222,
+                "top": 182,
                 "width": 90
               },
               "type": "metric-value"
@@ -292,7 +330,7 @@
               "placement": {
                 "height": 25,
                 "left": 400,
-                "top": 240,
+                "top": 200,
                 "width": 90
               },
               "type": "metric-value"
@@ -329,7 +367,7 @@
               "placement": {
                 "height": 16,
                 "left": 400,
-                "top": 265,
+                "top": 225,
                 "width": 90
               },
               "type": "metric-value"
@@ -365,7 +403,7 @@
               "placement": {
                 "height": 18,
                 "left": 600,
-                "top": 102,
+                "top": 82,
                 "width": 90
               },
               "type": "metric-value"
@@ -402,7 +440,7 @@
               "placement": {
                 "height": 25,
                 "left": 600,
-                "top": 120,
+                "top": 100,
                 "width": 90
               },
               "type": "metric-value"
@@ -439,7 +477,7 @@
               "placement": {
                 "height": 16,
                 "left": 600,
-                "top": 145,
+                "top": 125,
                 "width": 90
               },
               "type": "metric-value"
@@ -475,7 +513,7 @@
               "placement": {
                 "height": 18,
                 "left": 240,
-                "top": 182,
+                "top": 162,
                 "width": 90
               },
               "type": "metric-value"
@@ -512,7 +550,7 @@
               "placement": {
                 "height": 25,
                 "left": 240,
-                "top": 200,
+                "top": 180,
                 "width": 90
               },
               "type": "metric-value"
@@ -549,7 +587,7 @@
               "placement": {
                 "height": 16,
                 "left": 240,
-                "top": 225,
+                "top": 205,
                 "width": 90
               },
               "type": "metric-value"
@@ -584,8 +622,8 @@
               "name": "Takka label",
               "placement": {
                 "height": 18,
-                "left": 470,
-                "top": 102,
+                "left": 460,
+                "top": 82,
                 "width": 90
               },
               "type": "metric-value"
@@ -621,8 +659,8 @@
               "name": "Takka",
               "placement": {
                 "height": 25,
-                "left": 470,
-                "top": 120,
+                "left": 460,
+                "top": 100,
                 "width": 90
               },
               "type": "metric-value"
@@ -658,8 +696,8 @@
               "name": "Takka age",
               "placement": {
                 "height": 16,
-                "left": 470,
-                "top": 145,
+                "left": 460,
+                "top": 125,
                 "width": 90
               },
               "type": "metric-value"
@@ -804,8 +842,8 @@
               "name": "Ulkolämpötila label",
               "placement": {
                 "height": 18,
-                "left": 600,
-                "top": 222,
+                "left": 620,
+                "top": 372,
                 "width": 100
               },
               "type": "metric-value"
@@ -841,8 +879,8 @@
               "name": "Ulkolämpötila",
               "placement": {
                 "height": 25,
-                "left": 600,
-                "top": 240,
+                "left": 620,
+                "top": 390,
                 "width": 100
               },
               "type": "metric-value"
@@ -878,9 +916,123 @@
               "name": "Ulkolämpötila age",
               "placement": {
                 "height": 16,
-                "left": 600,
-                "top": 265,
+                "left": 620,
+                "top": 415,
                 "width": 100
+              },
+              "type": "metric-value"
+            },
+            {
+              "background": {
+                "color": {
+                  "field": "Eteinen_heat",
+                  "mode": "field"
+                }
+              },
+              "border": {
+                "color": {
+                  "fixed": "transparent"
+                }
+              },
+              "config": {
+                "align": "center",
+                "color": {
+                  "fixed": "#ffffff"
+                },
+                "size": 10,
+                "text": {
+                  "field": "Eteinen_heat",
+                  "fixed": "",
+                  "mode": "field"
+                },
+                "valign": "middle"
+              },
+              "constraint": {
+                "horizontal": "left",
+                "vertical": "top"
+              },
+              "name": "Eteinen heat",
+              "placement": {
+                "height": 16,
+                "left": 240,
+                "top": 221,
+                "width": 90
+              },
+              "type": "metric-value"
+            },
+            {
+              "background": {
+                "color": {
+                  "field": "Keittio_heat",
+                  "mode": "field"
+                }
+              },
+              "border": {
+                "color": {
+                  "fixed": "transparent"
+                }
+              },
+              "config": {
+                "align": "center",
+                "color": {
+                  "fixed": "#ffffff"
+                },
+                "size": 10,
+                "text": {
+                  "field": "Keittio_heat",
+                  "fixed": "",
+                  "mode": "field"
+                },
+                "valign": "middle"
+              },
+              "constraint": {
+                "horizontal": "left",
+                "vertical": "top"
+              },
+              "name": "Keittiö heat",
+              "placement": {
+                "height": 16,
+                "left": 400,
+                "top": 241,
+                "width": 90
+              },
+              "type": "metric-value"
+            },
+            {
+              "background": {
+                "color": {
+                  "field": "MH_alakerta_heat",
+                  "mode": "field"
+                }
+              },
+              "border": {
+                "color": {
+                  "fixed": "transparent"
+                }
+              },
+              "config": {
+                "align": "center",
+                "color": {
+                  "fixed": "#ffffff"
+                },
+                "size": 10,
+                "text": {
+                  "field": "MH_alakerta_heat",
+                  "fixed": "",
+                  "mode": "field"
+                },
+                "valign": "middle"
+              },
+              "constraint": {
+                "horizontal": "left",
+                "vertical": "top"
+              },
+              "name": "MH alakerta heat",
+              "placement": {
+                "height": 16,
+                "left": 60,
+                "top": 281,
+                "width": 90
               },
               "type": "metric-value"
             }
@@ -894,9 +1046,14 @@
           },
           "type": "frame"
         },
-        "showAdvancedTypes": true
+        "showAdvancedTypes": true,
+        "tooltip": {
+          "disableForOneClick": false,
+          "mode": "single"
+        },
+        "zoomToContent": false
       },
-      "pluginVersion": "10.2.0",
+      "pluginVersion": "12.3.2",
       "targets": [
         {
           "datasource": {
@@ -929,6 +1086,14 @@
           },
           "query": "from(bucket: \"building_automation\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"ruuvi\")\n  |> filter(fn: (r) => r._field == \"temperature\")\n  |> filter(fn: (r) => r.sensor_name == \"Olohuone\" or r.sensor_name == \"Takka\" or r.sensor_name == \"Sauna\" or r.sensor_name == \"Ulkolämpötila\")\n  |> last()\n  |> map(fn: (r) => {\n      age_s = (int(v: now()) - int(v: r._time)) / 1000000000\n      return {\n        _time: now(),\n        _field: r.sensor_name + \"_age\",\n        _value: if age_s < 120 then string(v: age_s) + \"s ago\"\n                else if age_s < 7200 then string(v: age_s / 60) + \"m ago\"\n                else if age_s < 172800 then string(v: age_s / 3600) + \"h ago\"\n                else string(v: age_s / 86400) + \"d ago\"\n      }\n  })\n  |> group()\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")",
           "refId": "D"
+        },
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
+          "query": "import \"strings\"\n\nfrom(bucket: \"building_automation\")\n  |> range(start: -24h)\n  |> filter(fn: (r) => r._measurement == \"rooms\")\n  |> filter(fn: (r) => r.room_type == \"pid\")\n  |> filter(fn: (r) => r.floor == \"1\")\n  |> last()\n  |> map(fn: (r) => ({r with\n      _field: strings.trimSuffix(v: r._field, suffix: \"_PID\") + \"_heat\",\n      _time: now()\n  }))\n  |> group()\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")",
+          "refId": "E"
         }
       ],
       "title": "1. kerros",
@@ -951,6 +1116,7 @@
             "axisLabel": "Lämpötila (°C)",
             "axisPlacement": "auto",
             "barAlignment": 0,
+            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 10,
             "gradientMode": "none",
@@ -967,6 +1133,7 @@
               "type": "linear"
             },
             "showPoints": "never",
+            "showValues": false,
             "spanNulls": 3600000,
             "stacking": {
               "group": "A",
@@ -982,7 +1149,7 @@
             "steps": [
               {
                 "color": "transparent",
-                "value": null
+                "value": 0
               },
               {
                 "color": "rgba(150, 150, 150, 0.5)",
@@ -1159,10 +1326,12 @@
           "showLegend": true
         },
         "tooltip": {
+          "hideZeros": false,
           "mode": "multi",
           "sort": "desc"
         }
       },
+      "pluginVersion": "12.3.2",
       "targets": [
         {
           "datasource": {
@@ -1199,230 +1368,6 @@
       },
       "fieldConfig": {
         "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "custom": {
-            "fillOpacity": 80,
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineWidth": 0,
-            "spanNulls": false
-          },
-          "mappings": [
-            {
-              "options": {
-                "from": 0,
-                "result": {
-                  "color": "blue",
-                  "index": 0,
-                  "text": "Pois"
-                },
-                "to": 1
-              },
-              "type": "range"
-            },
-            {
-              "options": {
-                "from": 1,
-                "result": {
-                  "color": "yellow",
-                  "index": 1,
-                  "text": "Osittain"
-                },
-                "to": 99
-              },
-              "type": "range"
-            },
-            {
-              "options": {
-                "from": 99,
-                "result": {
-                  "color": "red",
-                  "index": 2,
-                  "text": "Täysi"
-                },
-                "to": 101
-              },
-              "type": "range"
-            }
-          ],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 1
-              },
-              {
-                "color": "red",
-                "value": 99
-              }
-            ]
-          },
-          "unit": "percent"
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "MH_Seela_PID"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "MH Seela"
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "MH_Aarni_PID"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "MH Aarni"
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "MH_aikuiset_PID"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "MH aikuiset"
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "MH_alakerta_PID"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "MH alakerta"
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Ylakerran_aula_PID"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Yläkerran aula"
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Keittio_PID"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Keittiö"
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Eteinen_PID"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Eteinen"
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Kellari_PID"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Kellari"
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Kellari_eteinen_PID"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Kellarin eteinen"
-              }
-            ]
-          }
-        ]
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 24,
-        "x": 0,
-        "y": 16
-      },
-      "id": 11,
-      "options": {
-        "alignValue": "center",
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "mergeValues": true,
-        "rowHeight": 0.8,
-        "showValue": "auto",
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "influxdb"
-          },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"rooms\")\n  |> filter(fn: (r) => r.room_type == \"pid\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])",
-          "refId": "A"
-        }
-      ],
-      "title": "Lämmityksen tila huoneittain",
-      "type": "state-timeline"
-    },
-    {
-      "datasource": {
-        "type": "influxdb",
-        "uid": "influxdb"
-      },
-      "fieldConfig": {
-        "defaults": {
           "decimals": 1,
           "mappings": [],
           "thresholds": {
@@ -1430,7 +1375,7 @@
             "steps": [
               {
                 "color": "green",
-                "value": null
+                "value": 0
               },
               {
                 "color": "red",
@@ -1440,17 +1385,55 @@
           },
           "unit": "celsius"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*_heat$"
+            },
+            "properties": [
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "rgba(100,116,139,0.6)",
+                      "value": 0
+                    },
+                    {
+                      "color": "rgba(249,115,22,0.7)",
+                      "value": 1
+                    },
+                    {
+                      "color": "rgba(239,68,68,0.7)",
+                      "value": 80
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
         "h": 16,
         "w": 12,
         "x": 0,
-        "y": 24
+        "y": 16
       },
       "id": 15,
       "options": {
         "inlineEditing": false,
+        "panZoom": false,
         "root": {
           "background": {
             "color": {
@@ -1911,6 +1894,158 @@
                 "width": 90
               },
               "type": "metric-value"
+            },
+            {
+              "background": {
+                "color": {
+                  "field": "MH_aikuiset_heat",
+                  "mode": "field"
+                }
+              },
+              "border": {
+                "color": {
+                  "fixed": "transparent"
+                }
+              },
+              "config": {
+                "align": "center",
+                "color": {
+                  "fixed": "#ffffff"
+                },
+                "size": 10,
+                "text": {
+                  "field": "MH_aikuiset_heat",
+                  "fixed": "",
+                  "mode": "field"
+                },
+                "valign": "middle"
+              },
+              "constraint": {
+                "horizontal": "left",
+                "vertical": "top"
+              },
+              "name": "MH aikuiset heat",
+              "placement": {
+                "height": 16,
+                "left": 195,
+                "top": 191,
+                "width": 90
+              },
+              "type": "metric-value"
+            },
+            {
+              "background": {
+                "color": {
+                  "field": "Ylakerran_aula_heat",
+                  "mode": "field"
+                }
+              },
+              "border": {
+                "color": {
+                  "fixed": "transparent"
+                }
+              },
+              "config": {
+                "align": "center",
+                "color": {
+                  "fixed": "#ffffff"
+                },
+                "size": 10,
+                "text": {
+                  "field": "Ylakerran_aula_heat",
+                  "fixed": "",
+                  "mode": "field"
+                },
+                "valign": "middle"
+              },
+              "constraint": {
+                "horizontal": "left",
+                "vertical": "top"
+              },
+              "name": "Aula heat",
+              "placement": {
+                "height": 16,
+                "left": 370,
+                "top": 401,
+                "width": 90
+              },
+              "type": "metric-value"
+            },
+            {
+              "background": {
+                "color": {
+                  "field": "MH_Aarni_heat",
+                  "mode": "field"
+                }
+              },
+              "border": {
+                "color": {
+                  "fixed": "transparent"
+                }
+              },
+              "config": {
+                "align": "center",
+                "color": {
+                  "fixed": "#ffffff"
+                },
+                "size": 10,
+                "text": {
+                  "field": "MH_Aarni_heat",
+                  "fixed": "",
+                  "mode": "field"
+                },
+                "valign": "middle"
+              },
+              "constraint": {
+                "horizontal": "left",
+                "vertical": "top"
+              },
+              "name": "MH Aarni heat",
+              "placement": {
+                "height": 16,
+                "left": 165,
+                "top": 401,
+                "width": 90
+              },
+              "type": "metric-value"
+            },
+            {
+              "background": {
+                "color": {
+                  "field": "MH_Seela_heat",
+                  "mode": "field"
+                }
+              },
+              "border": {
+                "color": {
+                  "fixed": "transparent"
+                }
+              },
+              "config": {
+                "align": "center",
+                "color": {
+                  "fixed": "#ffffff"
+                },
+                "size": 10,
+                "text": {
+                  "field": "MH_Seela_heat",
+                  "fixed": "",
+                  "mode": "field"
+                },
+                "valign": "middle"
+              },
+              "constraint": {
+                "horizontal": "left",
+                "vertical": "top"
+              },
+              "name": "MH Seela heat",
+              "placement": {
+                "height": 16,
+                "left": 600,
+                "top": 401,
+                "width": 90
+              },
+              "type": "metric-value"
             }
           ],
           "name": "root",
@@ -1922,9 +2057,14 @@
           },
           "type": "frame"
         },
-        "showAdvancedTypes": true
+        "showAdvancedTypes": true,
+        "tooltip": {
+          "disableForOneClick": false,
+          "mode": "single"
+        },
+        "zoomToContent": false
       },
-      "pluginVersion": "10.2.0",
+      "pluginVersion": "12.3.2",
       "targets": [
         {
           "datasource": {
@@ -1941,6 +2081,14 @@
           },
           "query": "from(bucket: \"building_automation\")\n  |> range(start: -24h)\n  |> filter(fn: (r) => r._measurement == \"rooms\")\n  |> filter(fn: (r) => r.room_type != \"pid\")\n  |> filter(fn: (r) => r.floor == \"2\")\n  |> last()\n  |> map(fn: (r) => {\n      age_s = (int(v: now()) - int(v: r._time)) / 1000000000\n      return {\n        _time: now(),\n        _field: r._field + \"_age\",\n        _value: if age_s < 120 then string(v: age_s) + \"s ago\"\n                else if age_s < 7200 then string(v: age_s / 60) + \"m ago\"\n                else if age_s < 172800 then string(v: age_s / 3600) + \"h ago\"\n                else string(v: age_s / 86400) + \"d ago\"\n      }\n  })\n  |> group()\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")",
           "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
+          "query": "import \"strings\"\n\nfrom(bucket: \"building_automation\")\n  |> range(start: -24h)\n  |> filter(fn: (r) => r._measurement == \"rooms\")\n  |> filter(fn: (r) => r.room_type == \"pid\")\n  |> filter(fn: (r) => r.floor == \"2\")\n  |> last()\n  |> map(fn: (r) => ({r with\n      _field: strings.trimSuffix(v: r._field, suffix: \"_PID\") + \"_heat\",\n      _time: now()\n  }))\n  |> group()\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")",
+          "refId": "C"
         }
       ],
       "title": "2. kerros",
@@ -1963,6 +2111,7 @@
             "axisLabel": "Lämpötila (°C)",
             "axisPlacement": "auto",
             "barAlignment": 0,
+            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 10,
             "gradientMode": "none",
@@ -1979,6 +2128,7 @@
               "type": "linear"
             },
             "showPoints": "never",
+            "showValues": false,
             "spanNulls": 3600000,
             "stacking": {
               "group": "A",
@@ -1994,7 +2144,7 @@
             "steps": [
               {
                 "color": "transparent",
-                "value": null
+                "value": 0
               },
               {
                 "color": "rgba(150, 150, 150, 0.5)",
@@ -2124,7 +2274,7 @@
         "h": 16,
         "w": 12,
         "x": 12,
-        "y": 24
+        "y": 16
       },
       "id": 5,
       "options": {
@@ -2140,10 +2290,12 @@
           "showLegend": true
         },
         "tooltip": {
+          "hideZeros": false,
           "mode": "multi",
           "sort": "desc"
         }
       },
+      "pluginVersion": "12.3.2",
       "targets": [
         {
           "datasource": {
@@ -2173,6 +2325,233 @@
       "fieldConfig": {
         "defaults": {
           "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "axisPlacement": "auto",
+            "fillOpacity": 80,
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineWidth": 0,
+            "spanNulls": false
+          },
+          "mappings": [
+            {
+              "options": {
+                "from": 0,
+                "result": {
+                  "color": "blue",
+                  "index": 0,
+                  "text": "Pois"
+                },
+                "to": 1
+              },
+              "type": "range"
+            },
+            {
+              "options": {
+                "from": 1,
+                "result": {
+                  "color": "yellow",
+                  "index": 1,
+                  "text": "Osittain"
+                },
+                "to": 99
+              },
+              "type": "range"
+            },
+            {
+              "options": {
+                "from": 99,
+                "result": {
+                  "color": "red",
+                  "index": 2,
+                  "text": "Täysi"
+                },
+                "to": 101
+              },
+              "type": "range"
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": 0
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 99
+              }
+            ]
+          },
+          "unit": "percent"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "MH_Seela_PID"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "MH Seela"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "MH_Aarni_PID"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "MH Aarni"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "MH_aikuiset_PID"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "MH aikuiset"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "MH_alakerta_PID"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "MH alakerta"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Ylakerran_aula_PID"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Yläkerran aula"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Keittio_PID"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Keittiö"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Eteinen_PID"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Eteinen"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Kellari_PID"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Kellari"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Kellari_eteinen_PID"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Kellarin eteinen"
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 32
+      },
+      "id": 11,
+      "options": {
+        "alignValue": "center",
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "mergeValues": true,
+        "rowHeight": 0.8,
+        "showValue": "auto",
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "12.3.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"rooms\")\n  |> filter(fn: (r) => r.room_type == \"pid\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])",
+          "refId": "A"
+        }
+      ],
+      "title": "Lämmityksen tila huoneittain",
+      "type": "state-timeline"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
             "mode": "palette-classic"
           },
           "custom": {
@@ -2182,6 +2561,7 @@
             "axisLabel": "Lämpötila (°C)",
             "axisPlacement": "auto",
             "barAlignment": 0,
+            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 10,
             "gradientMode": "none",
@@ -2198,6 +2578,7 @@
               "type": "linear"
             },
             "showPoints": "never",
+            "showValues": false,
             "spanNulls": 3600000,
             "stacking": {
               "group": "A",
@@ -2213,7 +2594,7 @@
             "steps": [
               {
                 "color": "green",
-                "value": null
+                "value": 0
               }
             ]
           },
@@ -2250,7 +2631,7 @@
         "h": 12,
         "w": 12,
         "x": 0,
-        "y": 40
+        "y": 42
       },
       "id": 7,
       "options": {
@@ -2266,10 +2647,12 @@
           "showLegend": true
         },
         "tooltip": {
+          "hideZeros": false,
           "mode": "multi",
           "sort": "desc"
         }
       },
+      "pluginVersion": "12.3.2",
       "targets": [
         {
           "datasource": {
@@ -2300,6 +2683,7 @@
             "axisLabel": "Lämpötila (°C)",
             "axisPlacement": "auto",
             "barAlignment": 0,
+            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 10,
             "gradientMode": "none",
@@ -2316,6 +2700,7 @@
               "type": "linear"
             },
             "showPoints": "never",
+            "showValues": false,
             "spanNulls": 3600000,
             "stacking": {
               "group": "A",
@@ -2331,7 +2716,7 @@
             "steps": [
               {
                 "color": "green",
-                "value": null
+                "value": 0
               }
             ]
           },
@@ -2400,7 +2785,7 @@
         "h": 12,
         "w": 12,
         "x": 12,
-        "y": 40
+        "y": 42
       },
       "id": 14,
       "options": {
@@ -2416,10 +2801,12 @@
           "showLegend": true
         },
         "tooltip": {
+          "hideZeros": false,
           "mode": "multi",
           "sort": "desc"
         }
       },
+      "pluginVersion": "12.3.2",
       "targets": [
         {
           "datasource": {
@@ -2450,6 +2837,7 @@
             "axisLabel": "PID summa (%)",
             "axisPlacement": "auto",
             "barAlignment": 0,
+            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 20,
             "gradientMode": "opacity",
@@ -2466,6 +2854,7 @@
               "type": "linear"
             },
             "showPoints": "never",
+            "showValues": false,
             "spanNulls": 3600000,
             "stacking": {
               "group": "A",
@@ -2482,7 +2871,7 @@
             "steps": [
               {
                 "color": "green",
-                "value": null
+                "value": 0
               }
             ]
           },
@@ -2540,7 +2929,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 52
+        "y": 54
       },
       "id": 10,
       "options": {
@@ -2556,10 +2945,12 @@
           "showLegend": true
         },
         "tooltip": {
+          "hideZeros": false,
           "mode": "multi",
           "sort": "desc"
         }
       },
+      "pluginVersion": "12.3.2",
       "targets": [
         {
           "datasource": {
@@ -2574,8 +2965,9 @@
       "type": "timeseries"
     }
   ],
-  "refresh": "1s",
-  "schemaVersion": 38,
+  "preload": false,
+  "refresh": "5s",
+  "schemaVersion": 42,
   "tags": [
     "building-automation",
     "wago"
@@ -2589,7 +2981,6 @@
   },
   "timepicker": {
     "refresh_intervals": [
-      "1s",
       "5s",
       "10s",
       "30s",
@@ -2598,22 +2989,10 @@
       "15m",
       "30m",
       "1h"
-    ],
-    "time_options": [
-      "5m",
-      "15m",
-      "1h",
-      "6h",
-      "12h",
-      "24h",
-      "3d",
-      "7d",
-      "30d"
     ]
   },
   "timezone": "Europe/Helsinki",
   "title": "Temperature Overview",
   "uid": "wago-overview",
-  "version": 150,
-  "weekStart": ""
+  "version": 188
 }
