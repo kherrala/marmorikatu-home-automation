@@ -23,14 +23,14 @@ services:
       retries: 5
 
   grafana:
-    image: grafana/grafana:10.2.0
+    image: grafana/grafana:12.3.2
     container_name: wago-grafana
     ports:
       - "3000:3000"
     volumes:
       - grafana-data:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning
-      - ./floorplan:/usr/share/grafana/public/img/floorplan:ro
+      - ./floorplan:/usr/share/grafana/public/build/img/floorplan:ro
     environment:
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=admin
@@ -44,6 +44,8 @@ services:
       - GF_DATE_FORMATS_INTERVAL_DAY=DD/MM
       - GF_DATE_FORMATS_INTERVAL_MONTH=MM/YYYY
       - GF_DATE_FORMATS_INTERVAL_YEAR=YYYY
+      # Set Temperature Overview as default home dashboard
+      - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/etc/grafana/provisioning/dashboards/building_overview.json
     depends_on:
       influxdb:
         condition: service_healthy

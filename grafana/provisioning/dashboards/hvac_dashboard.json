@@ -5,6 +5,7 @@
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
+  "id": 7,
   "links": [
     {
       "asDropdown": false,
@@ -43,7 +44,6 @@
       "url": "/d/wago-lights/light-switch-status"
     }
   ],
-  "liveNow": false,
   "panels": [
     {
       "datasource": {
@@ -56,401 +56,13 @@
             "mode": "palette-classic"
           },
           "custom": {
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "Lämpötila (°C)",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 10,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "lineInterpolation": "smooth",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "never",
-            "spanNulls": 3600000,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          },
-          "unit": "celsius"
-        },
-        "overrides": [
-          {
-            "matcher": { "id": "byName", "options": "Ulkolampotila" },
-            "properties": [{ "id": "displayName", "value": "Ulkolämpötila" }]
-          },
-          {
-            "matcher": { "id": "byName", "options": "Jateilma" },
-            "properties": [{ "id": "displayName", "value": "Jäteilma" }]
-          },
-          {
-            "matcher": { "id": "byName", "options": "Tuloilma_ennen_lammitysta" },
-            "properties": [{ "id": "displayName", "value": "Tuloilma (ennen lämmitystä)" }]
-          }
-        ]
-      },
-      "gridPos": {
-        "h": 10,
-        "w": 12,
-        "x": 0,
-        "y": 0
-      },
-      "id": 1,
-      "options": {
-        "legend": {
-          "calcs": ["mean", "min", "max", "last"],
-          "displayMode": "table",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "title": "IVK Ulko- ja jäteilma",
-      "type": "timeseries",
-      "targets": [
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "influxdb"
-          },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvac\")\n  |> filter(fn: (r) => r.sensor_group == \"ivk_temp\")\n  |> filter(fn: (r) => r._field == \"Ulkolampotila\" or r._field == \"Jateilma\" or r._field == \"Tuloilma_ennen_lammitysta\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "datasource": {
-        "type": "influxdb",
-        "uid": "influxdb"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "Lämpötila (°C)",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 10,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "lineInterpolation": "smooth",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "never",
-            "spanNulls": 3600000,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "dashed"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "transparent",
-                "value": null
-              },
-              {
-                "color": "rgba(150, 150, 150, 0.5)",
-                "value": 22
-              }
-            ]
-          },
-          "unit": "celsius"
-        },
-        "overrides": [
-          {
-            "matcher": { "id": "byName", "options": "Tuloilma_asetusarvo" },
-            "properties": [{ "id": "displayName", "value": "Poistoilma" }]
-          },
-          {
-            "matcher": { "id": "byName", "options": "Tuloilma_jalkeen_jaahdytyksen" },
-            "properties": [{ "id": "displayName", "value": "Tuloilma (jäähdytetty)" }]
-          },
-          {
-            "matcher": { "id": "byName", "options": "Tuloilma_jalkeen_lammityksen" },
-            "properties": [{ "id": "displayName", "value": "Tuloilma (lämmitetty)" }]
-          }
-        ]
-      },
-      "gridPos": {
-        "h": 10,
-        "w": 12,
-        "x": 12,
-        "y": 0
-      },
-      "id": 2,
-      "options": {
-        "legend": {
-          "calcs": ["mean", "min", "max", "last"],
-          "displayMode": "table",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "title": "IVK Tuloilma ja asetusarvot",
-      "type": "timeseries",
-      "targets": [
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "influxdb"
-          },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvac\")\n  |> filter(fn: (r) => r.sensor_group == \"ivk_temp\")\n  |> filter(fn: (r) => r._field != \"Ulkolampotila\" and r._field != \"Jateilma\" and r._field != \"Tuloilma_ennen_lammitysta\" and r._field != \"RH_lampotila\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "datasource": {
-        "type": "influxdb",
-        "uid": "influxdb"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "Kosteus (%)",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 10,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "lineInterpolation": "smooth",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "never",
-            "spanNulls": 3600000,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "max": 100,
-          "min": 0,
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          },
-          "unit": "percent"
-        },
-        "overrides": [
-          {
-            "matcher": { "id": "byName", "options": "Suhteellinen_kosteus" },
-            "properties": [{ "id": "displayName", "value": "Suhteellinen kosteus" }]
-          }
-        ]
-      },
-      "gridPos": {
-        "h": 10,
-        "w": 12,
-        "x": 0,
-        "y": 10
-      },
-      "id": 3,
-      "options": {
-        "legend": {
-          "calcs": ["mean", "min", "max", "last"],
-          "displayMode": "table",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "title": "Suhteellinen kosteus",
-      "type": "timeseries",
-      "targets": [
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "influxdb"
-          },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvac\")\n  |> filter(fn: (r) => r._field == \"Suhteellinen_kosteus\")\n  |> filter(fn: (r) => r._value > 0 and r._value <= 100)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "datasource": {
-        "type": "influxdb",
-        "uid": "influxdb"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "Lämpötila (°C)",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 10,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "lineInterpolation": "smooth",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "never",
-            "spanNulls": 3600000,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          },
-          "unit": "celsius"
-        },
-        "overrides": [
-          {
-            "matcher": { "id": "byName", "options": "RH_lampotila" },
-            "properties": [{ "id": "displayName", "value": "RH lämpötila" }]
-          },
-          {
-            "matcher": { "id": "byName", "options": "Kastepiste" },
-            "properties": [{ "id": "displayName", "value": "Kastepiste" }]
-          }
-        ]
-      },
-      "gridPos": {
-        "h": 10,
-        "w": 12,
-        "x": 12,
-        "y": 10
-      },
-      "id": 4,
-      "options": {
-        "legend": {
-          "calcs": ["mean", "min", "max", "last"],
-          "displayMode": "table",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "title": "RH lämpötila ja kastepiste",
-      "type": "timeseries",
-      "targets": [
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "influxdb"
-          },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvac\")\n  |> filter(fn: (r) => r._field == \"RH_lampotila\" or r._field == \"Kastepiste\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "datasource": {
-        "type": "influxdb",
-        "uid": "influxdb"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
+            "axisBorderShow": false,
             "axisCenteredZero": false,
             "axisColorMode": "text",
             "axisLabel": "Hyötysuhde (%)",
             "axisPlacement": "auto",
             "barAlignment": 0,
+            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 20,
             "gradientMode": "opacity",
@@ -459,6 +71,7 @@
               "tooltip": false,
               "viz": false
             },
+            "insertNulls": false,
             "lineInterpolation": "smooth",
             "lineWidth": 2,
             "pointSize": 5,
@@ -466,6 +79,7 @@
               "type": "linear"
             },
             "showPoints": "never",
+            "showValues": false,
             "spanNulls": 3600000,
             "stacking": {
               "group": "A",
@@ -483,7 +97,7 @@
             "steps": [
               {
                 "color": "green",
-                "value": null
+                "value": 0
               },
               {
                 "color": "yellow",
@@ -500,36 +114,51 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 10,
+        "h": 8,
         "w": 12,
         "x": 0,
-        "y": 20
+        "y": 0
       },
       "id": 5,
       "options": {
         "legend": {
-          "calcs": ["mean", "min", "max", "last"],
+          "calcs": [
+            "mean",
+            "min",
+            "max",
+            "last"
+          ],
           "displayMode": "table",
           "placement": "bottom",
           "showLegend": true
         },
         "tooltip": {
+          "hideZeros": false,
           "mode": "multi",
           "sort": "desc"
         }
       },
-      "title": "LTO hyötysuhde (tuntuva lämpö)",
-      "type": "timeseries",
+      "pluginVersion": "12.3.2",
       "targets": [
         {
           "datasource": {
             "type": "influxdb",
             "uid": "influxdb"
           },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvac\")\n  |> filter(fn: (r) => r._field == \"Ulkolampotila\" or r._field == \"Tuloilma_ennen_lammitysta\" or r._field == \"Tuloilma_asetusarvo\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> filter(fn: (r) => exists r.Ulkolampotila and exists r.Tuloilma_ennen_lammitysta and exists r.Tuloilma_asetusarvo)\n  |> filter(fn: (r) => r.Tuloilma_asetusarvo != r.Ulkolampotila)\n  |> map(fn: (r) => ({\n    _time: r._time,\n    _value: (r.Tuloilma_ennen_lammitysta - r.Ulkolampotila) / (r.Tuloilma_asetusarvo - r.Ulkolampotila) * 100.0,\n    _field: \"Hyötysuhde\"\n  }))\n  |> filter(fn: (r) => r._value > 0.0 and r._value <= 100.0)\n  |> group(columns: [\"_field\"])",
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvac\")\n  |> filter(fn: (r) => r._field == \"Ulkolampotila\" or r._field == \"Tuloilma_ennen_lammitysta\" or r._field == \"Tuloilma_asetusarvo\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> filter(fn: (r) => exists r.Ulkolampotila and exists r.Tuloilma_ennen_lammitysta and exists r.Tuloilma_asetusarvo)\n  |> filter(fn: (r) => r.Tuloilma_asetusarvo != r.Ulkolampotila)\n  |> map(fn: (r) => ({\n    _time: r._time,\n    _value: (r.Tuloilma_ennen_lammitysta - r.Ulkolampotila) / (r.Tuloilma_asetusarvo - r.Ulkolampotila) * 100.0,\n    _field: \"Tuntuva lämpö\"\n  }))\n  |> filter(fn: (r) => r._value > 0.0 and r._value <= 100.0)\n  |> group(columns: [\"_field\"])",
           "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
+          "query": "import \"math\"\nimport \"join\"\n\ntemps = from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvac\")\n  |> filter(fn: (r) => r._field == \"Ulkolampotila\" or r._field == \"Tuloilma_ennen_lammitysta\" or r._field == \"Tuloilma_asetusarvo\")\n  |> map(fn: (r) => ({r with _time: time(v: ((int(v: r._time) / 7200000000000) * 7200000000000))}))\n  |> group(columns: [\"_time\", \"_field\"])\n  |> mean()\n  |> group()\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> filter(fn: (r) => exists r.Ulkolampotila and exists r.Tuloilma_ennen_lammitysta and exists r.Tuloilma_asetusarvo)\n\nhum = from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvac\")\n  |> filter(fn: (r) => r._field == \"Suhteellinen_kosteus\")\n  |> map(fn: (r) => ({r with _time: time(v: ((int(v: r._time) / 7200000000000) * 7200000000000))}))\n  |> group(columns: [\"_time\"])\n  |> mean()\n  |> group()\n  |> keep(columns: [\"_time\", \"_value\"])\n\nruuvi = from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"ruuvi\" and r.sensor_name == \"Ulkolämpötila\")\n  |> filter(fn: (r) => r._field == \"humidity\")\n  |> map(fn: (r) => ({r with _time: time(v: ((int(v: r._time) / 7200000000000) * 7200000000000))}))\n  |> group(columns: [\"_time\"])\n  |> mean()\n  |> group()\n  |> keep(columns: [\"_time\", \"_value\"])\n\nstep1 = join.inner(left: temps, right: hum, on: (l, r) => l._time == r._time, as: (l, r) => ({l with Suhteellinen_kosteus: r._value}))\n\njoin.left(left: step1, right: ruuvi, on: (l, r) => l._time == r._time, as: (l, r) => ({\n    _time: l._time,\n    Ulkolampotila: l.Ulkolampotila,\n    Tuloilma_ennen_lammitysta: l.Tuloilma_ennen_lammitysta,\n    Tuloilma_asetusarvo: l.Tuloilma_asetusarvo,\n    Suhteellinen_kosteus: l.Suhteellinen_kosteus,\n    RH_outdoor: if exists r._value then r._value else 85.0\n  }))\n  |> map(fn: (r) => {\n    psat_out = 610.78 * math.pow(x: 10.0, y: 7.5 * r.Ulkolampotila / (237.3 + r.Ulkolampotila))\n    psat_exh = 610.78 * math.pow(x: 10.0, y: 7.5 * r.Tuloilma_asetusarvo / (237.3 + r.Tuloilma_asetusarvo))\n    w_out = 0.622 * (r.RH_outdoor / 100.0) * psat_out / (101325.0 - (r.RH_outdoor / 100.0) * psat_out)\n    w_exh = 0.622 * (r.Suhteellinen_kosteus / 100.0) * psat_exh / (101325.0 - (r.Suhteellinen_kosteus / 100.0) * psat_exh)\n    h_out = 1.006 * r.Ulkolampotila + w_out * (2501.0 + 1.86 * r.Ulkolampotila)\n    h_sup = 1.006 * r.Tuloilma_ennen_lammitysta + w_out * (2501.0 + 1.86 * r.Tuloilma_ennen_lammitysta)\n    h_exh = 1.006 * r.Tuloilma_asetusarvo + w_exh * (2501.0 + 1.86 * r.Tuloilma_asetusarvo)\n    eta = if h_exh != h_out then (h_sup - h_out) / (h_exh - h_out) * 100.0 else 0.0\n    return {_time: r._time, _value: eta, _field: \"Entalpia\"}\n  })\n  |> filter(fn: (r) => r._value > 0.0 and r._value <= 100.0)\n  |> group(columns: [\"_field\"])",
+          "refId": "B"
         }
-      ]
+      ],
+      "title": "LTO hyötysuhde",
+      "type": "timeseries"
     },
     {
       "datasource": {
@@ -542,107 +171,13 @@
             "mode": "palette-classic"
           },
           "custom": {
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "Hyötysuhde (%)",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 20,
-            "gradientMode": "opacity",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "lineInterpolation": "smooth",
-            "lineWidth": 2,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "never",
-            "spanNulls": 3600000,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "line"
-            }
-          },
-          "mappings": [],
-          "max": 100,
-          "min": 0,
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 50
-              },
-              {
-                "color": "red",
-                "value": 70
-              }
-            ]
-          },
-          "unit": "percent"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 10,
-        "w": 12,
-        "x": 12,
-        "y": 20
-      },
-      "id": 6,
-      "options": {
-        "legend": {
-          "calcs": ["mean", "min", "max", "last"],
-          "displayMode": "table",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "title": "LTO hyötysuhde (entalpia)",
-      "type": "timeseries",
-      "targets": [
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "influxdb"
-          },
-          "query": "import \"math\"\nimport \"join\"\n\ntemps = from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvac\")\n  |> filter(fn: (r) => r._field == \"Ulkolampotila\" or r._field == \"Tuloilma_ennen_lammitysta\" or r._field == \"Tuloilma_asetusarvo\")\n  |> map(fn: (r) => ({r with _time: time(v: ((int(v: r._time) / 7200000000000) * 7200000000000))}))\n  |> group(columns: [\"_time\", \"_field\"])\n  |> mean()\n  |> group()\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> filter(fn: (r) => exists r.Ulkolampotila and exists r.Tuloilma_ennen_lammitysta and exists r.Tuloilma_asetusarvo)\n\nhum = from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvac\")\n  |> filter(fn: (r) => r._field == \"Suhteellinen_kosteus\")\n  |> map(fn: (r) => ({r with _time: time(v: ((int(v: r._time) / 7200000000000) * 7200000000000))}))\n  |> group(columns: [\"_time\"])\n  |> mean()\n  |> group()\n  |> keep(columns: [\"_time\", \"_value\"])\n\nruuvi = from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"ruuvi\" and r.sensor_name == \"Ulkolämpötila\")\n  |> filter(fn: (r) => r._field == \"humidity\")\n  |> map(fn: (r) => ({r with _time: time(v: ((int(v: r._time) / 7200000000000) * 7200000000000))}))\n  |> group(columns: [\"_time\"])\n  |> mean()\n  |> group()\n  |> keep(columns: [\"_time\", \"_value\"])\n\nstep1 = join.inner(left: temps, right: hum, on: (l, r) => l._time == r._time, as: (l, r) => ({l with Suhteellinen_kosteus: r._value}))\n\njoin.left(left: step1, right: ruuvi, on: (l, r) => l._time == r._time, as: (l, r) => ({\n    _time: l._time,\n    Ulkolampotila: l.Ulkolampotila,\n    Tuloilma_ennen_lammitysta: l.Tuloilma_ennen_lammitysta,\n    Tuloilma_asetusarvo: l.Tuloilma_asetusarvo,\n    Suhteellinen_kosteus: l.Suhteellinen_kosteus,\n    RH_outdoor: if exists r._value then r._value else 85.0\n  }))\n  |> map(fn: (r) => {\n    psat_out = 610.78 * math.pow(x: 10.0, y: 7.5 * r.Ulkolampotila / (237.3 + r.Ulkolampotila))\n    psat_exh = 610.78 * math.pow(x: 10.0, y: 7.5 * r.Tuloilma_asetusarvo / (237.3 + r.Tuloilma_asetusarvo))\n    w_out = 0.622 * (r.RH_outdoor / 100.0) * psat_out / (101325.0 - (r.RH_outdoor / 100.0) * psat_out)\n    w_exh = 0.622 * (r.Suhteellinen_kosteus / 100.0) * psat_exh / (101325.0 - (r.Suhteellinen_kosteus / 100.0) * psat_exh)\n    h_out = 1.006 * r.Ulkolampotila + w_out * (2501.0 + 1.86 * r.Ulkolampotila)\n    h_sup = 1.006 * r.Tuloilma_ennen_lammitysta + w_out * (2501.0 + 1.86 * r.Tuloilma_ennen_lammitysta)\n    h_exh = 1.006 * r.Tuloilma_asetusarvo + w_exh * (2501.0 + 1.86 * r.Tuloilma_asetusarvo)\n    eta = if h_exh != h_out then (h_sup - h_out) / (h_exh - h_out) * 100.0 else 0.0\n    return {_time: r._time, _value: eta, _field: \"Hyötysuhde\"}\n  })\n  |> filter(fn: (r) => r._value > 0.0 and r._value <= 100.0)\n  |> group(columns: [\"_field\"])",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "datasource": {
-        "type": "influxdb",
-        "uid": "influxdb"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
+            "axisBorderShow": false,
             "axisCenteredZero": false,
             "axisColorMode": "text",
             "axisLabel": "Teho (kW)",
             "axisPlacement": "auto",
             "barAlignment": 0,
+            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 20,
             "gradientMode": "opacity",
@@ -651,6 +186,7 @@
               "tooltip": false,
               "viz": false
             },
+            "insertNulls": false,
             "lineInterpolation": "smooth",
             "lineWidth": 2,
             "pointSize": 5,
@@ -658,6 +194,7 @@
               "type": "linear"
             },
             "showPoints": "never",
+            "showValues": false,
             "spanNulls": 3600000,
             "stacking": {
               "group": "A",
@@ -674,7 +211,7 @@
             "steps": [
               {
                 "color": "green",
-                "value": null
+                "value": 0
               }
             ]
           },
@@ -682,40 +219,63 @@
         },
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "LTO talteen otettu teho" },
+            "matcher": {
+              "id": "byName",
+              "options": "LTO talteen otettu teho"
+            },
             "properties": [
-              { "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } }
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "green",
+                  "mode": "fixed"
+                }
+              }
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "Lämmityspatteri (maapiiri)" },
+            "matcher": {
+              "id": "byName",
+              "options": "Lämmityspatteri (maapiiri)"
+            },
             "properties": [
-              { "id": "color", "value": { "fixedColor": "orange", "mode": "fixed" } }
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "orange",
+                  "mode": "fixed"
+                }
+              }
             ]
           }
         ]
       },
       "gridPos": {
-        "h": 10,
-        "w": 24,
-        "x": 0,
-        "y": 30
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
       },
       "id": 7,
       "options": {
         "legend": {
-          "calcs": ["mean", "min", "max", "last"],
+          "calcs": [
+            "mean",
+            "min",
+            "max",
+            "last"
+          ],
           "displayMode": "table",
           "placement": "bottom",
           "showLegend": true
         },
         "tooltip": {
+          "hideZeros": false,
           "mode": "multi",
           "sort": "desc"
         }
       },
-      "title": "LTO talteen otettu teho ja lämmityspatteri",
-      "type": "timeseries",
+      "pluginVersion": "12.3.2",
       "targets": [
         {
           "datasource": {
@@ -733,7 +293,9 @@
           "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvac\")\n  |> filter(fn: (r) => r._field == \"Tuloilma_ennen_lammitysta\" or r._field == \"Tuloilma_jalkeen_lammityksen\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> filter(fn: (r) => exists r.Tuloilma_ennen_lammitysta and exists r.Tuloilma_jalkeen_lammityksen)\n  |> map(fn: (r) => ({\n    _time: r._time,\n    _value: 0.1387 * (r.Tuloilma_jalkeen_lammityksen - r.Tuloilma_ennen_lammitysta),\n    _field: \"Lämmityspatteri (maapiiri)\"\n  }))\n  |> filter(fn: (r) => r._value >= 0.0)\n  |> group(columns: [\"_field\"])",
           "refId": "B"
         }
-      ]
+      ],
+      "title": "LTO talteen otettu teho ja lämmityspatteri",
+      "type": "timeseries"
     },
     {
       "datasource": {
@@ -746,26 +308,30 @@
             "mode": "palette-classic"
           },
           "custom": {
+            "axisBorderShow": false,
             "axisCenteredZero": false,
             "axisColorMode": "text",
-            "axisLabel": "Teho (kW)",
+            "axisLabel": "Lämpötila (°C)",
             "axisPlacement": "auto",
             "barAlignment": 0,
+            "barWidthFactor": 0.6,
             "drawStyle": "line",
-            "fillOpacity": 20,
-            "gradientMode": "opacity",
+            "fillOpacity": 10,
+            "gradientMode": "none",
             "hideFrom": {
               "legend": false,
               "tooltip": false,
               "viz": false
             },
+            "insertNulls": false,
             "lineInterpolation": "smooth",
-            "lineWidth": 2,
+            "lineWidth": 1,
             "pointSize": 5,
             "scaleDistribution": {
               "type": "linear"
             },
             "showPoints": "never",
+            "showValues": false,
             "spanNulls": 3600000,
             "stacking": {
               "group": "A",
@@ -781,7 +347,513 @@
             "steps": [
               {
                 "color": "green",
-                "value": null
+                "value": 0
+              }
+            ]
+          },
+          "unit": "celsius"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Ulkolampotila"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Ulkolämpötila"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Jateilma"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Jäteilma"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Tuloilma_ennen_lammitysta"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Tuloilma (ennen lämmitystä)"
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
+      "id": 1,
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "min",
+            "max",
+            "last"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "12.3.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvac\")\n  |> filter(fn: (r) => r.sensor_group == \"ivk_temp\")\n  |> filter(fn: (r) => r._field == \"Ulkolampotila\" or r._field == \"Jateilma\" or r._field == \"Tuloilma_ennen_lammitysta\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])",
+          "refId": "A"
+        }
+      ],
+      "title": "IVK Ulko- ja jäteilma",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "Lämpötila (°C)",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "smooth",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "showValues": false,
+            "spanNulls": 3600000,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "dashed"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "transparent",
+                "value": 0
+              },
+              {
+                "color": "rgba(150, 150, 150, 0.5)",
+                "value": 22
+              }
+            ]
+          },
+          "unit": "celsius"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Tuloilma_asetusarvo"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Poistoilma"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Tuloilma_jalkeen_jaahdytyksen"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Tuloilma (jäähdytetty)"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Tuloilma_jalkeen_lammityksen"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Tuloilma (lämmitetty)"
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
+      "id": 2,
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "min",
+            "max",
+            "last"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "12.3.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvac\")\n  |> filter(fn: (r) => r.sensor_group == \"ivk_temp\")\n  |> filter(fn: (r) => r._field != \"Ulkolampotila\" and r._field != \"Jateilma\" and r._field != \"Tuloilma_ennen_lammitysta\" and r._field != \"RH_lampotila\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])",
+          "refId": "A"
+        }
+      ],
+      "title": "IVK Tuloilma ja asetusarvot",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "Kosteus (%)",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "smooth",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "showValues": false,
+            "spanNulls": 3600000,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "max": 100,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              }
+            ]
+          },
+          "unit": "percent"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Suhteellinen_kosteus"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Suhteellinen kosteus"
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 17
+      },
+      "id": 3,
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "min",
+            "max",
+            "last"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "12.3.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvac\")\n  |> filter(fn: (r) => r._field == \"Suhteellinen_kosteus\")\n  |> filter(fn: (r) => r._value > 0 and r._value <= 100)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])",
+          "refId": "A"
+        }
+      ],
+      "title": "Suhteellinen kosteus",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "Lämpötila (°C)",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "smooth",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "showValues": false,
+            "spanNulls": 3600000,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              }
+            ]
+          },
+          "unit": "celsius"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "RH_lampotila"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "RH lämpötila"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Kastepiste"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Kastepiste"
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 17
+      },
+      "id": 4,
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "min",
+            "max",
+            "last"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "12.3.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvac\")\n  |> filter(fn: (r) => r._field == \"RH_lampotila\" or r._field == \"Kastepiste\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])",
+          "refId": "A"
+        }
+      ],
+      "title": "RH lämpötila ja kastepiste",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "Teho (kW)",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 20,
+            "gradientMode": "opacity",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "showValues": false,
+            "spanNulls": 3600000,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
               }
             ]
           },
@@ -789,12 +861,28 @@
         },
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "Lampopumppu_teho" },
-            "properties": [{ "id": "displayName", "value": "Lämpöpumppu teho" }]
+            "matcher": {
+              "id": "byName",
+              "options": "Lampopumppu_teho"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Lämpöpumppu teho"
+              }
+            ]
           },
           {
-            "matcher": { "id": "byName", "options": "Lisavastus_teho" },
-            "properties": [{ "id": "displayName", "value": "Lisävastus teho" }]
+            "matcher": {
+              "id": "byName",
+              "options": "Lisavastus_teho"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Lisävastus teho"
+              }
+            ]
           }
         ]
       },
@@ -802,23 +890,27 @@
         "h": 10,
         "w": 24,
         "x": 0,
-        "y": 40
+        "y": 25
       },
       "id": 8,
       "options": {
         "legend": {
-          "calcs": ["mean", "max", "last"],
+          "calcs": [
+            "mean",
+            "max",
+            "last"
+          ],
           "displayMode": "table",
           "placement": "bottom",
           "showLegend": true
         },
         "tooltip": {
+          "hideZeros": false,
           "mode": "multi",
           "sort": "desc"
         }
       },
-      "title": "Tehonkulutus",
-      "type": "timeseries",
+      "pluginVersion": "12.3.2",
       "targets": [
         {
           "datasource": {
@@ -828,7 +920,9 @@
           "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvac\")\n  |> filter(fn: (r) => r.sensor_group == \"power\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])",
           "refId": "A"
         }
-      ]
+      ],
+      "title": "Tehonkulutus",
+      "type": "timeseries"
     },
     {
       "datasource": {
@@ -841,11 +935,13 @@
             "mode": "palette-classic"
           },
           "custom": {
+            "axisBorderShow": false,
             "axisCenteredZero": false,
             "axisColorMode": "text",
             "axisLabel": "Energia (kWh)",
             "axisPlacement": "auto",
             "barAlignment": 0,
+            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 10,
             "gradientMode": "none",
@@ -854,6 +950,7 @@
               "tooltip": false,
               "viz": false
             },
+            "insertNulls": false,
             "lineInterpolation": "smooth",
             "lineWidth": 1,
             "pointSize": 5,
@@ -861,6 +958,7 @@
               "type": "linear"
             },
             "showPoints": "never",
+            "showValues": false,
             "spanNulls": 3600000,
             "stacking": {
               "group": "A",
@@ -876,7 +974,7 @@
             "steps": [
               {
                 "color": "green",
-                "value": null
+                "value": 0
               }
             ]
           },
@@ -884,12 +982,28 @@
         },
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "Lampopumppu_energia" },
-            "properties": [{ "id": "displayName", "value": "Lämpöpumppu energia" }]
+            "matcher": {
+              "id": "byName",
+              "options": "Lampopumppu_energia"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Lämpöpumppu energia"
+              }
+            ]
           },
           {
-            "matcher": { "id": "byName", "options": "Lisavastus_energia" },
-            "properties": [{ "id": "displayName", "value": "Lisävastus energia" }]
+            "matcher": {
+              "id": "byName",
+              "options": "Lisavastus_energia"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Lisävastus energia"
+              }
+            ]
           }
         ]
       },
@@ -897,23 +1011,27 @@
         "h": 10,
         "w": 24,
         "x": 0,
-        "y": 50
+        "y": 35
       },
       "id": 9,
       "options": {
         "legend": {
-          "calcs": ["last", "max", "diff"],
+          "calcs": [
+            "last",
+            "max",
+            "diff"
+          ],
           "displayMode": "table",
           "placement": "bottom",
           "showLegend": true
         },
         "tooltip": {
+          "hideZeros": false,
           "mode": "multi",
           "sort": "desc"
         }
       },
-      "title": "Energiankulutus (kumulatiivinen)",
-      "type": "timeseries",
+      "pluginVersion": "12.3.2",
       "targets": [
         {
           "datasource": {
@@ -923,13 +1041,18 @@
           "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvac\")\n  |> filter(fn: (r) => r.sensor_group == \"energy\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])",
           "refId": "A"
         }
-      ]
+      ],
+      "title": "Energiankulutus (kumulatiivinen)",
+      "type": "timeseries"
     }
   ],
+  "preload": false,
   "refresh": "30s",
-  "schemaVersion": 38,
-  "style": "dark",
-  "tags": ["building-automation", "hvac"],
+  "schemaVersion": 42,
+  "tags": [
+    "building-automation",
+    "hvac"
+  ],
   "templating": {
     "list": []
   },
@@ -938,12 +1061,19 @@
     "to": "now"
   },
   "timepicker": {
-    "refresh_intervals": ["5s", "10s", "30s", "1m", "5m", "15m", "30m", "1h"],
-    "time_options": ["5m", "15m", "1h", "6h", "12h", "24h", "2d", "7d", "30d"]
+    "refresh_intervals": [
+      "5s",
+      "10s",
+      "30s",
+      "1m",
+      "5m",
+      "15m",
+      "30m",
+      "1h"
+    ]
   },
   "timezone": "Europe/Helsinki",
   "title": "HVAC",
   "uid": "wago-hvac",
-  "version": 1,
-  "weekStart": ""
+  "version": 18
 }
