@@ -52,6 +52,302 @@
       },
       "fieldConfig": {
         "defaults": {
+          "decimals": 1,
+          "unit": "celsius"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 16,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "id": 15,
+      "options": {
+        "inlineEditing": false,
+        "root": {
+          "background": {
+            "color": {
+              "fixed": "transparent"
+            },
+            "image": {
+              "fixed": "img/floorplan/2krs-vari.jpeg",
+              "mode": "fixed"
+            },
+            "size": "contain"
+          },
+          "border": {
+            "color": {
+              "fixed": "transparent"
+            }
+          },
+          "elements": [
+            {
+              "background": { "color": { "fixed": "rgba(0,0,0,0.4)" } },
+              "border": { "color": { "fixed": "transparent" } },
+              "config": { "align": "center", "color": { "fixed": "#cccccc" }, "size": 11, "text": { "fixed": "MH aikuiset", "mode": "fixed" }, "valign": "middle" },
+              "name": "MH aikuiset label",
+              "placement": { "height": 18, "left": 195, "top": 132, "width": 90 },
+              "type": "metric-value"
+            },
+            {
+              "background": { "color": { "fixed": "rgba(0,0,0,0.4)" } },
+              "border": { "color": { "fixed": "transparent" } },
+              "config": { "align": "center", "color": { "fixed": "#ffffff" }, "size": 16, "text": { "field": "MH_aikuiset", "fixed": "", "mode": "field" }, "valign": "middle" },
+              "name": "MH aikuiset",
+              "placement": { "height": 25, "left": 195, "top": 150, "width": 90 },
+              "type": "metric-value"
+            },
+            {
+              "background": { "color": { "fixed": "rgba(0,0,0,0.4)" } },
+              "border": { "color": { "fixed": "transparent" } },
+              "config": { "align": "center", "color": { "fixed": "#cccccc" }, "size": 11, "text": { "fixed": "Aula", "mode": "fixed" }, "valign": "middle" },
+              "name": "Aula label",
+              "placement": { "height": 18, "left": 370, "top": 362, "width": 90 },
+              "type": "metric-value"
+            },
+            {
+              "background": { "color": { "fixed": "rgba(0,0,0,0.4)" } },
+              "border": { "color": { "fixed": "transparent" } },
+              "config": { "align": "center", "color": { "fixed": "#ffffff" }, "size": 16, "text": { "field": "Ylakerran_aula", "fixed": "", "mode": "field" }, "valign": "middle" },
+              "name": "Yläkerran aula",
+              "placement": { "height": 25, "left": 370, "top": 380, "width": 90 },
+              "type": "metric-value"
+            },
+            {
+              "background": { "color": { "fixed": "rgba(0,0,0,0.4)" } },
+              "border": { "color": { "fixed": "transparent" } },
+              "config": { "align": "center", "color": { "fixed": "#cccccc" }, "size": 11, "text": { "fixed": "MH Aarni", "mode": "fixed" }, "valign": "middle" },
+              "name": "MH Aarni label",
+              "placement": { "height": 18, "left": 165, "top": 362, "width": 90 },
+              "type": "metric-value"
+            },
+            {
+              "background": { "color": { "fixed": "rgba(0,0,0,0.4)" } },
+              "border": { "color": { "fixed": "transparent" } },
+              "config": { "align": "center", "color": { "fixed": "#ffffff" }, "size": 16, "text": { "field": "MH_Aarni", "fixed": "", "mode": "field" }, "valign": "middle" },
+              "name": "MH Aarni",
+              "placement": { "height": 25, "left": 165, "top": 380, "width": 90 },
+              "type": "metric-value"
+            },
+            {
+              "background": { "color": { "fixed": "rgba(0,0,0,0.4)" } },
+              "border": { "color": { "fixed": "transparent" } },
+              "config": { "align": "center", "color": { "fixed": "#cccccc" }, "size": 11, "text": { "fixed": "MH Seela", "mode": "fixed" }, "valign": "middle" },
+              "name": "MH Seela label",
+              "placement": { "height": 18, "left": 600, "top": 362, "width": 90 },
+              "type": "metric-value"
+            },
+            {
+              "background": { "color": { "fixed": "rgba(0,0,0,0.4)" } },
+              "border": { "color": { "fixed": "transparent" } },
+              "config": { "align": "center", "color": { "fixed": "#ffffff" }, "size": 16, "text": { "field": "MH_Seela", "fixed": "", "mode": "field" }, "valign": "middle" },
+              "name": "MH Seela",
+              "placement": { "height": 25, "left": 600, "top": 380, "width": 90 },
+              "type": "metric-value"
+            }
+          ],
+          "name": "root",
+          "type": "frame"
+        }
+      },
+      "title": "2. kerros",
+      "type": "canvas",
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: -24h)\n  |> filter(fn: (r) => r._measurement == \"rooms\")\n  |> filter(fn: (r) => r.room_type != \"pid\")\n  |> filter(fn: (r) => r.floor == \"2\")\n  |> last()\n  |> group()\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 1,
+          "unit": "celsius"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 16,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "id": 16,
+      "options": {
+        "inlineEditing": false,
+        "root": {
+          "background": {
+            "color": {
+              "fixed": "transparent"
+            },
+            "image": {
+              "fixed": "img/floorplan/1krs-vari.jpeg",
+              "mode": "fixed"
+            },
+            "size": "contain"
+          },
+          "border": {
+            "color": {
+              "fixed": "transparent"
+            }
+          },
+          "elements": [
+            {
+              "background": { "color": { "fixed": "rgba(0,0,0,0.4)" } },
+              "border": { "color": { "fixed": "transparent" } },
+              "config": { "align": "center", "color": { "fixed": "#cccccc" }, "size": 11, "text": { "fixed": "Sauna", "mode": "fixed" }, "valign": "middle" },
+              "name": "Sauna label",
+              "placement": { "height": 18, "left": 40, "top": 62, "width": 90 },
+              "type": "metric-value"
+            },
+            {
+              "background": { "color": { "fixed": "rgba(0,0,0,0.4)" } },
+              "border": { "color": { "fixed": "transparent" } },
+              "config": { "align": "center", "color": { "fixed": "#ffffff" }, "size": 16, "text": { "field": "Sauna", "fixed": "", "mode": "field" }, "valign": "middle" },
+              "name": "Sauna",
+              "placement": { "height": 25, "left": 40, "top": 80, "width": 90 },
+              "type": "metric-value"
+            },
+            {
+              "background": { "color": { "fixed": "rgba(0,0,0,0.4)" } },
+              "border": { "color": { "fixed": "transparent" } },
+              "config": { "align": "center", "color": { "fixed": "#cccccc" }, "size": 11, "text": { "fixed": "Keittiö", "mode": "fixed" }, "valign": "middle" },
+              "name": "Keittiö label",
+              "placement": { "height": 18, "left": 420, "top":  242, "width": 90 },
+              "type": "metric-value"
+            },
+            {
+              "background": { "color": { "fixed": "rgba(0,0,0,0.4)" } },
+              "border": { "color": { "fixed": "transparent" } },
+              "config": { "align": "center", "color": { "fixed": "#ffffff" }, "size": 16, "text": { "field": "Keittio", "fixed": "", "mode": "field" }, "valign": "middle" },
+              "name": "Keittiö",
+              "placement": { "height": 25, "left": 420, "top": 260, "width": 90 },
+              "type": "metric-value"
+            },
+            {
+              "background": { "color": { "fixed": "rgba(0,0,0,0.4)" } },
+              "border": { "color": { "fixed": "transparent" } },
+              "config": { "align": "center", "color": { "fixed": "#cccccc" }, "size": 11, "text": { "fixed": "Olohuone", "mode": "fixed" }, "valign": "middle" },
+              "name": "Olohuone label",
+              "placement": { "height": 18, "left": 600, "top": 102, "width": 90 },
+              "type": "metric-value"
+            },
+            {
+              "background": { "color": { "fixed": "rgba(0,0,0,0.4)" } },
+              "border": { "color": { "fixed": "transparent" } },
+              "config": { "align": "center", "color": { "fixed": "#ffffff" }, "size": 16, "text": { "field": "Olohuone", "fixed": "", "mode": "field" }, "valign": "middle" },
+              "name": "Olohuone",
+              "placement": { "height": 25, "left": 600, "top": 120, "width": 90 },
+              "type": "metric-value"
+            },
+            {
+              "background": { "color": { "fixed": "rgba(0,0,0,0.4)" } },
+              "border": { "color": { "fixed": "transparent" } },
+              "config": { "align": "center", "color": { "fixed": "#cccccc" }, "size": 11, "text": { "fixed": "Eteinen", "mode": "fixed" }, "valign": "middle" },
+              "name": "Eteinen label",
+              "placement": { "height": 18, "left": 240, "top": 182, "width": 90 },
+              "type": "metric-value"
+            },
+            {
+              "background": { "color": { "fixed": "rgba(0,0,0,0.4)" } },
+              "border": { "color": { "fixed": "transparent" } },
+              "config": { "align": "center", "color": { "fixed": "#ffffff" }, "size": 16, "text": { "field": "Eteinen", "fixed": "", "mode": "field" }, "valign": "middle" },
+              "name": "Eteinen",
+              "placement": { "height": 25, "left": 240, "top": 200, "width": 90 },
+              "type": "metric-value"
+            },
+            {
+              "background": { "color": { "fixed": "rgba(0,0,0,0.4)" } },
+              "border": { "color": { "fixed": "transparent" } },
+              "config": { "align": "center", "color": { "fixed": "#cccccc" }, "size": 11, "text": { "fixed": "Takka", "mode": "fixed" }, "valign": "middle" },
+              "name": "Takka label",
+              "placement": { "height": 18, "left": 470, "top": 102, "width": 90 },
+              "type": "metric-value"
+            },
+            {
+              "background": { "color": { "fixed": "rgba(0,0,0,0.4)" } },
+              "border": { "color": { "fixed": "transparent" } },
+              "config": { "align": "center", "color": { "fixed": "#ffffff" }, "size": 16, "text": { "field": "Takka", "fixed": "", "mode": "field" }, "valign": "middle" },
+              "name": "Takka",
+              "placement": { "height": 25, "left": 470, "top": 120, "width": 90 },
+              "type": "metric-value"
+            },
+            {
+              "background": { "color": { "fixed": "rgba(0,0,0,0.4)" } },
+              "border": { "color": { "fixed": "transparent" } },
+              "config": { "align": "center", "color": { "fixed": "#cccccc" }, "size": 11, "text": { "fixed": "MH alakerta", "mode": "fixed" }, "valign": "middle" },
+              "name": "MH alakerta label",
+              "placement": { "height": 18, "left": 60, "top": 242, "width": 90 },
+              "type": "metric-value"
+            },
+            {
+              "background": { "color": { "fixed": "rgba(0,0,0,0.4)" } },
+              "border": { "color": { "fixed": "transparent" } },
+              "config": { "align": "center", "color": { "fixed": "#ffffff" }, "size": 16, "text": { "field": "MH_alakerta", "fixed": "", "mode": "field" }, "valign": "middle" },
+              "name": "MH alakerta",
+              "placement": { "height": 25, "left": 60, "top": 260, "width": 90 },
+              "type": "metric-value"
+            },
+            {
+              "background": { "color": { "fixed": "rgba(0,0,0,0.6)" } },
+              "border": { "color": { "fixed": "transparent" } },
+              "config": { "align": "center", "color": { "fixed": "#cccccc" }, "size": 11, "text": { "fixed": "Ulkolämpötila", "mode": "fixed" }, "valign": "middle" },
+              "name": "Ulkolämpötila label",
+              "placement": { "height": 18, "left": 650, "top": 222, "width": 100 },
+              "type": "metric-value"
+            },
+            {
+              "background": { "color": { "fixed": "rgba(0,0,0,0.6)" } },
+              "border": { "color": { "fixed": "transparent" } },
+              "config": { "align": "center", "color": { "fixed": "#ffffff" }, "size": 16, "text": { "field": "Ulkolämpötila", "fixed": "", "mode": "field" }, "valign": "middle" },
+              "name": "Ulkolämpötila",
+              "placement": { "height": 25, "left": 650, "top": 240, "width": 100 },
+              "type": "metric-value"
+            }
+          ],
+          "name": "root",
+          "type": "frame"
+        }
+      },
+      "title": "1. kerros",
+      "type": "canvas",
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: -24h)\n  |> filter(fn: (r) => r._measurement == \"rooms\")\n  |> filter(fn: (r) => r.room_type != \"pid\")\n  |> filter(fn: (r) => r.floor == \"1\")\n  |> last()\n  |> group()\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"ruuvi\")\n  |> filter(fn: (r) => r._field == \"temperature\")\n  |> filter(fn: (r) => r.sensor_name == \"Olohuone\" or r.sensor_name == \"Takka\" or r.sensor_name == \"Sauna\" or r.sensor_name == \"Ulkolämpötila\")\n  |> last()\n  |> map(fn: (r) => ({r with _field: r.sensor_name, _time: now()}))\n  |> group()\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb"
+      },
+      "fieldConfig": {
+        "defaults": {
           "color": {
             "mode": "palette-classic"
           },
@@ -103,41 +399,116 @@
         },
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "MH_Seela" },
+            "matcher": {
+              "id": "byName",
+              "options": "MH_Seela"
+            },
             "properties": [
-              { "id": "displayName", "value": "MH Seela" },
-              { "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } }
+              {
+                "id": "displayName",
+                "value": "MH Seela"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "green",
+                  "mode": "fixed"
+                }
+              }
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "MH_Aarni" },
+            "matcher": {
+              "id": "byName",
+              "options": "MH_Aarni"
+            },
             "properties": [
-              { "id": "displayName", "value": "MH Aarni" },
-              { "id": "color", "value": { "fixedColor": "yellow", "mode": "fixed" } }
+              {
+                "id": "displayName",
+                "value": "MH Aarni"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "yellow",
+                  "mode": "fixed"
+                }
+              }
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "MH_aikuiset" },
+            "matcher": {
+              "id": "byName",
+              "options": "MH_aikuiset"
+            },
             "properties": [
-              { "id": "displayName", "value": "MH aikuiset" },
-              { "id": "color", "value": { "fixedColor": "orange", "mode": "fixed" } }
+              {
+                "id": "displayName",
+                "value": "MH aikuiset"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "orange",
+                  "mode": "fixed"
+                }
+              }
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "MH_alakerta" },
+            "matcher": {
+              "id": "byName",
+              "options": "MH_alakerta"
+            },
             "properties": [
-              { "id": "displayName", "value": "MH alakerta" },
-              { "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }
+              {
+                "id": "displayName",
+                "value": "MH alakerta"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "red",
+                  "mode": "fixed"
+                }
+              }
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "Ulkolämpötila" },
+            "matcher": {
+              "id": "byName",
+              "options": "Ulkolämpötila"
+            },
             "properties": [
-              { "id": "custom.axisPlacement", "value": "right" },
-              { "id": "custom.axisLabel", "value": "Ulkolämpötila (°C)" },
-              { "id": "color", "value": { "fixedColor": "light-blue", "mode": "fixed" } },
-              { "id": "custom.lineStyle", "value": { "fill": "dash", "dash": [10, 5] } },
-              { "id": "custom.fillOpacity", "value": 0 }
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              },
+              {
+                "id": "custom.axisLabel",
+                "value": "Ulkolämpötila (°C)"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "light-blue",
+                  "mode": "fixed"
+                }
+              },
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    10,
+                    5
+                  ]
+                }
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              }
             ]
           }
         ]
@@ -146,12 +517,17 @@
         "h": 16,
         "w": 12,
         "x": 0,
-        "y": 0
+        "y": 16
       },
       "id": 5,
       "options": {
         "legend": {
-          "calcs": ["mean", "min", "max", "last"],
+          "calcs": [
+            "mean",
+            "min",
+            "max",
+            "last"
+          ],
           "displayMode": "table",
           "placement": "bottom",
           "showLegend": true
@@ -240,48 +616,147 @@
         },
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "Ylakerran_aula" },
+            "matcher": {
+              "id": "byName",
+              "options": "Ylakerran_aula"
+            },
             "properties": [
-              { "id": "displayName", "value": "Yläkerran aula" },
-              { "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } }
+              {
+                "id": "displayName",
+                "value": "Yläkerran aula"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "green",
+                  "mode": "fixed"
+                }
+              }
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "Keittio" },
+            "matcher": {
+              "id": "byName",
+              "options": "Keittio"
+            },
             "properties": [
-              { "id": "displayName", "value": "Keittiö" },
-              { "id": "color", "value": { "fixedColor": "yellow", "mode": "fixed" } }
+              {
+                "id": "displayName",
+                "value": "Keittiö"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "yellow",
+                  "mode": "fixed"
+                }
+              }
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "Eteinen" },
+            "matcher": {
+              "id": "byName",
+              "options": "Eteinen"
+            },
             "properties": [
-              { "id": "displayName", "value": "Eteinen" },
-              { "id": "color", "value": { "fixedColor": "orange", "mode": "fixed" } }
+              {
+                "id": "displayName",
+                "value": "Eteinen"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "orange",
+                  "mode": "fixed"
+                }
+              }
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "Keittiö (Ruuvi)" },
+            "matcher": {
+              "id": "byName",
+              "options": "Keittiö (Ruuvi)"
+            },
             "properties": [
-              { "id": "custom.lineStyle", "value": { "fill": "dash", "dash": [10, 5] } },
-              { "id": "color", "value": { "fixedColor": "super-light-yellow", "mode": "fixed" } }
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    10,
+                    5
+                  ]
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "super-light-yellow",
+                  "mode": "fixed"
+                }
+              }
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "Olohuone (Ruuvi)" },
+            "matcher": {
+              "id": "byName",
+              "options": "Olohuone (Ruuvi)"
+            },
             "properties": [
-              { "id": "custom.lineStyle", "value": { "fill": "dash", "dash": [10, 5] } },
-              { "id": "color", "value": { "fixedColor": "purple", "mode": "fixed" } }
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    10,
+                    5
+                  ]
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "purple",
+                  "mode": "fixed"
+                }
+              }
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "Ulkolämpötila" },
+            "matcher": {
+              "id": "byName",
+              "options": "Ulkolämpötila"
+            },
             "properties": [
-              { "id": "custom.axisPlacement", "value": "right" },
-              { "id": "custom.axisLabel", "value": "Ulkolämpötila (°C)" },
-              { "id": "color", "value": { "fixedColor": "light-blue", "mode": "fixed" } },
-              { "id": "custom.lineStyle", "value": { "fill": "dash", "dash": [10, 5] } },
-              { "id": "custom.fillOpacity", "value": 0 }
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              },
+              {
+                "id": "custom.axisLabel",
+                "value": "Ulkolämpötila (°C)"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "light-blue",
+                  "mode": "fixed"
+                }
+              },
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    10,
+                    5
+                  ]
+                }
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              }
             ]
           }
         ]
@@ -290,12 +765,17 @@
         "h": 16,
         "w": 12,
         "x": 12,
-        "y": 0
+        "y": 16
       },
       "id": 6,
       "options": {
         "legend": {
-          "calcs": ["mean", "min", "max", "last"],
+          "calcs": [
+            "mean",
+            "min",
+            "max",
+            "last"
+          ],
           "displayMode": "table",
           "placement": "bottom",
           "showLegend": true
@@ -388,12 +868,28 @@
         },
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "Kellari" },
-            "properties": [{ "id": "displayName", "value": "Kellari" }]
+            "matcher": {
+              "id": "byName",
+              "options": "Kellari"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Kellari"
+              }
+            ]
           },
           {
-            "matcher": { "id": "byName", "options": "Kellari_eteinen" },
-            "properties": [{ "id": "displayName", "value": "Kellarin eteinen" }]
+            "matcher": {
+              "id": "byName",
+              "options": "Kellari_eteinen"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Kellarin eteinen"
+              }
+            ]
           }
         ]
       },
@@ -401,12 +897,17 @@
         "h": 12,
         "w": 12,
         "x": 0,
-        "y": 16
+        "y": 32
       },
       "id": 7,
       "options": {
         "legend": {
-          "calcs": ["mean", "min", "max", "last"],
+          "calcs": [
+            "mean",
+            "min",
+            "max",
+            "last"
+          ],
           "displayMode": "table",
           "placement": "bottom",
           "showLegend": true
@@ -483,20 +984,59 @@
         },
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "Sauna" },
+            "matcher": {
+              "id": "byName",
+              "options": "Sauna"
+            },
             "properties": [
-              { "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "red",
+                  "mode": "fixed"
+                }
+              }
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "Kosteus" },
+            "matcher": {
+              "id": "byName",
+              "options": "Kosteus"
+            },
             "properties": [
-              { "id": "custom.axisPlacement", "value": "right" },
-              { "id": "unit", "value": "percent" },
-              { "id": "custom.axisLabel", "value": "Kosteus (%)" },
-              { "id": "color", "value": { "fixedColor": "blue", "mode": "fixed" } },
-              { "id": "custom.fillOpacity", "value": 5 },
-              { "id": "custom.lineStyle", "value": { "fill": "dash", "dash": [10, 5] } }
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              },
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "custom.axisLabel",
+                "value": "Kosteus (%)"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "blue",
+                  "mode": "fixed"
+                }
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 5
+              },
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    10,
+                    5
+                  ]
+                }
+              }
             ]
           }
         ]
@@ -505,12 +1045,17 @@
         "h": 12,
         "w": 12,
         "x": 12,
-        "y": 16
+        "y": 32
       },
       "id": 14,
       "options": {
         "legend": {
-          "calcs": ["mean", "min", "max", "last"],
+          "calcs": [
+            "mean",
+            "min",
+            "max",
+            "last"
+          ],
           "displayMode": "table",
           "placement": "bottom",
           "showLegend": true
@@ -638,12 +1183,17 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 28
+        "y": 44
       },
       "id": 10,
       "options": {
         "legend": {
-          "calcs": ["mean", "min", "max", "last"],
+          "calcs": [
+            "mean",
+            "min",
+            "max",
+            "last"
+          ],
           "displayMode": "table",
           "placement": "bottom",
           "showLegend": true
@@ -740,40 +1290,112 @@
         },
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "MH_Seela_PID" },
-            "properties": [{ "id": "displayName", "value": "MH Seela" }]
+            "matcher": {
+              "id": "byName",
+              "options": "MH_Seela_PID"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "MH Seela"
+              }
+            ]
           },
           {
-            "matcher": { "id": "byName", "options": "MH_Aarni_PID" },
-            "properties": [{ "id": "displayName", "value": "MH Aarni" }]
+            "matcher": {
+              "id": "byName",
+              "options": "MH_Aarni_PID"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "MH Aarni"
+              }
+            ]
           },
           {
-            "matcher": { "id": "byName", "options": "MH_aikuiset_PID" },
-            "properties": [{ "id": "displayName", "value": "MH aikuiset" }]
+            "matcher": {
+              "id": "byName",
+              "options": "MH_aikuiset_PID"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "MH aikuiset"
+              }
+            ]
           },
           {
-            "matcher": { "id": "byName", "options": "MH_alakerta_PID" },
-            "properties": [{ "id": "displayName", "value": "MH alakerta" }]
+            "matcher": {
+              "id": "byName",
+              "options": "MH_alakerta_PID"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "MH alakerta"
+              }
+            ]
           },
           {
-            "matcher": { "id": "byName", "options": "Ylakerran_aula_PID" },
-            "properties": [{ "id": "displayName", "value": "Yläkerran aula" }]
+            "matcher": {
+              "id": "byName",
+              "options": "Ylakerran_aula_PID"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Yläkerran aula"
+              }
+            ]
           },
           {
-            "matcher": { "id": "byName", "options": "Keittio_PID" },
-            "properties": [{ "id": "displayName", "value": "Keittiö" }]
+            "matcher": {
+              "id": "byName",
+              "options": "Keittio_PID"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Keittiö"
+              }
+            ]
           },
           {
-            "matcher": { "id": "byName", "options": "Eteinen_PID" },
-            "properties": [{ "id": "displayName", "value": "Eteinen" }]
+            "matcher": {
+              "id": "byName",
+              "options": "Eteinen_PID"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Eteinen"
+              }
+            ]
           },
           {
-            "matcher": { "id": "byName", "options": "Kellari_PID" },
-            "properties": [{ "id": "displayName", "value": "Kellari" }]
+            "matcher": {
+              "id": "byName",
+              "options": "Kellari_PID"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Kellari"
+              }
+            ]
           },
           {
-            "matcher": { "id": "byName", "options": "Kellari_eteinen_PID" },
-            "properties": [{ "id": "displayName", "value": "Kellarin eteinen" }]
+            "matcher": {
+              "id": "byName",
+              "options": "Kellari_eteinen_PID"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Kellarin eteinen"
+              }
+            ]
           }
         ]
       },
@@ -781,7 +1403,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 36
+        "y": 52
       },
       "id": 11,
       "options": {
@@ -816,7 +1438,10 @@
   "refresh": "30s",
   "schemaVersion": 38,
   "style": "dark",
-  "tags": ["building-automation", "wago"],
+  "tags": [
+    "building-automation",
+    "wago"
+  ],
   "templating": {
     "list": []
   },
@@ -825,8 +1450,27 @@
     "to": "now"
   },
   "timepicker": {
-    "refresh_intervals": ["5s", "10s", "30s", "1m", "5m", "15m", "30m", "1h"],
-    "time_options": ["5m", "15m", "1h", "6h", "12h", "24h", "2d", "7d", "30d"]
+    "refresh_intervals": [
+      "5s",
+      "10s",
+      "30s",
+      "1m",
+      "5m",
+      "15m",
+      "30m",
+      "1h"
+    ],
+    "time_options": [
+      "5m",
+      "15m",
+      "1h",
+      "6h",
+      "12h",
+      "24h",
+      "2d",
+      "7d",
+      "30d"
+    ]
   },
   "timezone": "Europe/Helsinki",
   "title": "Temperature Overview",
