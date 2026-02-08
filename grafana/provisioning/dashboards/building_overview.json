@@ -292,7 +292,7 @@
               "name": "Keittiö label",
               "placement": {
                 "height": 18,
-                "left": 400,
+                "left": 370,
                 "top": 182,
                 "width": 90
               },
@@ -329,7 +329,7 @@
               "name": "Keittiö",
               "placement": {
                 "height": 25,
-                "left": 400,
+                "left": 370,
                 "top": 200,
                 "width": 90
               },
@@ -366,7 +366,7 @@
               "name": "Keittiö age",
               "placement": {
                 "height": 16,
-                "left": 400,
+                "left": 370,
                 "top": 225,
                 "width": 90
               },
@@ -402,7 +402,7 @@
               "name": "Olohuone label",
               "placement": {
                 "height": 18,
-                "left": 600,
+                "left": 560,
                 "top": 82,
                 "width": 90
               },
@@ -439,7 +439,7 @@
               "name": "Olohuone",
               "placement": {
                 "height": 25,
-                "left": 600,
+                "left": 560,
                 "top": 100,
                 "width": 90
               },
@@ -476,7 +476,7 @@
               "name": "Olohuone age",
               "placement": {
                 "height": 16,
-                "left": 600,
+                "left": 560,
                 "top": 125,
                 "width": 90
               },
@@ -512,7 +512,7 @@
               "name": "Eteinen label",
               "placement": {
                 "height": 18,
-                "left": 240,
+                "left": 210,
                 "top": 162,
                 "width": 90
               },
@@ -549,7 +549,7 @@
               "name": "Eteinen",
               "placement": {
                 "height": 25,
-                "left": 240,
+                "left": 210,
                 "top": 180,
                 "width": 90
               },
@@ -586,7 +586,7 @@
               "name": "Eteinen age",
               "placement": {
                 "height": 16,
-                "left": 240,
+                "left": 210,
                 "top": 205,
                 "width": 90
               },
@@ -622,7 +622,7 @@
               "name": "Takka label",
               "placement": {
                 "height": 18,
-                "left": 460,
+                "left": 430,
                 "top": 82,
                 "width": 90
               },
@@ -659,7 +659,7 @@
               "name": "Takka",
               "placement": {
                 "height": 25,
-                "left": 460,
+                "left": 430,
                 "top": 100,
                 "width": 90
               },
@@ -696,7 +696,7 @@
               "name": "Takka age",
               "placement": {
                 "height": 16,
-                "left": 460,
+                "left": 430,
                 "top": 125,
                 "width": 90
               },
@@ -733,7 +733,7 @@
               "placement": {
                 "height": 18,
                 "left": 60,
-                "top": 222,
+                "top": 202,
                 "width": 90
               },
               "type": "metric-value"
@@ -770,7 +770,7 @@
               "placement": {
                 "height": 25,
                 "left": 60,
-                "top": 240,
+                "top": 220,
                 "width": 90
               },
               "type": "metric-value"
@@ -807,7 +807,7 @@
               "placement": {
                 "height": 16,
                 "left": 60,
-                "top": 265,
+                "top": 245,
                 "width": 90
               },
               "type": "metric-value"
@@ -842,8 +842,8 @@
               "name": "Ulkolämpötila label",
               "placement": {
                 "height": 18,
-                "left": 620,
-                "top": 372,
+                "left": 540,
+                "top": 352,
                 "width": 100
               },
               "type": "metric-value"
@@ -879,8 +879,8 @@
               "name": "Ulkolämpötila",
               "placement": {
                 "height": 25,
-                "left": 620,
-                "top": 390,
+                "left": 540,
+                "top": 370,
                 "width": 100
               },
               "type": "metric-value"
@@ -916,8 +916,8 @@
               "name": "Ulkolämpötila age",
               "placement": {
                 "height": 16,
-                "left": 620,
-                "top": 415,
+                "left": 540,
+                "top": 395,
                 "width": 100
               },
               "type": "metric-value"
@@ -954,7 +954,7 @@
               "name": "Eteinen heat",
               "placement": {
                 "height": 16,
-                "left": 240,
+                "left": 210,
                 "top": 221,
                 "width": 90
               },
@@ -992,7 +992,7 @@
               "name": "Keittiö heat",
               "placement": {
                 "height": 16,
-                "left": 400,
+                "left": 370,
                 "top": 241,
                 "width": 90
               },
@@ -1031,7 +1031,7 @@
               "placement": {
                 "height": 16,
                 "left": 60,
-                "top": 281,
+                "top": 261,
                 "width": 90
               },
               "type": "metric-value"
@@ -1485,7 +1485,7 @@
               "name": "MH aikuiset label",
               "placement": {
                 "height": 18,
-                "left": 195,
+                "left": 145,
                 "top": 132,
                 "width": 90
               },
@@ -1522,7 +1522,7 @@
               "name": "MH aikuiset",
               "placement": {
                 "height": 25,
-                "left": 195,
+                "left": 145,
                 "top": 150,
                 "width": 90
               },
@@ -1559,7 +1559,7 @@
               "name": "MH aikuiset age",
               "placement": {
                 "height": 16,
-                "left": 195,
+                "left": 145,
                 "top": 175,
                 "width": 90
               },
@@ -1595,7 +1595,7 @@
               "name": "Aula label",
               "placement": {
                 "height": 18,
-                "left": 370,
+                "left": 340,
                 "top": 342,
                 "width": 90
               },
@@ -1632,7 +1632,7 @@
               "name": "Yläkerran aula",
               "placement": {
                 "height": 25,
-                "left": 370,
+                "left": 340,
                 "top": 360,
                 "width": 90
               },
@@ -1669,7 +1669,7 @@
               "name": "Aula age",
               "placement": {
                 "height": 16,
-                "left": 370,
+                "left": 340,
                 "top": 385,
                 "width": 90
               },
@@ -1705,7 +1705,7 @@
               "name": "MH Aarni label",
               "placement": {
                 "height": 18,
-                "left": 165,
+                "left": 145,
                 "top": 342,
                 "width": 90
               },
@@ -1742,7 +1742,7 @@
               "name": "MH Aarni",
               "placement": {
                 "height": 25,
-                "left": 165,
+                "left": 145,
                 "top": 360,
                 "width": 90
               },
@@ -1779,7 +1779,7 @@
               "name": "MH Aarni age",
               "placement": {
                 "height": 16,
-                "left": 165,
+                "left": 145,
                 "top": 385,
                 "width": 90
               },
@@ -1815,7 +1815,7 @@
               "name": "MH Seela label",
               "placement": {
                 "height": 18,
-                "left": 600,
+                "left": 540,
                 "top": 342,
                 "width": 90
               },
@@ -1852,7 +1852,7 @@
               "name": "MH Seela",
               "placement": {
                 "height": 25,
-                "left": 600,
+                "left": 540,
                 "top": 360,
                 "width": 90
               },
@@ -1889,7 +1889,7 @@
               "name": "MH Seela age",
               "placement": {
                 "height": 16,
-                "left": 600,
+                "left": 540,
                 "top": 385,
                 "width": 90
               },
@@ -1927,7 +1927,7 @@
               "name": "MH aikuiset heat",
               "placement": {
                 "height": 16,
-                "left": 195,
+                "left": 145,
                 "top": 191,
                 "width": 90
               },
@@ -1965,7 +1965,7 @@
               "name": "Aula heat",
               "placement": {
                 "height": 16,
-                "left": 370,
+                "left": 340,
                 "top": 401,
                 "width": 90
               },
@@ -2003,7 +2003,7 @@
               "name": "MH Aarni heat",
               "placement": {
                 "height": 16,
-                "left": 165,
+                "left": 145,
                 "top": 401,
                 "width": 90
               },
@@ -2041,7 +2041,7 @@
               "name": "MH Seela heat",
               "placement": {
                 "height": 16,
-                "left": 600,
+                "left": 540,
                 "top": 401,
                 "width": 90
               },
@@ -2976,7 +2976,7 @@
     "list": []
   },
   "time": {
-    "from": "now-3d",
+    "from": "now-2d",
     "to": "now"
   },
   "timepicker": {
