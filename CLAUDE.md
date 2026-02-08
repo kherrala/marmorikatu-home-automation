@@ -54,7 +54,7 @@ All data in bucket `building_automation` with four measurements:
 ## Key Files
 
 - **`scripts/import_data.py`** — CSV parser handling Latin-1 encoding, sensor validation, batch writes (5000 points). Maps CSV columns to measurements with proper tags.
-- **`scripts/mcp_server.py`** — MCP server with 12 tools (query_data, get_latest, get_statistics, get_heat_recovery_efficiency, etc.). SSE transport via uvicorn/starlette.
+- **`scripts/mcp_server.py`** — MCP server with 13 tools (query_data, get_latest, get_statistics, get_heat_recovery_efficiency, get_freezing_probability, etc.). SSE transport via uvicorn/starlette.
 - **`scripts/ruuvi_mqtt_subscriber.py`** — Handles Ruuvi data formats 5 (basic) and 225 (air quality). Pressure unit conversion (Pa↔hPa).
 - **`scripts/lights_poller.py`** — Polls light switch API, classifies by floor, handles dual-function switches.
 - **`grafana/provisioning/dashboards/*.json`** — Grafana dashboard definitions. Each dashboard has a stable UID (e.g., `wago-overview`, `wago-hvac`, `wago-lights`) used in cross-dashboard navigation links.
@@ -75,3 +75,9 @@ The HVAC dashboard contains complex Flux queries for heat recovery efficiency:
 - Data from different sampling rates is aligned to 2-hour boundaries using integer division on nanosecond timestamps
 - Outdoor humidity falls back to 85% RH when Ruuvi data is unavailable
 - `Tuloilma_asetusarvo` (supply setpoint) is used as a proxy for exhaust air temperature (no dedicated sensor)
+- **Freezing probability**: Composite risk score (0-95%) for heat exchanger icing
+  - Temperature risk (50%): linear -5°C to -25°C
+  - Humidity risk (35%): linear 15% to 30% RH (exhaust side)
+  - Exhaust temp risk (15%): linear 5°C to 0°C
+  - Exhaust air below 0°C forces 95% probability
+  - Available as Grafana gauge ("LTO jäätymisriski") and MCP tool (`get_freezing_probability`)

@@ -133,6 +133,12 @@ SCHEMA = {
             "description": "Heat power recovered by HRU (based on 414 m³/h airflow)",
             "fields_used": ["Tuloilma_ennen_lammitysta", "Ulkolampotila"],
             "typical_range": "0-4 kW"
+        },
+        "freezing_probability": {
+            "formula": "Weighted composite: 50% temp risk (-5 to -25°C) + 35% humidity risk (15-30%) + 15% exhaust temp risk (0-5°C)",
+            "description": "Heat exchanger freezing probability",
+            "fields_used": ["Ulkolampotila", "Suhteellinen_kosteus", "Jateilma"],
+            "typical_range": "0-95%"
         }
     }
 }
@@ -385,6 +391,23 @@ Returns CO2, PM2.5, VOC, NOx levels with health guideline thresholds.""",
             }
         ),
         Tool(
+            name="get_freezing_probability",
+            description="""Calculate heat exchanger (LTO) freezing probability.
+
+Returns a composite risk score (0-95%) based on:
+- Outdoor temperature (50% weight): risk increases from -5°C to -25°C
+- Exhaust humidity (35% weight): risk increases from 15% to 30% RH
+- Exhaust air temperature (15% weight): risk increases from 5°C to 0°C
+
+If exhaust air is below 0°C, probability is forced to 95%.
+Uses latest sensor values from the HVAC measurement.""",
+            inputSchema={
+                "type": "object",
+                "properties": {},
+                "required": []
+            }
+        ),
+        Tool(
             name="compare_indoor_outdoor",
             description="""Compare indoor and outdoor temperatures.
 
@@ -622,6 +645,104 @@ from(bucket: "{INFLUXDB_BUCKET}")
                 summary = {"error": "No data available for the specified time range"}
 
             return [TextContent(type="text", text=json.dumps(summary, indent=2, ensure_ascii=False, default=str))]
+        except Exception as e:
+            return [TextContent(type="text", text=f"Error: {str(e)}")]
+
+    elif name == "get_freezing_probability":
+        query = f'''
+from(bucket: "{INFLUXDB_BUCKET}")
+  |> range(start: -6h)
+  |> filter(fn: (r) => r._measurement == "hvac")
+  |> filter(fn: (r) => r._field == "Ulkolampotila" or r._field == "Suhteellinen_kosteus" or r._field == "Jateilma")
+  |> last()
+'''
+        try:
+            results = execute_flux_query(query)
+            values = {r["_field"]: r["_value"] for r in results}
+
+            outdoor = values.get("Ulkolampotila")
+            humidity = values.get("Suhteellinen_kosteus")
+            exhaust = values.get("Jateilma")
+
+            if outdoor is None or humidity is None or exhaust is None:
+                missing = [k for k, v in {"Ulkolampotila": outdoor, "Suhteellinen_kosteus": humidity, "Jateilma": exhaust}.items() if v is None]
+                return [TextContent(type="text", text=json.dumps({
+                    "error": "Missing sensor data",
+                    "missing_fields": missing,
+                    "hint": "WAGO data is logged every ~2 hours. Try a wider time range or check if the controller is online."
+                }, indent=2, ensure_ascii=False))]
+
+            # Temperature risk: linear from -5°C (0%) to -25°C (100%), weight 50%
+            temp_raw = (-5.0 - outdoor) / 20.0
+            temp_risk = max(0.0, min(1.0, temp_raw))
+            temp_score = temp_risk * 50.0
+
+            # Humidity risk: linear from 15% (0%) to 30% (100%), weight 35%
+            hum_raw = (humidity - 15.0) / 15.0
+            hum_risk = max(0.0, min(1.0, hum_raw))
+            hum_score = hum_risk * 35.0
+
+            # Exhaust temp risk: linear from 5°C (0%) to 0°C (100%), weight 15%
+            exh_raw = (5.0 - exhaust) / 5.0
+            exh_risk = max(0.0, min(1.0, exh_raw))
+            exh_score = exh_risk * 15.0
+
+            total = temp_score + hum_score + exh_score
+
+            # Exhaust below 0°C forces 95%
+            if exhaust < 0.0:
+                probability = 95.0
+            elif total > 95.0:
+                probability = 95.0
+            else:
+                probability = round(total, 1)
+
+            # Risk level classification
+            if probability < 25:
+                risk_level = "low"
+            elif probability < 50:
+                risk_level = "moderate"
+            elif probability < 75:
+                risk_level = "high"
+            else:
+                risk_level = "critical"
+
+            result = {
+                "probability": probability,
+                "risk_level": risk_level,
+                "components": {
+                    "temperature": {
+                        "value": outdoor,
+                        "unit": "°C",
+                        "score": round(temp_score, 1),
+                        "max_score": 50,
+                        "risk_range": "-5°C (0%) to -25°C (100%)"
+                    },
+                    "humidity": {
+                        "value": humidity,
+                        "unit": "%",
+                        "score": round(hum_score, 1),
+                        "max_score": 35,
+                        "risk_range": "15% (0%) to 30% (100%)"
+                    },
+                    "exhaust_temp": {
+                        "value": exhaust,
+                        "unit": "°C",
+                        "score": round(exh_score, 1),
+                        "max_score": 15,
+                        "risk_range": "5°C (0%) to 0°C (100%)"
+                    }
+                },
+                "thresholds": {
+                    "low": "< 25%",
+                    "moderate": "25-50%",
+                    "high": "50-75%",
+                    "critical": ">= 75%",
+                    "forced_95": "Exhaust air below 0°C"
+                }
+            }
+
+            return [TextContent(type="text", text=json.dumps(result, indent=2, ensure_ascii=False, default=str))]
         except Exception as e:
             return [TextContent(type="text", text=f"Error: {str(e)}")]
 
