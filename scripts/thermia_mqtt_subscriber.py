@@ -11,6 +11,7 @@ import os
 import json
 import signal
 import sys
+import time
 from datetime import datetime, timezone
 import paho.mqtt.client as mqtt
 from influxdb_client import InfluxDBClient, Point, WritePrecision
@@ -20,6 +21,7 @@ from influxdb_client.client.write_api import SYNCHRONOUS
 MQTT_BROKER = os.environ.get("MQTT_BROKER", "freenas.kherrala.fi")
 MQTT_PORT = int(os.environ.get("MQTT_PORT", "1883"))
 MQTT_TOPIC = os.environ.get("MQTT_TOPIC", "ThermIQ/ThermIQ-room2")
+READ_INTERVAL = int(os.environ.get("READ_INTERVAL", "30"))
 
 INFLUXDB_URL = os.environ.get("INFLUXDB_URL", "http://localhost:8086")
 INFLUXDB_TOKEN = os.environ.get("INFLUXDB_TOKEN", "wago-secret-token")
@@ -312,6 +314,7 @@ def main():
     print("=" * 60)
     print(f"MQTT Broker: {MQTT_BROKER}:{MQTT_PORT}")
     print(f"MQTT Topic: {MQTT_TOPIC}")
+    print(f"Read interval: {READ_INTERVAL}s")
     print(f"InfluxDB: {INFLUXDB_URL}")
     print(f"Bucket: {INFLUXDB_BUCKET}")
     print("-" * 60)
@@ -343,9 +346,25 @@ def main():
     mqtt_client.on_disconnect = on_disconnect
     mqtt_client.on_message = on_message
 
-    # Connect and start loop
+    # Connect and start background network loop
     mqtt_client.connect(MQTT_BROKER, MQTT_PORT, 60)
-    mqtt_client.loop_forever()
+    mqtt_client.loop_start()
+
+    # Periodically send read command to request register data
+    read_topic = f"{MQTT_TOPIC}/read"
+    print(f"Will send read command to {read_topic} every {READ_INTERVAL}s")
+
+    try:
+        while True:
+            mqtt_client.publish(read_topic, "")
+            time.sleep(READ_INTERVAL)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        mqtt_client.loop_stop()
+        mqtt_client.disconnect()
+        if influx_client:
+            influx_client.close()
 
 
 if __name__ == "__main__":
