@@ -1,6 +1,6 @@
 # WAGO Building Automation Data Explorer
 
-A data visualization system for building automation measurement data from WAGO controllers and Ruuvi sensors. Imports CSV data and MQTT sensor data into InfluxDB and provides interactive Grafana dashboards for exploring HVAC, room temperature, and environmental data.
+A data visualization system for building automation measurement data from WAGO controllers, Ruuvi sensors, and a Thermia ground-source heat pump. Imports CSV data and MQTT sensor data into InfluxDB and provides interactive Grafana dashboards for exploring HVAC, room temperature, heat pump, and environmental data.
 
 ## Architecture
 
@@ -20,6 +20,13 @@ A data visualization system for building automation measurement data from WAGO c
 │                     │◄───────────────────┤  │  ruuvi container       │  │
 │  7 Ruuvi sensors    │  freenas:1883      │  │  - MQTT subscriber     │  │
 └─────────────────────┘                    │  │  - Real-time data      │  │
+                                           │  └───────────┬────────────┘  │
+┌─────────────────────┐                    │              │               │
+│  Thermia Heat Pump  │                    │  ┌───────────┴────────────┐  │
+│  ThermIQ-ROOM2      │    MQTT            │  │                        │  │
+│                     │◄───────────────────┤  │  thermia container     │  │
+│  Ground-source HP   │  freenas:1883      │  │  - MQTT subscriber     │  │
+└─────────────────────┘                    │  │  - Register parsing    │  │
                                            │  └───────────┬────────────┘  │
                                            │              │               │
                                            │              ▼               │
@@ -47,6 +54,7 @@ A data visualization system for building automation measurement data from WAGO c
 | Data Import | Python 3.12 | - | CSV parsing and import |
 | Remote Sync | Shell/SCP | - | Fetch data from WAGO controller |
 | Ruuvi MQTT | Python/paho-mqtt | - | Subscribe to Ruuvi sensor data |
+| Thermia MQTT | Python/paho-mqtt | - | Subscribe to ThermIQ heat pump data |
 
 ## Quick Start
 
@@ -71,7 +79,7 @@ This will:
 
 ### Measurements
 
-The system uses two InfluxDB measurements:
+The system uses the following InfluxDB measurements:
 
 #### `hvac` - HVAC System Data
 From `logfile_dp_*.csv` files (daily logs, 2-hour intervals)
@@ -162,6 +170,59 @@ Real-time data from Ruuvi Bluetooth sensors via MQTT gateway
 | EE:3A:F4:B9:74:E5 | Jääkaappi | Basic |
 | EF:AA:DF:C0:4F:8C | Pakastin | Basic |
 | F1:19:ED:0F:9A:F6 | Ulkolämpötila | Basic |
+
+#### `thermia` - Thermia Heat Pump Data
+Real-time data from a Thermia ground-source heat pump via ThermIQ-ROOM2 MQTT module
+
+| Tag | Description |
+|-----|-------------|
+| data_type | Data category: temperature, status, alarm, performance, runtime, setting |
+
+**Temperature fields:**
+
+| Field | Unit | Description |
+|-------|------|-------------|
+| outdoor_temp | °C | Outdoor temperature |
+| indoor_temp | °C | Indoor temperature (combined integer + decimal) |
+| indoor_target_temp | °C | Indoor target temperature |
+| supply_temp | °C | Supply line temperature |
+| return_temp | °C | Return line temperature |
+| hotwater_temp | °C | Hot water tank temperature |
+| brine_out_temp | °C | Brine outgoing temperature |
+| brine_in_temp | °C | Brine incoming temperature |
+| pressurepipe_temp | °C | Pressure pipe temperature |
+| hotwater_supply_temp | °C | Hot water supply line temperature |
+| supply_target_temp | °C | Supply line target temperature |
+
+**Status fields (boolean 0/1):**
+
+| Field | Description |
+|-------|-------------|
+| compressor | Compressor on/off |
+| brinepump | Brine pump on/off |
+| flowlinepump | Flow line pump on/off |
+| hotwater_production | Hot water production active |
+| aux_heater_3kw | 3 kW auxiliary heater |
+| aux_heater_6kw | 6 kW auxiliary heater |
+
+**Performance fields:**
+
+| Field | Unit | Description |
+|-------|------|-------------|
+| electrical_current | A | Current draw |
+| flowlinepump_speed | % | Flow line pump speed |
+| brinepump_speed | % | Brine pump speed |
+
+**Runtime fields:**
+
+| Field | Unit | Description |
+|-------|------|-------------|
+| runtime_compressor | h | Compressor total runtime |
+| runtime_3kw | h | 3 kW heater total runtime |
+| runtime_6kw | h | 6 kW heater total runtime |
+| runtime_hotwater | h | Hot water production runtime |
+| runtime_passive_cooling | h | Passive cooling runtime |
+| runtime_active_cooling | h | Active cooling runtime |
 
 ## Data Import
 
@@ -292,6 +353,40 @@ curl -X POST "http://localhost:8086/api/v2/delete?org=wago&bucket=building_autom
 docker compose restart ruuvi
 ```
 
+## Thermia Heat Pump MQTT Service
+
+The Thermia service subscribes to MQTT messages from a ThermIQ-ROOM2 module connected to a Thermia ground-source heat pump and stores register data in InfluxDB.
+
+### Start Thermia Service
+
+```bash
+# Start Thermia service (requires InfluxDB to be running)
+docker compose up -d thermia
+
+# View logs
+docker compose logs -f thermia
+```
+
+### Configuration
+
+Environment variables (in `docker-compose.yml`):
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| MQTT_BROKER | freenas.kherrala.fi | MQTT broker hostname |
+| MQTT_PORT | 1883 | MQTT broker port |
+| MQTT_TOPIC | ThermIQ/ThermIQ-room2 | Topic subscription |
+
+### Register Format
+
+The ThermIQ module publishes heat pump registers as a flat JSON object. Register keys can be in hex (`rXX`) or decimal (`dDD`) format — both are handled automatically:
+
+```json
+{"r00": -5, "r01": 21, "r02": 3, "r05": 35, "r0d": 3, "r10": 7, ...}
+```
+
+Bitfield registers (r0d, r10, r11, r13, r14) are expanded into individual boolean fields for component status and alarm states.
+
 ## Grafana Dashboards
 
 ### Building Automation Overview
@@ -337,6 +432,26 @@ Dashboard for Ruuvi Bluetooth sensor data:
 | Paristojännite | Battery voltage with low battery warning |
 | Signaalivoimakkuus (RSSI) | Bluetooth signal strength |
 | Nykyiset lämpötilat | Current temperature stat panel |
+
+### Maalämpöpumppu (Heat Pump)
+
+Dashboard for Thermia ground-source heat pump data:
+
+| Panel | Description |
+|-------|-------------|
+| Sisälämpötila | Indoor temperature (stat) |
+| Ulkolämpötila | Outdoor temperature (stat) |
+| Menovesi / Paluuvesi | Supply / return temperature (stat) |
+| Lämmin käyttövesi | Hot water temperature (stat) |
+| Sähkövirta | Electrical current draw (stat) |
+| Lämmityspiiri | Heating circuit temperatures (timeseries) |
+| Liuospiiri | Brine circuit temperatures (timeseries) |
+| Lämmin käyttövesi | Hot water temp with start/stop setpoints (timeseries) |
+| Sisälämpötila | Indoor temp with target (timeseries) |
+| Laitetila | Component on/off status (state-timeline) |
+| Pumppunopeudet | Pump speeds (timeseries) |
+| Hälytykset | Alarm states (state-timeline) |
+| Käyttötunnit | Runtime counters for compressor, heaters, cooling (stat) |
 
 ### Time Range
 
@@ -483,7 +598,7 @@ An MCP (Model Context Protocol) server is included for integrating with Claude D
 | Tool | Description |
 |------|-------------|
 | `describe_schema` | Get complete data model with all measurements, fields, and units |
-| `list_measurements` | List available measurements (hvac, rooms, ruuvi) |
+| `list_measurements` | List available measurements (hvac, rooms, ruuvi, thermia) |
 | `describe_measurement` | Get details about a specific measurement |
 | `query_data` | Execute custom Flux queries |
 | `get_latest` | Get most recent values for specified fields |
@@ -494,6 +609,8 @@ An MCP (Model Context Protocol) server is included for integrating with Claude D
 | `get_room_temperatures` | Get all room temps and heating demand |
 | `get_air_quality` | Get CO2, PM2.5, VOC, NOx from kitchen sensor |
 | `compare_indoor_outdoor` | Compare indoor vs outdoor temperatures |
+| `get_thermia_status` | Get current heat pump status (temps, components, alarms) |
+| `get_thermia_temperatures` | Get heat pump temperature time series |
 
 ### Quick Start
 
@@ -538,6 +655,8 @@ Once connected, you can ask Claude questions like:
 - "How much energy has the heat pump consumed this month?"
 - "List all room temperatures and heating demand"
 - "Run a Flux query to get the last 24 hours of humidity data"
+- "What's the current heat pump status?"
+- "Show me the brine circuit temperatures for the last week"
 
 ## File Structure
 
@@ -546,6 +665,7 @@ wago-csv-explorer/
 ├── docker-compose.yml          # Container orchestration
 ├── Dockerfile.sync             # Sync container image
 ├── Dockerfile.ruuvi            # Ruuvi MQTT subscriber image
+├── Dockerfile.thermia          # Thermia MQTT subscriber image
 ├── Dockerfile.mcp              # MCP server image
 ├── start.sh                    # Quick start script
 ├── data/                       # CSV data files (git-ignored)
@@ -554,6 +674,7 @@ wago-csv-explorer/
 ├── scripts/
 │   ├── import_data.py          # WAGO CSV data import script
 │   ├── ruuvi_mqtt_subscriber.py # Ruuvi MQTT to InfluxDB
+│   ├── thermia_mqtt_subscriber.py # ThermIQ heat pump MQTT to InfluxDB
 │   ├── mcp_server.py           # MCP server for Claude Desktop (SSE)
 │   ├── sync_and_import.sh      # Remote sync script
 │   └── requirements.txt        # Python dependencies
@@ -567,8 +688,10 @@ wago-csv-explorer/
         └── dashboards/
             ├── dashboards.yml
             ├── building_overview.json  # WAGO building automation
-            ├── energy_consumption.json # Heat recovery efficiency & energy
-            └── ruuvi_sensors.json      # Ruuvi sensor data
+            ├── hvac_dashboard.json     # Heat recovery efficiency & energy
+            ├── ruuvi_sensors.json      # Ruuvi sensor data
+            ├── thermia_heatpump.json   # Thermia heat pump
+            └── lights_status.json      # Light switch status
 ```
 
 ## Troubleshooting

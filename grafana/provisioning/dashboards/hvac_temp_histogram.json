@@ -29,6 +29,18 @@
       "tooltip": "View HVAC ventilation dashboard",
       "type": "link",
       "url": "/d/wago-hvac/hvac"
+    },
+    {
+      "asDropdown": false,
+      "icon": "bolt",
+      "includeVars": true,
+      "keepTime": true,
+      "tags": [],
+      "targetBlank": false,
+      "title": "Maalämpöpumppu",
+      "tooltip": "Thermia heat pump details",
+      "type": "link",
+      "url": "/d/thermia-heatpump/maalampopumppu"
     }
   ],
   "liveNow": false,

@@ -97,6 +97,24 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  thermia:
+    build:
+      context: .
+      dockerfile: Dockerfile.thermia
+    container_name: wago-thermia
+    environment:
+      - MQTT_BROKER=freenas.kherrala.fi
+      - MQTT_PORT=1883
+      - MQTT_TOPIC=ThermIQ/ThermIQ-room2
+      - INFLUXDB_URL=http://influxdb:8086
+      - INFLUXDB_TOKEN=wago-secret-token
+      - INFLUXDB_ORG=wago
+      - INFLUXDB_BUCKET=building_automation
+    depends_on:
+      influxdb:
+        condition: service_healthy
+    restart: unless-stopped
+
   mcp:
     build:
       context: .

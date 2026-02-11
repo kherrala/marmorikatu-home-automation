@@ -41,6 +41,18 @@
       "tooltip": "View Ruuvi Bluetooth sensor data",
       "type": "link",
       "url": "/d/ruuvi-sensors/ruuvi-sensors"
+    },
+    {
+      "asDropdown": false,
+      "icon": "bolt",
+      "includeVars": true,
+      "keepTime": true,
+      "tags": [],
+      "targetBlank": false,
+      "title": "Maalämpöpumppu",
+      "tooltip": "Thermia heat pump details",
+      "type": "link",
+      "url": "/d/thermia-heatpump/maalampopumppu"
     }
   ],
   "liveNow": false,

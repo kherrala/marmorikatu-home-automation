@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Building automation data collection and visualization system. Collects data from a WAGO PLC controller (CSV over SSH), Ruuvi Bluetooth sensors (MQTT), and light switch APIs (HTTP polling), stores in InfluxDB, and visualizes with Grafana dashboards. Includes an MCP server for Claude Desktop integration.
+Building automation data collection and visualization system. Collects data from a WAGO PLC controller (CSV over SSH), Ruuvi Bluetooth sensors (MQTT), Thermia heat pump (MQTT via ThermIQ-ROOM2), and light switch APIs (HTTP polling), stores in InfluxDB, and visualizes with Grafana dashboards. Includes an MCP server for Claude Desktop integration.
 
 ## Common Commands
 
@@ -19,7 +19,7 @@ docker compose --profile sync up -d
 docker compose restart grafana
 
 # View service logs
-docker compose logs -f <service>   # influxdb | grafana | mcp | ruuvi | lights | sync
+docker compose logs -f <service>   # influxdb | grafana | mcp | ruuvi | thermia | lights | sync
 
 # Manual CSV data import
 source venv/bin/activate
@@ -29,33 +29,37 @@ python scripts/import_data.py --incremental # Append new data only
 
 ## Architecture
 
-Six Docker services orchestrated via `docker-compose.yml`:
+Seven Docker services orchestrated via `docker-compose.yml`:
 
 - **influxdb** (InfluxDB 2.7, port 8086) — Time-series database. Bucket: `building_automation`, org: `wago`, token: `wago-secret-token`
 - **grafana** (Grafana 10.2, port 3000) — Dashboard visualization with provisioned JSON dashboards
 - **mcp** (Python 3.12, port 3001) — MCP server exposing InfluxDB data to Claude Desktop via SSE at `/sse`
 - **ruuvi** (Python 3.12) — MQTT subscriber for Ruuvi sensor data (~1s sampling)
+- **thermia** (Python 3.12) — MQTT subscriber for Thermia heat pump data via ThermIQ-ROOM2
 - **lights** (Python 3.12) — HTTP poller for light switch status (5-min intervals)
 - **sync** (Python 3.11, profile: `sync`) — SSH/SCP sync from WAGO controller + incremental CSV import (5-min intervals)
 
-Data flows: WAGO CSV → sync → InfluxDB, Ruuvi → MQTT → ruuvi → InfluxDB, Lights API → lights → InfluxDB. Grafana reads from InfluxDB using Flux queries.
+Data flows: WAGO CSV → sync → InfluxDB, Ruuvi → MQTT → ruuvi → InfluxDB, ThermIQ → MQTT → thermia → InfluxDB, Lights API → lights → InfluxDB. Grafana reads from InfluxDB using Flux queries.
 
 ## InfluxDB Data Model
 
-All data in bucket `building_automation` with four measurements:
+All data in bucket `building_automation` with five measurements:
 
 | Measurement | Source | Tags | Sampling | Content |
 |-------------|--------|------|----------|---------|
 | `hvac` | WAGO CSV (`logfile_dp_*.csv`) | `sensor_group` (ivk_temp, humidity, power, energy, voltage, actuator) | ~2 hours | HVAC temps, humidity, power, energy |
 | `rooms` | WAGO CSV (`Temperatures*.csv`) | `room_type` (bedroom, common, basement, pid, energy), `floor` | ~1 hour | Room temps, PID controller outputs |
 | `ruuvi` | MQTT | `sensor_id`, `sensor_name`, `data_format`, `sensor_type` | ~1 second | Temp, humidity, pressure, CO2, PM, VOC |
+| `thermia` | MQTT (ThermIQ-ROOM2) | `data_type` (temperature, status, alarm, performance, runtime, setting) | ~1 minute | Heat pump temps, component status, alarms, runtimes |
 | `lights` | HTTP API | `floor`, `light_name`, `dual_function` | 5 minutes | Switch on/off status |
 
 ## Key Files
 
 - **`scripts/import_data.py`** — CSV parser handling Latin-1 encoding, sensor validation, batch writes (5000 points). Maps CSV columns to measurements with proper tags.
-- **`scripts/mcp_server.py`** — MCP server with 13 tools (query_data, get_latest, get_statistics, get_heat_recovery_efficiency, get_freezing_probability, etc.). SSE transport via uvicorn/starlette.
+- **`scripts/mcp_server.py`** — MCP server with 15 tools (query_data, get_latest, get_statistics, get_heat_recovery_efficiency, get_freezing_probability, get_thermia_status, get_thermia_temperatures, etc.). SSE transport via uvicorn/starlette.
 - **`scripts/ruuvi_mqtt_subscriber.py`** — Handles Ruuvi data formats 5 (basic) and 225 (air quality). Pressure unit conversion (Pa↔hPa).
+- **`scripts/thermia_mqtt_subscriber.py`** — Subscribes to ThermIQ-ROOM2 MQTT topic, parses hex/decimal register formats, extracts bitfields, writes grouped InfluxDB points.
+- **`Dockerfile.thermia`** — Container image for thermia MQTT subscriber service.
 - **`scripts/lights_poller.py`** — Polls light switch API, classifies by floor, handles dual-function switches.
 - **`grafana/provisioning/dashboards/*.json`** — Grafana dashboard definitions. Each dashboard has a stable UID (e.g., `wago-overview`, `wago-hvac`, `wago-lights`) used in cross-dashboard navigation links.
 
@@ -65,7 +69,7 @@ All data in bucket `building_automation` with four measurements:
 - Each dashboard has navigation links to related dashboards using `/d/<uid>/<slug>` URLs with `includeVars` and `keepTime`
 - Flux queries use `v.timeRangeStart`, `v.timeRangeStop`, `v.windowPeriod` for Grafana time range integration
 - Field names use ASCII (e.g., `Ulkolampotila`) with display name overrides for Finnish characters (e.g., `Ulkolämpötila`)
-- Dashboard tags follow pattern: `building-automation` + topic tag (`wago`, `hvac`, `ruuvi`, `lights`)
+- Dashboard tags follow pattern: `building-automation` + topic tag (`wago`, `hvac`, `ruuvi`, `lights`, `thermia`)
 
 ## Energy Calculations
 

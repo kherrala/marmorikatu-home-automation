@@ -119,6 +119,50 @@ SCHEMA = {
                 "Pakastin": {"type": "basic", "location": "Inside freezer"},
                 "Ulkolämpötila": {"type": "basic", "location": "Outdoor"},
             }
+        },
+        "thermia": {
+            "description": "Thermia ground-source heat pump data via ThermIQ-ROOM2 MQTT (near real-time)",
+            "fields": {
+                "outdoor_temp": {"unit": "°C", "description": "Outdoor temperature (heat pump sensor)"},
+                "indoor_temp": {"unit": "°C", "description": "Indoor temperature (combined integer + decimal)"},
+                "indoor_target_temp": {"unit": "°C", "description": "Indoor target temperature"},
+                "supply_temp": {"unit": "°C", "description": "Supply line temperature"},
+                "return_temp": {"unit": "°C", "description": "Return line temperature"},
+                "hotwater_temp": {"unit": "°C", "description": "Hot water tank temperature"},
+                "brine_out_temp": {"unit": "°C", "description": "Brine circuit outgoing temperature"},
+                "brine_in_temp": {"unit": "°C", "description": "Brine circuit incoming temperature"},
+                "cooling_temp": {"unit": "°C", "description": "Cooling circuit temperature"},
+                "supply_shunt_temp": {"unit": "°C", "description": "Supply line temperature after shunt valve"},
+                "pressurepipe_temp": {"unit": "°C", "description": "Pressure pipe temperature"},
+                "hotwater_supply_temp": {"unit": "°C", "description": "Hot water supply line temperature"},
+                "supply_target_temp": {"unit": "°C", "description": "Supply line target temperature"},
+                "supply_target_shunt_temp": {"unit": "°C", "description": "Supply line target temperature for shunt"},
+                "compressor": {"unit": "bool", "description": "Compressor on/off"},
+                "brinepump": {"unit": "bool", "description": "Brine pump on/off"},
+                "flowlinepump": {"unit": "bool", "description": "Flow line pump on/off"},
+                "hotwater_production": {"unit": "bool", "description": "Hot water production active"},
+                "aux_heater_3kw": {"unit": "bool", "description": "3 kW auxiliary heater on/off"},
+                "aux_heater_6kw": {"unit": "bool", "description": "6 kW auxiliary heater on/off"},
+                "electrical_current": {"unit": "A", "description": "Electrical current draw"},
+                "flowlinepump_speed": {"unit": "%", "description": "Flow line pump speed"},
+                "brinepump_speed": {"unit": "%", "description": "Brine pump speed"},
+                "integral": {"unit": "°C*min", "description": "Heating integral value"},
+                "defrost": {"unit": "*10s", "description": "Defrost timer"},
+                "runtime_compressor": {"unit": "h", "description": "Compressor total runtime"},
+                "runtime_3kw": {"unit": "h", "description": "3 kW heater total runtime"},
+                "runtime_6kw": {"unit": "h", "description": "6 kW heater total runtime"},
+                "runtime_hotwater": {"unit": "h", "description": "Hot water production total runtime"},
+                "runtime_passive_cooling": {"unit": "h", "description": "Passive cooling total runtime"},
+                "runtime_active_cooling": {"unit": "h", "description": "Active cooling total runtime"},
+                "indoor_target_setpoint": {"unit": "°C", "description": "Indoor target setpoint (writable)"},
+                "mode": {"unit": "#", "description": "Operating mode"},
+                "curve": {"unit": "-", "description": "Heating curve setting"},
+                "hotwater_start_temp": {"unit": "°C", "description": "Hot water heating start temperature"},
+                "hotwater_stop_temp": {"unit": "°C", "description": "Hot water heating stop temperature"},
+            },
+            "tags": {
+                "data_type": ["temperature", "status", "alarm", "performance", "runtime", "setting"]
+            }
         }
     },
     "calculations": {
@@ -181,7 +225,7 @@ async def list_tools() -> list[Tool]:
             name="describe_schema",
             description="""Get the complete data schema for the building automation system.
 
-Returns detailed information about all measurements (hvac, rooms, ruuvi),
+Returns detailed information about all measurements (hvac, rooms, ruuvi, thermia),
 their fields, units, descriptions, and available tags.
 
 Use this tool first to understand what data is available before querying.""",
@@ -208,7 +252,7 @@ Use this tool first to understand what data is available before querying.""",
                 "properties": {
                     "measurement": {
                         "type": "string",
-                        "description": "Measurement name: 'hvac', 'rooms', or 'ruuvi'"
+                        "description": "Measurement name: 'hvac', 'rooms', 'ruuvi', or 'thermia'"
                     }
                 },
                 "required": ["measurement"]
@@ -220,7 +264,7 @@ Use this tool first to understand what data is available before querying.""",
 
 The database uses:
 - Bucket: 'building_automation'
-- Measurements: 'hvac', 'rooms', 'ruuvi'
+- Measurements: 'hvac', 'rooms', 'ruuvi', 'thermia'
 
 Example query to get last 24h of outdoor temperature:
 ```flux
@@ -250,13 +294,14 @@ Always use aggregateWindow for time series to reduce data volume.""",
 Examples:
 - measurement='hvac', fields=['Ulkolampotila', 'Tuloilma_ennen_lammitysta']
 - measurement='ruuvi', fields=['temperature', 'humidity'], sensor_name='Keittiö'
-- measurement='rooms', fields=['Keittio', 'Eteinen']""",
+- measurement='rooms', fields=['Keittio', 'Eteinen']
+- measurement='thermia', fields=['outdoor_temp', 'supply_temp', 'compressor']""",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "measurement": {
                         "type": "string",
-                        "description": "Measurement name: 'hvac', 'rooms', or 'ruuvi'"
+                        "description": "Measurement name: 'hvac', 'rooms', 'ruuvi', or 'thermia'"
                     },
                     "fields": {
                         "type": "array",
@@ -424,6 +469,41 @@ Shows the temperature difference and trends for indoor comfort analysis.""",
                         "type": "string",
                         "description": "Indoor temp source: 'rooms' (Keittio) or 'ruuvi' (Olohuone)",
                         "default": "ruuvi"
+                    }
+                },
+                "required": []
+            }
+        ),
+        Tool(
+            name="get_thermia_status",
+            description="""Get current Thermia ground-source heat pump status.
+
+Returns all temperatures, component on/off states, active alarms, pump speeds,
+and runtime counters from the ThermIQ-ROOM2 module.""",
+            inputSchema={
+                "type": "object",
+                "properties": {},
+                "required": []
+            }
+        ),
+        Tool(
+            name="get_thermia_temperatures",
+            description="""Get Thermia heat pump temperature time series.
+
+Returns temperature trends for supply, return, brine, hot water, outdoor,
+and indoor temperatures over the specified time range.""",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "time_range": {
+                        "type": "string",
+                        "description": "Time range (e.g., '-24h', '-7d')",
+                        "default": "-24h"
+                    },
+                    "aggregation": {
+                        "type": "string",
+                        "description": "Aggregation window (e.g., '5m', '1h')",
+                        "default": "5m"
                     }
                 },
                 "required": []
@@ -958,6 +1038,71 @@ from(bucket: "{INFLUXDB_BUCKET}")
             }
 
             return [TextContent(type="text", text=json.dumps(result, indent=2, ensure_ascii=False, default=str))]
+        except Exception as e:
+            return [TextContent(type="text", text=f"Error: {str(e)}")]
+
+    elif name == "get_thermia_status":
+        try:
+            # Query all data types
+            results_by_type = {}
+            for data_type in ["temperature", "status", "alarm", "performance", "runtime", "setting"]:
+                query = f'''
+from(bucket: "{INFLUXDB_BUCKET}")
+  |> range(start: -1h)
+  |> filter(fn: (r) => r._measurement == "thermia" and r.data_type == "{data_type}")
+  |> last()
+'''
+                results = execute_flux_query(query)
+                type_data = {}
+                for r in results:
+                    field = r.get("_field", "unknown")
+                    value = r.get("_value")
+                    unit = SCHEMA["measurements"].get("thermia", {}).get("fields", {}).get(field, {}).get("unit", "")
+                    type_data[field] = {"value": value, "unit": unit}
+                if type_data:
+                    results_by_type[data_type] = type_data
+
+            # Check for active alarms
+            alarms = results_by_type.get("alarm", {})
+            active_alarms = [name for name, info in alarms.items() if info.get("value") == 1]
+
+            result = {
+                "temperatures": results_by_type.get("temperature", {}),
+                "component_status": results_by_type.get("status", {}),
+                "alarms": {
+                    "active": active_alarms,
+                    "all": results_by_type.get("alarm", {})
+                },
+                "performance": results_by_type.get("performance", {}),
+                "runtime_hours": results_by_type.get("runtime", {}),
+                "settings": results_by_type.get("setting", {})
+            }
+
+            return [TextContent(type="text", text=json.dumps(result, indent=2, ensure_ascii=False, default=str))]
+        except Exception as e:
+            return [TextContent(type="text", text=f"Error: {str(e)}")]
+
+    elif name == "get_thermia_temperatures":
+        time_range = arguments.get("time_range", "-24h")
+        aggregation = arguments.get("aggregation", "5m")
+
+        query = f'''
+from(bucket: "{INFLUXDB_BUCKET}")
+  |> range(start: {time_range})
+  |> filter(fn: (r) => r._measurement == "thermia" and r.data_type == "temperature")
+  |> filter(fn: (r) => r._field == "outdoor_temp" or r._field == "indoor_temp" or r._field == "supply_temp" or r._field == "return_temp" or r._field == "hotwater_temp" or r._field == "brine_in_temp" or r._field == "brine_out_temp")
+  |> aggregateWindow(every: {aggregation}, fn: mean, createEmpty: false)
+  |> pivot(rowKey: ["_time"], columnKey: ["_field"], valueColumn: "_value")
+'''
+        try:
+            results = execute_flux_query(query)
+            return [TextContent(type="text", text=json.dumps({
+                "time_range": time_range,
+                "aggregation": aggregation,
+                "count": len(results),
+                "data": results[:100],
+                "truncated": len(results) > 100
+            }, indent=2, ensure_ascii=False, default=str))]
         except Exception as e:
             return [TextContent(type="text", text=f"Error: {str(e)}")]
 
