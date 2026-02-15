@@ -415,7 +415,7 @@
               "placement": {
                 "height": 18,
                 "left": 350,
-                "top": 14,
+                "top": 22,
                 "width": 90
               },
               "type": "metric-value"
@@ -444,6 +444,7 @@
                 },
                 "valign": "middle"
               },
+              "connections": [],
               "constraint": {
                 "horizontal": "left",
                 "vertical": "top"
@@ -452,7 +453,7 @@
               "placement": {
                 "height": 25,
                 "left": 350,
-                "top": 32,
+                "top": 40,
                 "width": 90
               },
               "type": "metric-value"
@@ -489,7 +490,7 @@
               "placement": {
                 "height": 16,
                 "left": 350,
-                "top": 57,
+                "top": 65,
                 "width": 90
               },
               "type": "metric-value"
@@ -634,8 +635,8 @@
               "name": "Takka label",
               "placement": {
                 "height": 18,
-                "left": 247,
-                "top": 14,
+                "left": 248,
+                "top": 21,
                 "width": 90
               },
               "type": "metric-value"
@@ -671,8 +672,8 @@
               "name": "Takka",
               "placement": {
                 "height": 25,
-                "left": 247,
-                "top": 32,
+                "left": 248,
+                "top": 39,
                 "width": 90
               },
               "type": "metric-value"
@@ -708,8 +709,8 @@
               "name": "Takka age",
               "placement": {
                 "height": 16,
-                "left": 247,
-                "top": 57,
+                "left": 248,
+                "top": 64,
                 "width": 90
               },
               "type": "metric-value"
@@ -2999,5 +3000,5 @@
   "timezone": "Europe/Helsinki",
   "title": "Temperature Overview",
   "uid": "wago-overview",
-  "version": 230
+  "version": 235
 }

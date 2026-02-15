@@ -29,95 +29,96 @@ INFLUXDB_ORG = os.environ.get("INFLUXDB_ORG", "wago")
 INFLUXDB_BUCKET = os.environ.get("INFLUXDB_BUCKET", "building_automation")
 
 # Register map: decimal register index -> field name
+# Official English names from ThermIQ id_names specification
 # Temperature registers (simple integer °C unless noted)
 TEMP_REGISTERS = {
-    0: "outdoor_temp",         # r00
-    5: "supply_temp",          # r05
-    6: "return_temp",          # r06
-    7: "hotwater_temp",        # r07
-    8: "brine_out_temp",       # r08
-    9: "brine_in_temp",        # r09
-    10: "cooling_temp",        # r0a
-    11: "supply_shunt_temp",   # r0b
-    14: "supply_target_temp",  # r0e
-    15: "supply_target_shunt_temp",  # r0f
-    23: "pressurepipe_temp",   # r17
-    24: "hotwater_supply_temp",  # r18
+    0: "outdoor_temp",         # r00 - Outdoor temp.
+    5: "supply_temp",          # r05 - Supplyline temp.
+    6: "return_temp",          # r06 - Returnline temp.
+    7: "hotwater_temp",        # r07 - Hotwater temp.
+    8: "brine_out_temp",       # r08 - Brine out temp.
+    9: "brine_in_temp",        # r09 - Brine in temp.
+    10: "cooling_temp",        # r0a - Cooling temp.
+    11: "supply_shunt_temp",   # r0b - Supplyline temp., shunt
+    14: "supply_target_temp",  # r0e - Supplyline target temp.
+    15: "supply_target_shunt_temp",  # r0f - Supplyline target temp., shunt
+    23: "pressurepipe_temp",   # r17 - Pressurepipe temp.
+    24: "hotwater_supply_temp",  # r18 - Hotw. supplyline temp.
 }
 
 # Combined temperature registers (integer + decimal part)
 # r01 + r02*0.1 = indoor_temp, r03 + r04*0.1 = indoor_target_temp
 COMBINED_TEMP = {
-    "indoor_temp": (1, 2),          # (integer_reg, decimal_reg)
-    "indoor_target_temp": (3, 4),
+    "indoor_temp": (1, 2),          # Indoor temp. + Indoor temp., decimal
+    "indoor_target_temp": (3, 4),   # Indoor target temp. + Indoor target temp., decimal
 }
 
 # Performance registers
 PERF_REGISTERS = {
-    12: "electrical_current",    # r0c (A)
-    30: "flowlinepump_speed",    # r1e (%)
-    31: "brinepump_speed",       # r1f (%)
-    25: "integral",              # r19 (C*min)
-    27: "defrost",               # r1b (*10s)
+    12: "electrical_current",    # r0c - Electrical Current (A)
+    30: "flowlinepump_speed",    # r1e - Flowlinepump speed (%)
+    31: "brinepump_speed",       # r1f - Brinepump speed (%)
+    25: "integral",              # r19 - Integral (A1) (C*min)
+    27: "defrost",               # r1b - Defrost (*10s)
 }
 
 # Runtime registers (hours)
 RUNTIME_REGISTERS = {
-    104: "runtime_compressor",       # r68
-    106: "runtime_3kw",              # r6a
-    108: "runtime_hotwater",         # r6c
-    110: "runtime_passive_cooling",  # r6e
-    112: "runtime_active_cooling",   # r70
-    114: "runtime_6kw",              # r72
+    104: "runtime_compressor",       # r68 - Runtime compressor
+    106: "runtime_3kw",              # r6a - Runtime 3 kW
+    108: "runtime_hotwater",         # r6c - Runtime hotwater production
+    110: "runtime_passive_cooling",  # r6e - Runtime passive cooling
+    112: "runtime_active_cooling",   # r70 - Runtime active cooling
+    114: "runtime_6kw",              # r72 - Runtime 6 kW
 }
 
 # Setting registers (read/write)
 SETTING_REGISTERS = {
-    50: "indoor_target_setpoint",  # r32
-    51: "mode",                    # r33
-    52: "curve",                   # r34
-    68: "hotwater_start_temp",     # r44
-    84: "hotwater_stop_temp",      # r54
+    50: "indoor_target_setpoint",  # r32 - Indoor target temp.
+    51: "mode",                    # r33 - Mode
+    52: "curve",                   # r34 - Curve
+    68: "hotwater_start_temp",     # r44 - Hotwater starttemp.
+    84: "hotwater_stop_temp",      # r54 - Hotwater stop temp.
 }
 
 # Bitfield definitions: register -> [(bit, field_name), ...]
 STATUS_BITFIELDS = {
     13: [  # r0d
-        (0, "aux_heater_3kw"),
-        (1, "aux_heater_6kw"),
+        (0, "aux_heater_3kw"),       # Aux. heater 3 kW
+        (1, "aux_heater_6kw"),       # Aux. heater 6 kW
     ],
     16: [  # r10
-        (0, "brinepump"),
-        (1, "compressor"),
-        (2, "flowlinepump"),
-        (3, "hotwater_production"),
-        (4, "aux_2"),
-        (5, "shunt_minus"),
-        (6, "shunt_plus"),
-        (7, "aux_1"),
+        (0, "brinepump"),            # Brinepump
+        (1, "compressor"),           # Compressor
+        (2, "flowlinepump"),         # Flowlinepump
+        (3, "hotwater_production"),  # Hotwater production.
+        (4, "aux_2"),                # Auxilliary 2
+        (5, "shunt_minus"),          # Shunt -
+        (6, "shunt_plus"),           # Shunt +
+        (7, "aux_1"),                # Auxilliary 1
     ],
     17: [  # r11
-        (4, "active_cooling"),
-        (5, "passive_cooling"),
+        (4, "active_cooling"),       # Active cooling
+        (5, "passive_cooling"),      # Passive cooling
     ],
 }
 
 ALARM_BITFIELDS = {
     19: [  # r13
-        (0, "alarm_highpr_pressostate"),
-        (1, "alarm_lowpr_pressostate"),
-        (2, "alarm_motor_breaker"),
-        (3, "alarm_low_flow_brine"),
-        (4, "alarm_low_temp_brine"),
+        (0, "alarm_highpr_pressostate"),  # Alarm highpr.pressostate
+        (1, "alarm_lowpr_pressostate"),   # Alarm lowpr.pressostate
+        (2, "alarm_motor_breaker"),       # Alarm motorcircuit breaker
+        (3, "alarm_low_flow_brine"),      # Alarm low flow brine
+        (4, "alarm_low_temp_brine"),      # Alarm low temp. brine
     ],
     20: [  # r14
-        (0, "alarm_outdoor_sensor"),
-        (1, "alarm_supply_sensor"),
-        (2, "alarm_return_sensor"),
-        (3, "alarm_hotwater_sensor"),
-        (4, "alarm_indoor_sensor"),
-        (5, "alarm_3phase_order"),
-        (6, "alarm_overheating"),
+        (0, "alarm_outdoor_sensor"),      # Alarm outdoor t-sensor
+        (1, "alarm_supply_sensor"),       # Alarm supplyline t-sensor
+        (2, "alarm_return_sensor"),       # Alarm returnline t-sensor
+        (3, "alarm_hotwater_sensor"),     # Alarm hotw. t-sensor
+        (4, "alarm_indoor_sensor"),       # Alarm indoor t-sensor
+        (5, "alarm_3phase_order"),        # Alarm incorrect 3-phase order
+        (6, "alarm_overheating"),         # Alarm overheating
     ],
 }
 

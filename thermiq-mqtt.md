@@ -8,7 +8,7 @@ Note that register can be either hex (`rXX`) or decimal (`dDD`) - any parsing mu
 
 ## Command MQTT Interface
 
-Commands are published as JSON messages to topic `ThermIQ/ThermIQ-room2/write`.
+Commands are published as JSON messages to topic `ThermIQ/ThermIQ-room2/<command>>`.
 
 | Command  | JSON Payload                       | Description                                                                 |
 |----------|------------------------------------|-----------------------------------------------------------------------------|
