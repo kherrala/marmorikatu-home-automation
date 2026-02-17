@@ -44,7 +44,6 @@ TEMP_REGISTERS = {
     14: "supply_target_temp",  # r0e - Supplyline target temp.
     15: "supply_target_shunt_temp",  # r0f - Supplyline target temp., shunt
     23: "pressurepipe_temp",   # r17 - Pressurepipe temp.
-    24: "hotwater_supply_temp",  # r18 - Hotw. supplyline temp.
 }
 
 # Combined temperature registers (integer + decimal part)
@@ -57,10 +56,12 @@ COMBINED_TEMP = {
 # Performance registers
 PERF_REGISTERS = {
     12: "electrical_current",    # r0c - Electrical Current (A)
-    30: "flowlinepump_speed",    # r1e - Flowlinepump speed (%)
-    31: "brinepump_speed",       # r1f - Brinepump speed (%)
+    21: "demand1",               # r15 - DEMAND1
+    22: "demand2",               # r16 - DEMAND2
     25: "integral",              # r19 - Integral (A1) (C*min)
     27: "defrost",               # r1b - Defrost (*10s)
+    30: "flowlinepump_speed",    # r1e - Flowlinepump speed (%)
+    31: "brinepump_speed",       # r1f - Brinepump speed (%)
 }
 
 # Runtime registers (hours)
@@ -79,6 +80,8 @@ SETTING_REGISTERS = {
     51: "mode",                    # r33 - Mode
     52: "curve",                   # r34 - Curve
     68: "hotwater_start_temp",     # r44 - Hotwater starttemp.
+    73: "integral_limit_a1",       # r49 - Integral limit A1 (C*min)
+    79: "integral_limit_a2",       # r4f - Integral limit A2 (*10 C*min)
     84: "hotwater_stop_temp",      # r54 - Hotwater stop temp.
 }
 

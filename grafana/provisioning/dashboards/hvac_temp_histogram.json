@@ -13,7 +13,7 @@
       "keepTime": true,
       "tags": [],
       "targetBlank": false,
-      "title": "Temperature Overview",
+      "title": "Yleiskuva",
       "tooltip": "View temperature overview dashboard",
       "type": "link",
       "url": "/d/wago-overview/temperature-overview"
@@ -37,7 +37,7 @@
       "keepTime": true,
       "tags": [],
       "targetBlank": false,
-      "title": "Maalämpöpumppu",
+      "title": "MLP",
       "tooltip": "Thermia heat pump details",
       "type": "link",
       "url": "/d/thermia-heatpump/maalampopumppu"
@@ -185,7 +185,12 @@
   "refresh": "",
   "schemaVersion": 38,
   "style": "dark",
-  "tags": ["building-automation", "wago", "histogram", "hvac"],
+  "tags": [
+    "building-automation",
+    "wago",
+    "histogram",
+    "hvac"
+  ],
   "templating": {
     "list": []
   },

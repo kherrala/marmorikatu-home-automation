@@ -13,7 +13,7 @@
       "keepTime": true,
       "tags": [],
       "targetBlank": false,
-      "title": "Temperature Overview",
+      "title": "Yleiskuva",
       "tooltip": "View temperature overview dashboard",
       "type": "link",
       "url": "/d/wago-overview/temperature-overview"
@@ -37,7 +37,7 @@
       "keepTime": true,
       "tags": [],
       "targetBlank": false,
-      "title": "Light Status",
+      "title": "Valot",
       "tooltip": "View light switch status by floor",
       "type": "link",
       "url": "/d/wago-lights/light-switch-status"
@@ -49,7 +49,7 @@
       "keepTime": true,
       "tags": [],
       "targetBlank": false,
-      "title": "Maalämpöpumppu",
+      "title": "MLP",
       "tooltip": "Thermia heat pump details",
       "type": "link",
       "url": "/d/thermia-heatpump/maalampopumppu"

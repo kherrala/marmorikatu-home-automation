@@ -39,7 +39,7 @@
       "keepTime": true,
       "tags": [],
       "targetBlank": false,
-      "title": "Ruuvi Sensors",
+      "title": "Ruuvi",
       "tooltip": "View Ruuvi Bluetooth sensor data",
       "type": "link",
       "url": "/d/ruuvi-sensors/ruuvi-sensors"
@@ -51,7 +51,7 @@
       "keepTime": true,
       "tags": [],
       "targetBlank": false,
-      "title": "Light Status",
+      "title": "Valot",
       "tooltip": "View light switch status by floor",
       "type": "link",
       "url": "/d/wago-lights/light-switch-status"
@@ -63,7 +63,7 @@
       "keepTime": true,
       "tags": [],
       "targetBlank": false,
-      "title": "Maalämpöpumppu",
+      "title": "MLP",
       "tooltip": "Thermia heat pump details",
       "type": "link",
       "url": "/d/thermia-heatpump/maalampopumppu"
