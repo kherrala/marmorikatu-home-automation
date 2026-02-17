@@ -21,6 +21,7 @@ from influxdb_client.client.write_api import SYNCHRONOUS
 MQTT_BROKER = os.environ.get("MQTT_BROKER", "freenas.kherrala.fi")
 MQTT_PORT = int(os.environ.get("MQTT_PORT", "1883"))
 MQTT_TOPIC = os.environ.get("MQTT_TOPIC", "ThermIQ/ThermIQ-room2")
+MQTT_DATA_TOPIC = os.environ.get("MQTT_DATA_TOPIC", "ThermIQ/marmorikatu/data")
 READ_INTERVAL = int(os.environ.get("READ_INTERVAL", "30"))
 
 INFLUXDB_URL = os.environ.get("INFLUXDB_URL", "http://localhost:8086")
@@ -264,8 +265,8 @@ def on_connect(client, userdata, flags, rc, properties=None):
     """Callback when connected to MQTT broker."""
     if rc == 0:
         print(f"Connected to MQTT broker {MQTT_BROKER}:{MQTT_PORT}")
-        client.subscribe(MQTT_TOPIC)
-        print(f"Subscribed to topic: {MQTT_TOPIC}")
+        client.subscribe(MQTT_DATA_TOPIC)
+        print(f"Subscribed to topic: {MQTT_DATA_TOPIC}")
     else:
         print(f"Failed to connect to MQTT broker, return code: {rc}")
 
@@ -314,7 +315,8 @@ def main():
     print("ThermIQ-ROOM2 Heat Pump MQTT Subscriber")
     print("=" * 60)
     print(f"MQTT Broker: {MQTT_BROKER}:{MQTT_PORT}")
-    print(f"MQTT Topic: {MQTT_TOPIC}")
+    print(f"MQTT Topic (read cmd): {MQTT_TOPIC}")
+    print(f"MQTT Data Topic: {MQTT_DATA_TOPIC}")
     print(f"Read interval: {READ_INTERVAL}s")
     print(f"InfluxDB: {INFLUXDB_URL}")
     print(f"Bucket: {INFLUXDB_BUCKET}")

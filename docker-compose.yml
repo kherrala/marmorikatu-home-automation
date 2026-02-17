@@ -106,6 +106,7 @@ services:
       - MQTT_BROKER=freenas.kherrala.fi
       - MQTT_PORT=1883
       - MQTT_TOPIC=ThermIQ/ThermIQ-room2
+      - MQTT_DATA_TOPIC=ThermIQ/marmorikatu/data
       - READ_INTERVAL=30
       - INFLUXDB_URL=http://influxdb:8086
       - INFLUXDB_TOKEN=wago-secret-token
