@@ -81,7 +81,7 @@ SETTING_REGISTERS = {
     52: "curve",                   # r34 - Curve
     68: "hotwater_start_temp",     # r44 - Hotwater starttemp.
     73: "integral_limit_a1",       # r49 - Integral limit A1 (C*min)
-    79: "integral_limit_a2",       # r4f - Integral limit A2 (*10 C*min)
+    79: "integral_limit_a2",       # r4f - Integral limit A2 (raw value ×10 applied on write)
     84: "hotwater_stop_temp",      # r54 - Hotwater stop temp.
 }
 
@@ -252,7 +252,11 @@ def build_points(registers, timestamp):
     setting_fields = {}
     for reg_idx, field_name in SETTING_REGISTERS.items():
         if reg_idx in registers:
-            setting_fields[field_name] = float(registers[reg_idx])
+            value = float(registers[reg_idx])
+            # Register 79 (integral_limit_a2) has ×10 multiplier
+            if reg_idx == 79:
+                value *= 10.0
+            setting_fields[field_name] = value
 
     if setting_fields:
         point = Point("thermia").tag("data_type", "setting")
