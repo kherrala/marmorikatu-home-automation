@@ -12,7 +12,6 @@ import os
 import json
 import signal
 import sys
-import time
 from datetime import datetime, timezone
 import paho.mqtt.client as mqtt
 from influxdb_client import InfluxDBClient, Point, WritePrecision
@@ -49,17 +48,14 @@ except json.JSONDecodeError:
     SENSOR_NAMES = DEFAULT_SENSOR_NAMES
 
 # ThermIQ indoor temperature forwarding
-THERMIQ_WRITE_TOPIC = os.environ.get("THERMIQ_WRITE_TOPIC", "ThermIQ/marmorikatu/write")
+THERMIQ_WRITE_TOPIC = os.environ.get("THERMIQ_WRITE_TOPIC", "ThermIQ/marmorikatu/set")
 THERMIQ_INDOOR_SENSOR = os.environ.get("THERMIQ_INDOOR_SENSOR", "Olohuone")
 THERMIQ_INDOOR_MIN = 19.0
 THERMIQ_INDOOR_MAX = 25.0
-THERMIQ_WRITE_INTERVAL = 600  # 10 minutes
 
 # Global state
 influx_client = None
 write_api = None
-mqtt_client_ref = None
-last_thermiq_write = 0.0
 
 
 def get_sensor_name(sensor_id: str) -> str:
@@ -174,13 +170,7 @@ def process_advanced_ruuvi(data: dict, sensor_id: str, sensor_name: str) -> Poin
 
 
 def forward_indoor_temp_to_thermiq(client, temperature):
-    """Forward indoor temperature to ThermIQ heat pump via MQTT write."""
-    global last_thermiq_write
-
-    now = time.monotonic()
-    if now - last_thermiq_write < THERMIQ_WRITE_INTERVAL:
-        return
-
+    """Forward indoor temperature to ThermIQ heat pump via MQTT set."""
     if temperature < THERMIQ_INDOOR_MIN or temperature > THERMIQ_INDOOR_MAX:
         print(f"ThermIQ: indoor temp {temperature}°C outside bounds "
               f"({THERMIQ_INDOOR_MIN}-{THERMIQ_INDOOR_MAX}°C), skipping")
@@ -189,7 +179,6 @@ def forward_indoor_temp_to_thermiq(client, temperature):
     value = f"{temperature:.1f}"
     payload = json.dumps({"INDR_T": value})
     client.publish(THERMIQ_WRITE_TOPIC, payload)
-    last_thermiq_write = now
     print(f"ThermIQ: set INDR_T to {value}°C")
 
 
@@ -273,7 +262,7 @@ def main():
     for mac, name in SENSOR_NAMES.items():
         print(f"  {mac} -> {name}")
     print(f"ThermIQ forwarding: {THERMIQ_INDOOR_SENSOR} -> {THERMIQ_WRITE_TOPIC}")
-    print(f"  Bounds: {THERMIQ_INDOOR_MIN}-{THERMIQ_INDOOR_MAX}°C, interval: {THERMIQ_WRITE_INTERVAL}s")
+    print(f"  Bounds: {THERMIQ_INDOOR_MIN}-{THERMIQ_INDOOR_MAX}°C")
     print("-" * 60)
 
     # Setup signal handlers

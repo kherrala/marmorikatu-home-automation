@@ -26,6 +26,7 @@ import paho.mqtt.client as mqtt
 MQTT_BROKER = os.environ.get("MQTT_BROKER", "freenas.kherrala.fi")
 MQTT_PORT = int(os.environ.get("MQTT_PORT", "1883"))
 MQTT_WRITE_TOPIC = os.environ.get("MQTT_WRITE_TOPIC", "ThermIQ/marmorikatu/write")
+MQTT_SET_TOPIC = os.environ.get("MQTT_SET_TOPIC", "ThermIQ/marmorikatu/set")
 MQTT_READ_TOPIC = os.environ.get("MQTT_READ_TOPIC", "ThermIQ/ThermIQ-room2/read")
 MQTT_DATA_TOPIC = os.environ.get("MQTT_DATA_TOPIC", "ThermIQ/marmorikatu/data")
 
@@ -82,6 +83,16 @@ REGISTERS = [
 _BY_NAME = {r[2]: r for r in REGISTERS}
 _BY_DREG = {f"d{r[0]}": r for r in REGISTERS}
 _SETTINGS_BY_DEC = {r[0]: r for r in REGISTERS}
+
+# Parameters set via the /set topic (not register writes)
+# (name, value_type, min_val, max_val, description)
+PARAMETERS = [
+    ("INDR_T", "float", -40.0, 50.0, "Indoor temperature override (°C)"),
+    ("EVU", "int", 0, 1, "EVU block (0=off, 1=on)"),
+    ("REGFMT", "int", 0, 1, "Register format (0=hex rXX, 1=decimal dDD)"),
+]
+
+_PARAMS_BY_NAME = {p[0].lower(): p for p in PARAMETERS}
 
 # Read-mode register map: all known registers grouped by category
 # (decimal_reg, name, unit, description)
@@ -300,13 +311,19 @@ def display_read_data(payload):
 
 
 def list_registers():
-    """Print all writable registers."""
+    """Print all writable registers and parameters."""
     print(f"{'Reg':<6} {'Hex':<5} {'Name':<30} {'Range':<15} {'Description'}")
     print("-" * 90)
     for dec, hex_addr, name, unit, min_v, max_v, desc in REGISTERS:
         unit_str = f" {unit}" if unit else ""
         range_str = f"{min_v}..{max_v}{unit_str}"
         print(f"d{dec:<5} r{hex_addr:02x}   {name:<30} {range_str:<15} {desc}")
+    print()
+    print(f"{'Name':<30} {'Type':<8} {'Range':<15} {'Description'} (via /set topic)")
+    print("-" * 90)
+    for name, vtype, min_v, max_v, desc in PARAMETERS:
+        range_str = f"{min_v}..{max_v}"
+        print(f"{name:<30} {vtype:<8} {range_str:<15} {desc}")
 
 
 def resolve_register(identifier):
@@ -346,6 +363,33 @@ def publish_write(broker, port, topic, hex_addr, value, dry_run=False):
         client.disconnect()
 
 
+def publish_set(broker, port, topic, param_name, value, dry_run=False):
+    """Publish a parameter set command via MQTT."""
+    payload = {param_name: value}
+    message = json.dumps(payload)
+
+    if dry_run:
+        print(f"[DRY RUN] Would publish to {topic}:")
+        print(f"  {message}")
+        return True
+
+    print(f"Publishing to {topic}:")
+    print(f"  {message}")
+
+    client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+    try:
+        client.connect(broker, port, 10)
+        result = client.publish(topic, message)
+        result.wait_for_publish(timeout=5)
+        print("Published successfully.")
+        return True
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return False
+    finally:
+        client.disconnect()
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Read and write ThermIQ-ROOM2 heat pump settings via MQTT.",
@@ -355,7 +399,9 @@ def main():
                "  %(prog)s --list\n"
                "  %(prog)s indoor_requested_t 22\n"
                "  %(prog)s d50 22\n"
-               "  %(prog)s --dry-run hotwater_stop_t 55\n",
+               "  %(prog)s --dry-run hotwater_stop_t 55\n"
+               "  %(prog)s INDR_T 20.5\n"
+               "  %(prog)s EVU 0\n",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("--list", action="store_true", help="List all writable registers")
@@ -363,13 +409,14 @@ def main():
     parser.add_argument("--timeout", type=int, default=15, help="Timeout in seconds for --read (default: 15)")
     parser.add_argument("--broker", default=MQTT_BROKER, help=f"MQTT broker (default: {MQTT_BROKER})")
     parser.add_argument("--port", type=int, default=MQTT_PORT, help=f"MQTT port (default: {MQTT_PORT})")
-    parser.add_argument("--topic", default=MQTT_WRITE_TOPIC, help=f"MQTT write topic (default: {MQTT_WRITE_TOPIC})")
+    parser.add_argument("--topic", default=MQTT_WRITE_TOPIC, help=f"MQTT register write topic (default: {MQTT_WRITE_TOPIC})")
+    parser.add_argument("--set-topic", default=MQTT_SET_TOPIC, help=f"MQTT parameter set topic (default: {MQTT_SET_TOPIC})")
     parser.add_argument("--read-topic", default=MQTT_READ_TOPIC, help=f"MQTT read command topic (default: {MQTT_READ_TOPIC})")
     parser.add_argument("--data-topic", default=MQTT_DATA_TOPIC, help=f"MQTT data response topic (default: {MQTT_DATA_TOPIC})")
     parser.add_argument("--dry-run", action="store_true", help="Show what would be sent without publishing")
     parser.add_argument("--confirm", action="store_true", help="Skip interactive confirmation")
-    parser.add_argument("register", nargs="?", help="Register name or number (e.g. indoor_requested_t or d50)")
-    parser.add_argument("value", nargs="?", type=int, help="Value to write")
+    parser.add_argument("register", nargs="?", help="Register name/number (e.g. indoor_requested_t, d50) or parameter (INDR_T, EVU, REGFMT)")
+    parser.add_argument("value", nargs="?", help="Value to write")
 
     args = parser.parse_args()
 
@@ -385,23 +432,62 @@ def main():
         return
 
     if not args.register or args.value is None:
-        parser.error("register and value are required (use --list to see available registers)")
+        parser.error("register/parameter and value are required (use --list to see options)")
 
+    # Check if it's a parameter (set topic)
+    param = _PARAMS_BY_NAME.get(args.register.lower())
+    if param:
+        pname, vtype, min_v, max_v, desc = param
+        try:
+            parsed = float(args.value) if vtype == "float" else int(args.value)
+        except ValueError:
+            print(f"Error: Invalid {vtype} value '{args.value}'", file=sys.stderr)
+            sys.exit(1)
+        if parsed < min_v or parsed > max_v:
+            print(f"Error: Value {parsed} out of range for {pname} ({min_v}..{max_v})", file=sys.stderr)
+            sys.exit(1)
+
+        print(f"Parameter: {pname}")
+        print(f"Value:     {parsed}")
+        print(f"Topic:     {args.set_topic}")
+        print(f"Description: {desc}")
+        print()
+
+        if not args.dry_run and not args.confirm:
+            try:
+                answer = input("Confirm write? [y/N] ").strip().lower()
+            except (EOFError, KeyboardInterrupt):
+                print("\nAborted.")
+                sys.exit(1)
+            if answer != "y":
+                print("Aborted.")
+                sys.exit(1)
+
+        success = publish_set(args.broker, args.port, args.set_topic, pname, parsed, dry_run=args.dry_run)
+        sys.exit(0 if success else 1)
+
+    # Otherwise resolve as a register (write topic)
     reg = resolve_register(args.register)
     if reg is None:
-        print(f"Error: Unknown register '{args.register}'", file=sys.stderr)
-        print("Use --list to see available registers.", file=sys.stderr)
+        print(f"Error: Unknown register or parameter '{args.register}'", file=sys.stderr)
+        print("Use --list to see available options.", file=sys.stderr)
         sys.exit(1)
 
     dec, hex_addr, name, unit, min_v, max_v, desc = reg
 
-    if args.value < min_v or args.value > max_v:
-        print(f"Error: Value {args.value} out of range for {name} ({min_v}..{max_v})", file=sys.stderr)
+    try:
+        int_value = int(args.value)
+    except ValueError:
+        print(f"Error: Register value must be an integer, got '{args.value}'", file=sys.stderr)
+        sys.exit(1)
+
+    if int_value < min_v or int_value > max_v:
+        print(f"Error: Value {int_value} out of range for {name} ({min_v}..{max_v})", file=sys.stderr)
         sys.exit(1)
 
     unit_str = f" {unit}" if unit else ""
     print(f"Register: d{dec} (r{hex_addr:02x}) — {name}")
-    print(f"Value:    {args.value}{unit_str}")
+    print(f"Value:    {int_value}{unit_str}")
     print(f"Description: {desc}")
     print()
 
@@ -415,7 +501,7 @@ def main():
             print("Aborted.")
             sys.exit(1)
 
-    success = publish_write(args.broker, args.port, args.topic, hex_addr, args.value, dry_run=args.dry_run)
+    success = publish_write(args.broker, args.port, args.topic, hex_addr, int_value, dry_run=args.dry_run)
     sys.exit(0 if success else 1)
 
 
