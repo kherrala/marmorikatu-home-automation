@@ -12,6 +12,7 @@ import os
 import json
 import signal
 import sys
+import time
 from datetime import datetime, timezone
 import paho.mqtt.client as mqtt
 from influxdb_client import InfluxDBClient, Point, WritePrecision
@@ -47,9 +48,18 @@ try:
 except json.JSONDecodeError:
     SENSOR_NAMES = DEFAULT_SENSOR_NAMES
 
-# Global InfluxDB client
+# ThermIQ indoor temperature forwarding
+THERMIQ_WRITE_TOPIC = os.environ.get("THERMIQ_WRITE_TOPIC", "ThermIQ/marmorikatu/write")
+THERMIQ_INDOOR_SENSOR = os.environ.get("THERMIQ_INDOOR_SENSOR", "Olohuone")
+THERMIQ_INDOOR_MIN = 19.0
+THERMIQ_INDOOR_MAX = 25.0
+THERMIQ_WRITE_INTERVAL = 600  # 10 minutes
+
+# Global state
 influx_client = None
 write_api = None
+mqtt_client_ref = None
+last_thermiq_write = 0.0
 
 
 def get_sensor_name(sensor_id: str) -> str:
@@ -163,6 +173,26 @@ def process_advanced_ruuvi(data: dict, sensor_id: str, sensor_name: str) -> Poin
     return point
 
 
+def forward_indoor_temp_to_thermiq(client, temperature):
+    """Forward indoor temperature to ThermIQ heat pump via MQTT write."""
+    global last_thermiq_write
+
+    now = time.monotonic()
+    if now - last_thermiq_write < THERMIQ_WRITE_INTERVAL:
+        return
+
+    if temperature < THERMIQ_INDOOR_MIN or temperature > THERMIQ_INDOOR_MAX:
+        print(f"ThermIQ: indoor temp {temperature}°C outside bounds "
+              f"({THERMIQ_INDOOR_MIN}-{THERMIQ_INDOOR_MAX}°C), skipping")
+        return
+
+    value = f"{temperature:.1f}"
+    payload = json.dumps({"INDR_T": value})
+    client.publish(THERMIQ_WRITE_TOPIC, payload)
+    last_thermiq_write = now
+    print(f"ThermIQ: set INDR_T to {value}°C")
+
+
 def on_connect(client, userdata, flags, rc, properties=None):
     """Callback when connected to MQTT broker."""
     if rc == 0:
@@ -211,6 +241,10 @@ def on_message(client, userdata, msg):
         # Write to InfluxDB
         write_api.write(bucket=INFLUXDB_BUCKET, org=INFLUXDB_ORG, record=point)
 
+        # Forward indoor temperature to ThermIQ
+        if sensor_name == THERMIQ_INDOOR_SENSOR and payload.get("temperature") is not None:
+            forward_indoor_temp_to_thermiq(client, float(payload["temperature"]))
+
     except json.JSONDecodeError as e:
         print(f"Failed to parse JSON: {e}")
     except Exception as e:
@@ -238,6 +272,8 @@ def main():
     print(f"Sensor mappings: {len(SENSOR_NAMES)} configured")
     for mac, name in SENSOR_NAMES.items():
         print(f"  {mac} -> {name}")
+    print(f"ThermIQ forwarding: {THERMIQ_INDOOR_SENSOR} -> {THERMIQ_WRITE_TOPIC}")
+    print(f"  Bounds: {THERMIQ_INDOOR_MIN}-{THERMIQ_INDOOR_MAX}°C, interval: {THERMIQ_WRITE_INTERVAL}s")
     print("-" * 60)
 
     # Setup signal handlers
