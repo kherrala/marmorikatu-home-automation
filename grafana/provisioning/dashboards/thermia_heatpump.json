@@ -350,7 +350,7 @@
             "type": "influxdb",
             "uid": "influxdb"
           },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"runtime\")\n  |> filter(fn: (r) => r._field == \"runtime_3kw\")\n  |> last()",
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"runtime\")\n  |> filter(fn: (r) => r._field == \"runtime_3kw\")\n  |> spread()",
           "refId": "A"
         }
       ],
@@ -412,7 +412,7 @@
             "type": "influxdb",
             "uid": "influxdb"
           },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"runtime\")\n  |> filter(fn: (r) => r._field == \"runtime_compressor\")\n  |> last()",
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"runtime\")\n  |> filter(fn: (r) => r._field == \"runtime_compressor\")\n  |> spread()",
           "refId": "A"
         }
       ],
@@ -790,7 +790,7 @@
             "type": "influxdb",
             "uid": "influxdb"
           },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"runtime\")\n  |> filter(fn: (r) => r._field == \"runtime_hotwater\")\n  |> last()",
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"runtime\")\n  |> filter(fn: (r) => r._field == \"runtime_hotwater\")\n  |> spread()",
           "refId": "A"
         }
       ],
@@ -852,7 +852,7 @@
             "type": "influxdb",
             "uid": "influxdb"
           },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"runtime\")\n  |> filter(fn: (r) => r._field == \"runtime_6kw\")\n  |> last()",
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"runtime\")\n  |> filter(fn: (r) => r._field == \"runtime_6kw\")\n  |> spread()",
           "refId": "A"
         }
       ],
@@ -2945,6 +2945,140 @@
       ],
       "title": "Ulkolämpötila",
       "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [],
+          "unit": "h"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "runtime_compressor"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Kompressori"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "runtime_3kw"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Lisävastus 3kW"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "runtime_6kw"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Lisävastus 6kW"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "runtime_hotwater"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Lämmin vesi"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "runtime_passive_cooling"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Passiivijäähdytys"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "runtime_active_cooling"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Aktiivijäähdytys"
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 0
+      },
+      "id": 31,
+      "options": {
+        "displayLabels": [
+          "percent"
+        ],
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "values": [
+            "value"
+          ]
+        },
+        "pieType": "donut",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "12.3.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"runtime\")\n  |> spread()",
+          "refId": "A"
+        }
+      ],
+      "title": "Käyttötunnit jakaumittain",
+      "type": "piechart"
     }
   ],
   "preload": false,
