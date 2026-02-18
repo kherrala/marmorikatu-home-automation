@@ -176,10 +176,9 @@ def forward_indoor_temp_to_thermiq(client, temperature):
               f"({THERMIQ_INDOOR_MIN}-{THERMIQ_INDOOR_MAX}°C), skipping")
         return
 
-    value = f"{temperature:.1f}"
+    value = round(temperature, 1)
     payload = json.dumps({"INDR_T": value})
     client.publish(THERMIQ_WRITE_TOPIC, payload)
-    print(f"ThermIQ: set INDR_T to {value}°C")
 
 
 def on_connect(client, userdata, flags, rc, properties=None):
