@@ -179,9 +179,9 @@ SCHEMA = {
             "typical_range": "0-4 kW"
         },
         "freezing_probability": {
-            "formula": "Weighted composite: 50% temp risk (-5 to -25°C) + 35% humidity risk (15-30%) + 15% exhaust temp risk (0-5°C)",
-            "description": "Heat exchanger freezing probability",
-            "fields_used": ["Ulkolampotila", "Suhteellinen_kosteus", "Jateilma"],
+            "formula": "Weighted composite: 60% dew point proximity (Jateilma - Kastepiste, 0-5°C margin) + 25% outdoor temp (-5 to -25°C) + 15% exhaust temp (0-5°C)",
+            "description": "Heat exchanger freezing probability based on dew point proximity",
+            "fields_used": ["Ulkolampotila", "Kastepiste", "Jateilma"],
             "typical_range": "0-95%"
         }
     }
@@ -440,11 +440,11 @@ Returns CO2, PM2.5, VOC, NOx levels with health guideline thresholds.""",
             description="""Calculate heat exchanger (LTO) freezing probability.
 
 Returns a composite risk score (0-95%) based on:
-- Outdoor temperature (50% weight): risk increases from -5°C to -25°C
-- Exhaust humidity (35% weight): risk increases from 15% to 30% RH
+- Dew point proximity (60% weight): risk increases as exhaust temp approaches dew point (5°C margin → 0°C margin)
+- Outdoor temperature (25% weight): risk increases from -5°C to -25°C
 - Exhaust air temperature (15% weight): risk increases from 5°C to 0°C
 
-If exhaust air is below 0°C, probability is forced to 95%.
+Override rules: exhaust below 0°C forces 60%, dew point margin below 0°C forces minimum 80%.
 Uses latest sensor values from the HVAC measurement.""",
             inputSchema={
                 "type": "object",
@@ -733,7 +733,7 @@ from(bucket: "{INFLUXDB_BUCKET}")
 from(bucket: "{INFLUXDB_BUCKET}")
   |> range(start: -6h)
   |> filter(fn: (r) => r._measurement == "hvac")
-  |> filter(fn: (r) => r._field == "Ulkolampotila" or r._field == "Suhteellinen_kosteus" or r._field == "Jateilma")
+  |> filter(fn: (r) => r._field == "Ulkolampotila" or r._field == "Kastepiste" or r._field == "Jateilma")
   |> last()
 '''
         try:
@@ -741,41 +741,46 @@ from(bucket: "{INFLUXDB_BUCKET}")
             values = {r["_field"]: r["_value"] for r in results}
 
             outdoor = values.get("Ulkolampotila")
-            humidity = values.get("Suhteellinen_kosteus")
+            dew_point = values.get("Kastepiste")
             exhaust = values.get("Jateilma")
 
-            if outdoor is None or humidity is None or exhaust is None:
-                missing = [k for k, v in {"Ulkolampotila": outdoor, "Suhteellinen_kosteus": humidity, "Jateilma": exhaust}.items() if v is None]
+            if outdoor is None or dew_point is None or exhaust is None:
+                missing = [k for k, v in {"Ulkolampotila": outdoor, "Kastepiste": dew_point, "Jateilma": exhaust}.items() if v is None]
                 return [TextContent(type="text", text=json.dumps({
                     "error": "Missing sensor data",
                     "missing_fields": missing,
                     "hint": "WAGO data is logged every ~2 hours. Try a wider time range or check if the controller is online."
                 }, indent=2, ensure_ascii=False))]
 
-            # Temperature risk: linear from -5°C (0%) to -25°C (100%), weight 50%
+            # Dew point margin
+            margin = exhaust - dew_point
+
+            # Dew point proximity risk: linear from 5°C margin (0%) to 0°C margin (100%), weight 60%
+            dew_raw = (5.0 - margin) / 5.0
+            dew_risk = max(0.0, min(1.0, dew_raw))
+            dew_score = dew_risk * 60.0
+
+            # Temperature risk: linear from -5°C (0%) to -25°C (100%), weight 25%
             temp_raw = (-5.0 - outdoor) / 20.0
             temp_risk = max(0.0, min(1.0, temp_raw))
-            temp_score = temp_risk * 50.0
-
-            # Humidity risk: linear from 15% (0%) to 30% (100%), weight 35%
-            hum_raw = (humidity - 15.0) / 15.0
-            hum_risk = max(0.0, min(1.0, hum_raw))
-            hum_score = hum_risk * 35.0
+            temp_score = temp_risk * 25.0
 
             # Exhaust temp risk: linear from 5°C (0%) to 0°C (100%), weight 15%
             exh_raw = (5.0 - exhaust) / 5.0
             exh_risk = max(0.0, min(1.0, exh_raw))
             exh_score = exh_risk * 15.0
 
-            total = temp_score + hum_score + exh_score
+            total = dew_score + temp_score + exh_score
 
-            # Exhaust below 0°C forces 95%
+            # Override rules
             if exhaust < 0.0:
-                probability = 95.0
-            elif total > 95.0:
-                probability = 95.0
+                probability = 60.0
+            elif margin < 0.0:
+                probability = max(80.0, min(95.0, total))
             else:
-                probability = round(total, 1)
+                probability = min(95.0, total)
+
+            probability = round(probability, 1)
 
             # Risk level classification
             if probability < 25:
@@ -790,20 +795,21 @@ from(bucket: "{INFLUXDB_BUCKET}")
             result = {
                 "probability": probability,
                 "risk_level": risk_level,
+                "dew_point_margin": round(margin, 1),
                 "components": {
-                    "temperature": {
+                    "dew_point_proximity": {
+                        "margin": round(margin, 1),
+                        "unit": "°C",
+                        "score": round(dew_score, 1),
+                        "max_score": 60,
+                        "risk_range": "5°C margin (0%) to 0°C margin (100%)"
+                    },
+                    "outdoor_temperature": {
                         "value": outdoor,
                         "unit": "°C",
                         "score": round(temp_score, 1),
-                        "max_score": 50,
+                        "max_score": 25,
                         "risk_range": "-5°C (0%) to -25°C (100%)"
-                    },
-                    "humidity": {
-                        "value": humidity,
-                        "unit": "%",
-                        "score": round(hum_score, 1),
-                        "max_score": 35,
-                        "risk_range": "15% (0%) to 30% (100%)"
                     },
                     "exhaust_temp": {
                         "value": exhaust,
@@ -818,7 +824,8 @@ from(bucket: "{INFLUXDB_BUCKET}")
                     "moderate": "25-50%",
                     "high": "50-75%",
                     "critical": ">= 75%",
-                    "forced_95": "Exhaust air below 0°C"
+                    "forced_60": "Exhaust air below 0°C",
+                    "forced_min_80": "Dew point margin below 0°C (condensation occurring)"
                 }
             }
 

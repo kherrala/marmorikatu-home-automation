@@ -349,25 +349,48 @@ from(bucket: "building_automation")
 
 ## Freezing Probability
 
-Estimates the risk of ice formation on the heat exchanger surfaces when
-outdoor air is very cold and exhaust air carries moisture.
+Estimates the risk of ice formation on the heat exchanger surfaces based on
+**dew point proximity** — how close the exhaust air temperature is to its dew
+point. When exhaust air reaches its dew point, moisture condenses on HRU
+surfaces and freezes if the surface temperature is below 0°C.
+
+### Physical Rationale
+
+The previous algorithm used raw exhaust relative humidity (15–30% RH) as a risk
+factor, but humidity alone doesn't determine condensation risk. What matters is
+the **dew point margin**: the difference between exhaust air temperature and its
+dew point. A small margin means the air is close to saturation and condensation
+is imminent. The HVAC system measures both `Kastepiste` (dew point) and
+`Jateilma` (exhaust air temperature after HRU), making this approach possible
+with existing sensors.
 
 ### Three-Component Weighted Risk
 
 | Component | Weight | Low Risk (0%) | High Risk (100%) |
 |-----------|--------|---------------|------------------|
-| Outdoor temperature | 50% | -5°C | -25°C |
-| Exhaust humidity | 35% | 15% RH | 30% RH |
-| Exhaust air temperature | 15% | 5°C | 0°C |
+| Dew point proximity (`Jateilma - Kastepiste`) | 60% | ≥ 5°C margin | 0°C margin (at dew point) |
+| Outdoor temperature | 25% | ≥ -5°C | ≤ -25°C |
+| Exhaust air temperature | 15% | ≥ 5°C | ≤ 0°C |
 
 Each component is linearly mapped to 0–100% within its range, then multiplied
 by its weight. The total is capped at 95%.
 
-### Override Rule
+### Formulas
 
-If exhaust air temperature (`Jateilma`) drops below 0°C, the probability is
-forced to **95%** regardless of other components. This indicates the HRU is
-already at or below freezing on the exhaust side.
+```
+margin = Jateilma - Kastepiste
+
+dew_risk   = clamp((5 - margin) / 5, 0, 1) × 60
+temp_risk  = clamp((-5 - Ulkolampotila) / 20, 0, 1) × 25
+exh_risk   = clamp((5 - Jateilma) / 5, 0, 1) × 15
+total      = dew_risk + temp_risk + exh_risk
+```
+
+### Override Rules
+
+- If `Jateilma < 0°C` → probability forced to **60%** (exhaust air already below freezing)
+- If `margin < 0°C` → probability forced to minimum **80%** (condensation + freezing actively occurring)
+- Maximum capped at **95%**
 
 ### Risk Levels
 
@@ -376,7 +399,7 @@ already at or below freezing on the exhaust side.
 | < 25% | Low |
 | 25–50% | Moderate |
 | 50–75% | High |
-| >= 75% | Critical |
+| ≥ 75% | Critical |
 
 ### Flux Query (Gauge Panel)
 
@@ -385,27 +408,29 @@ from(bucket: "building_automation")
   |> range(start: -6h)
   |> filter(fn: (r) => r._measurement == "hvac")
   |> filter(fn: (r) => r._field == "Ulkolampotila"
-      or r._field == "Suhteellinen_kosteus"
+      or r._field == "Kastepiste"
       or r._field == "Jateilma")
   |> last()
   |> map(fn: (r) => ({r with _time: now()}))
   |> group()
   |> pivot(rowKey: ["_time"], columnKey: ["_field"], valueColumn: "_value")
   |> filter(fn: (r) => exists r.Ulkolampotila
-      and exists r.Suhteellinen_kosteus
+      and exists r.Kastepiste
       and exists r.Jateilma)
   |> map(fn: (r) => {
+      margin = r.Jateilma - r.Kastepiste
+
+      dew_raw = (5.0 - margin) / 5.0
+      dew_risk = if dew_raw < 0.0 then 0.0
+                 else if dew_raw > 1.0 then 1.0
+                 else dew_raw
+      dew_score = dew_risk * 60.0
+
       temp_raw = (-5.0 - r.Ulkolampotila) / 20.0
       temp_risk = if temp_raw < 0.0 then 0.0
                   else if temp_raw > 1.0 then 1.0
                   else temp_raw
-      temp_score = temp_risk * 50.0
-
-      hum_raw = (r.Suhteellinen_kosteus - 15.0) / 15.0
-      hum_risk = if hum_raw < 0.0 then 0.0
-                 else if hum_raw > 1.0 then 1.0
-                 else hum_raw
-      hum_score = hum_risk * 35.0
+      temp_score = temp_risk * 25.0
 
       exh_raw = (5.0 - r.Jateilma) / 5.0
       exh_risk = if exh_raw < 0.0 then 0.0
@@ -413,8 +438,12 @@ from(bucket: "building_automation")
                  else exh_raw
       exh_score = exh_risk * 15.0
 
-      total = temp_score + hum_score + exh_score
-      prob = if r.Jateilma < 0.0 then 95.0
+      total = dew_score + temp_score + exh_score
+      prob = if r.Jateilma < 0.0 then 60.0
+             else if margin < 0.0 then
+               (if total > 95.0 then 95.0
+                else if total < 80.0 then 80.0
+                else total)
              else if total > 95.0 then 95.0
              else total
 
@@ -451,7 +480,7 @@ since WAGO data is sampled approximately every 2 hours.
    releasing additional latent heat that increases actual efficiency beyond the
    calculated value.
 
-6. **Freezing probability is heuristic**: The three-component weighted model is
-   a simplified risk estimate, not a physical model of ice formation. Actual
-   freezing depends on HRU geometry, surface temperatures, and defrost cycle
-   behavior.
+6. **Freezing probability is heuristic**: The dew point proximity model is
+   a physically-motivated risk estimate but not a full ice formation model.
+   Actual freezing depends on HRU geometry, surface temperatures, defrost cycle
+   behavior, and local airflow patterns within the heat exchanger.
