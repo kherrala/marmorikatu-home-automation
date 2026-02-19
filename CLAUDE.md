@@ -29,29 +29,15 @@ python scripts/import_data.py --incremental # Append new data only
 
 ## Architecture
 
-Seven Docker services orchestrated via `docker-compose.yml`:
+Seven Docker services: influxdb, grafana, mcp, ruuvi, thermia, lights, sync. InfluxDB bucket `building_automation`, org `wago`, token `wago-secret-token`. Data flows: WAGO CSV → sync → InfluxDB, Ruuvi → MQTT → ruuvi → InfluxDB, ThermIQ → MQTT → thermia → InfluxDB, Lights API → lights → InfluxDB. Grafana reads from InfluxDB using Flux queries.
 
-- **influxdb** (InfluxDB 2.7, port 8086) — Time-series database. Bucket: `building_automation`, org: `wago`, token: `wago-secret-token`
-- **grafana** (Grafana 10.2, port 3000) — Dashboard visualization with provisioned JSON dashboards
-- **mcp** (Python 3.12, port 3001) — MCP server exposing InfluxDB data to Claude Desktop via SSE at `/sse`
-- **ruuvi** (Python 3.12) — MQTT subscriber for Ruuvi sensor data (~1s sampling)
-- **thermia** (Python 3.12) — MQTT subscriber for Thermia heat pump data via ThermIQ-ROOM2
-- **lights** (Python 3.12) — HTTP poller for light switch status (5-min intervals)
-- **sync** (Python 3.11, profile: `sync`) — SSH/SCP sync from WAGO controller + incremental CSV import (5-min intervals)
-
-Data flows: WAGO CSV → sync → InfluxDB, Ruuvi → MQTT → ruuvi → InfluxDB, ThermIQ → MQTT → thermia → InfluxDB, Lights API → lights → InfluxDB. Grafana reads from InfluxDB using Flux queries.
+See [docs/architecture.md](docs/architecture.md) for full service details, ports, volumes, environment variables, and data collection pipelines.
 
 ## InfluxDB Data Model
 
-All data in bucket `building_automation` with five measurements:
+Five measurements in bucket `building_automation`: `hvac` (WAGO HVAC, ~2h), `rooms` (WAGO room temps, ~1h), `ruuvi` (Bluetooth sensors, ~1s), `thermia` (heat pump, ~30s), `lights` (HTTP polling, 5min).
 
-| Measurement | Source | Tags | Sampling | Content |
-|-------------|--------|------|----------|---------|
-| `hvac` | WAGO CSV (`logfile_dp_*.csv`) | `sensor_group` (ivk_temp, humidity, power, energy, voltage, actuator) | ~2 hours | HVAC temps, humidity, power, energy |
-| `rooms` | WAGO CSV (`Temperatures*.csv`) | `room_type` (bedroom, common, basement, pid, energy), `floor` | ~1 hour | Room temps, PID controller outputs |
-| `ruuvi` | MQTT | `sensor_id`, `sensor_name`, `data_format`, `sensor_type` | ~1 second | Temp, humidity, pressure, CO2, PM, VOC |
-| `thermia` | MQTT (ThermIQ-ROOM2) | `data_type` (temperature, status, alarm, performance, runtime, setting) | ~1 minute | Heat pump temps, component status, alarms, runtimes |
-| `lights` | HTTP API | `floor`, `light_name`, `dual_function` | 5 minutes | Switch on/off status |
+See [docs/influxdb-data-model.md](docs/influxdb-data-model.md) for complete schema with all tags, fields, types, units, and example queries.
 
 ## Key Files
 
@@ -73,15 +59,6 @@ All data in bucket `building_automation` with five measurements:
 
 ## Energy Calculations
 
-The HVAC dashboard contains complex Flux queries for heat recovery efficiency:
-- **Sensible heat efficiency**: `η = (T_supply - T_outdoor) / (T_exhaust - T_outdoor) × 100%`
-- **Enthalpy efficiency**: Accounts for humidity using saturation vapor pressure (Tetens formula), humidity ratios, and moist air enthalpy
-- Data from different sampling rates is aligned to 2-hour boundaries using integer division on nanosecond timestamps
-- Outdoor humidity falls back to 85% RH when Ruuvi data is unavailable
-- `Tuloilma_asetusarvo` (supply setpoint) is used as a proxy for exhaust air temperature (no dedicated sensor)
-- **Freezing probability**: Composite risk score (0-95%) for heat exchanger icing
-  - Temperature risk (50%): linear -5°C to -25°C
-  - Humidity risk (35%): linear 15% to 30% RH (exhaust side)
-  - Exhaust temp risk (15%): linear 5°C to 0°C
-  - Exhaust air below 0°C forces 95% probability
-  - Available as Grafana gauge ("LTO jäätymisriski") and MCP tool (`get_freezing_probability`)
+The HVAC dashboard contains Flux queries for heat recovery efficiency (sensible + enthalpy), recovered/coil/waste heat power, and freezing probability. Key details: `Tuloilma_asetusarvo` is used as exhaust temp proxy, outdoor humidity falls back to 85% RH, data aligned to 2-hour boundaries via integer division on nanosecond timestamps.
+
+See [docs/heat-recovery-efficiency.md](docs/heat-recovery-efficiency.md) for complete formulas, Flux queries, and derivations. See also [docs/heatpump-efficiency.md](docs/heatpump-efficiency.md) for heat pump COP calculations and [docs/thermiq_register_map.md](docs/thermiq_register_map.md) for ThermIQ register definitions.
