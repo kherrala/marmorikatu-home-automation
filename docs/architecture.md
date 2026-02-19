@@ -7,17 +7,54 @@ an MCP server for Claude Desktop integration.
 ## Data Flow
 
 ```
-                                 ┌─────────────┐
-WAGO PLC ──CSV/SSH──► sync ────►│             │
-                                │             │
-Ruuvi GW ──MQTT────► ruuvi ───►│  InfluxDB   │───► Grafana
-                                │             │
-ThermIQ  ──MQTT────► thermia ──►│             │
-                                │             │
-Light API ─HTTP────► lights ───►│             │
-                                └──────┬──────┘
-                                       │
-                                  MCP Server ◄──► Claude Desktop
+┌─────────────────────┐                    ┌──────────────────────────────┐
+│  WAGO Controller    │                    │      Docker Compose          │
+│  192.168.1.10       │                    │                              │
+│                     │    SSH/SCP         │  ┌────────────────────────┐  │
+│  /media/sd/CSV_Files│◄───────────────────┤  │  sync container        │  │
+│  ├── Temperatures*  │    (every 5 min)   │  │  - Smart file sync     │  │
+│  └── logfile_dp_*   │                    │  │  - Incremental import  │  │
+└─────────────────────┘                    │  └───────────┬────────────┘  │
+                                           │              │               │
+┌─────────────────────┐                    │              │               │
+│  Ruuvi Gateway      │                    │  ┌───────────┴────────────┐  │
+│  CC:F1:A2:8E:F8:8A  │    MQTT            │  │                        │  │
+│                     │◄───────────────────┤  │  ruuvi container       │  │
+│  7 Ruuvi sensors    │  freenas:1883      │  │  - MQTT subscriber     │  │
+└─────────────────────┘                    │  │  - Real-time data      │  │
+                                           │  └───────────┬────────────┘  │
+┌─────────────────────┐                    │              │               │
+│  Thermia Heat Pump  │                    │  ┌───────────┴────────────┐  │
+│  ThermIQ-ROOM2      │    MQTT            │  │                        │  │
+│                     │◄───────────────────┤  │  thermia container     │  │
+│  Ground-source HP   │  freenas:1883      │  │  - MQTT subscriber     │  │
+└─────────────────────┘                    │  │  - Register parsing    │  │
+                                           │  └───────────┬────────────┘  │
+┌─────────────────────┐                    │              │               │
+│  Light Switch API   │                    │  ┌───────────┴────────────┐  │
+│  localhost:8080      │    HTTP            │  │                        │  │
+│                     │◄───────────────────┤  │  lights container      │  │
+│  Building switches  │  (every 5 min)     │  │  - HTTP poller         │  │
+└─────────────────────┘                    │  └───────────┬────────────┘  │
+                                           │              │               │
+                                           │              ▼               │
+                                           │  ┌────────────────────────┐  │
+                                           │  │  InfluxDB 2.7          │  │
+                                           │  │  - Time series DB      │  │
+                                           │  │  - Flux query language  │  │
+                                           │  └───────────┬────────────┘  │
+                                           │              │               │
+                                           │         ┌────┴────┐         │
+                                           │         ▼         ▼         │
+                                           │  ┌────────────┐ ┌────────┐  │
+                                           │  │ Grafana    │ │  MCP   │  │
+                                           │  │ 12.3       │ │ Server │  │
+                                           │  │ :3000      │ │ :3001  │  │
+                                           │  └────────────┘ └───┬────┘  │
+                                           └──────────────────────┼──────┘
+                                                                  │
+                                                                  ▼
+                                                          Claude Desktop
 ```
 
 ## Docker Services
@@ -273,46 +310,9 @@ Grafana UI. To modify:
 
 ## MCP Server
 
-The MCP server (`scripts/mcp_server.py`) provides 13 tools for Claude Desktop:
-
-| Tool | Description |
-|------|-------------|
-| `describe_schema` | Complete data schema with fields, units, descriptions |
-| `list_measurements` | List all available measurements |
-| `describe_measurement` | Detailed info for a specific measurement |
-| `query_data` | Execute arbitrary Flux queries (results limited to 100 rows) |
-| `get_latest` | Most recent values for specified fields |
-| `get_statistics` | Min/max/mean/count over a time range |
-| `get_time_range` | First and last data timestamps for a measurement |
-| `get_heat_recovery_efficiency` | HRU efficiency with summary statistics |
-| `get_energy_consumption` | Energy consumption over a time range |
-| `get_room_temperatures` | Current room temps with PID demand values |
-| `get_air_quality` | Kitchen air quality with health thresholds |
-| `get_freezing_probability` | Heat exchanger freezing risk (0–95%) |
-| `compare_indoor_outdoor` | Indoor vs outdoor temperature comparison |
-| `get_thermia_status` | Complete heat pump status snapshot |
-| `get_thermia_temperatures` | Heat pump temperature time series |
-
-### Transport
-
-- SSE (Server-Sent Events) at `http://localhost:3001/sse`
-- Message endpoint at `http://localhost:3001/messages/`
-- Health check at `http://localhost:3001/health`
-- Built with MCP SDK + Starlette + uvicorn
-
-### Claude Desktop Integration
-
-Add to Claude Desktop MCP configuration:
-
-```json
-{
-  "mcpServers": {
-    "building-automation": {
-      "url": "http://localhost:3001/sse"
-    }
-  }
-}
-```
+SSE-based MCP server for Claude Desktop integration at `http://localhost:3001/sse`.
+See [mcp-server.md](mcp-server.md) for the full tool listing, endpoints, setup
+instructions, and example queries.
 
 ## Key Files
 
