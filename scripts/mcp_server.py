@@ -162,6 +162,13 @@ SCHEMA = {
                 "integral_limit_a1": {"unit": "°C*min", "description": "Integral limit A1 (aux heater step 1 threshold)"},
                 "integral_limit_a2": {"unit": "°C*min", "description": "Integral limit A2 (aux heater step 2 threshold, raw×10)"},
                 "hotwater_supply_temp": {"unit": "°C", "description": "Hot water supply line temperature"},
+                "calibration_outdoor": {"unit": "°C", "description": "Outdoor sensor calibration offset"},
+                "calibration_supply": {"unit": "°C", "description": "Supply line sensor calibration offset"},
+                "calibration_return": {"unit": "°C", "description": "Return line sensor calibration offset"},
+                "calibration_hotwater": {"unit": "°C", "description": "Hot water sensor calibration offset"},
+                "calibration_brine_out": {"unit": "°C", "description": "Brine out sensor calibration offset"},
+                "calibration_brine_in": {"unit": "°C", "description": "Brine in sensor calibration offset"},
+                "heating_system_type": {"unit": "#", "description": "Heating system type (0=VL, 4=D)"},
             },
             "tags": {
                 "data_type": ["temperature", "status", "alarm", "performance", "runtime", "setting"]

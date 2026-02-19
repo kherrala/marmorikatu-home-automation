@@ -83,6 +83,13 @@ SETTING_REGISTERS = {
     73: "integral_limit_a1",       # r49 - Integral limit A1 (C*min)
     79: "integral_limit_a2",       # r4f - Integral limit A2 (raw value ×10 applied on write)
     84: "hotwater_stop_temp",      # r54 - Hotwater stop temp.
+    91: "calibration_outdoor",     # r5b - Calibration outdoor sensor (°C offset)
+    92: "calibration_supply",      # r5c - Calibration supplyline sensor (°C offset)
+    93: "calibration_return",      # r5d - Calibration returnline sensor (°C offset)
+    94: "calibration_hotwater",    # r5e - Calibration hotwater sensor (°C offset)
+    95: "calibration_brine_out",   # r5f - Calibration brine out sensor (°C offset)
+    96: "calibration_brine_in",    # r60 - Calibration brine in sensor (°C offset)
+    97: "heating_system_type",     # r61 - Heating system type (0=VL, 4=D)
 }
 
 # Bitfield definitions: register -> [(bit, field_name), ...]
