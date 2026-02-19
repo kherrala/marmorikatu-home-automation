@@ -69,9 +69,13 @@ REGISTERS = [
     (83, 0x53, "shunt_time", "s", 30, 180, "Shunt operating time"),
     (84, 0x54, "hotwater_stop_t", "°C", 40, 65, "Hot water stop temp"),
     (87, 0x57, "language", "", 0, 20, "Display language"),
-    (93, 0x5d, "returnline_sensor_offset", "°C", -5, 5, "Return line sensor calibration"),
-    (96, 0x60, "brine_out_sensor_offset", "°C", -5, 5, "Brine out sensor calibration"),
-    (97, 0x61, "heatingsystem_type", "", 0, 3, "Heating system type"),
+    (91, 0x5b, "calibration_outdoor", "°C", -5, 5, "Calibration outdoor sensor"),
+    (92, 0x5c, "calibration_supply", "°C", -5, 5, "Calibration supplyline sensor"),
+    (93, 0x5d, "calibration_return", "°C", -5, 5, "Calibration returnline sensor"),
+    (94, 0x5e, "calibration_hotwater", "°C", -5, 5, "Calibration hotwater sensor"),
+    (95, 0x5f, "calibration_brine_out", "°C", -5, 5, "Calibration brine out sensor"),
+    (96, 0x60, "calibration_brine_in", "°C", -5, 5, "Calibration brine in sensor"),
+    (97, 0x61, "heating_system_type", "", 0, 4, "Heating system type (0=VL, 4=D)"),
     (99, 0x63, "internal_logging_t", "min", 10, 120, "Internal logging interval"),
     (100, 0x64, "brine_runout_t", "×10s", 0, 10, "Brine pump run-out duration"),
     (101, 0x65, "brine_run_in_t", "×10s", 0, 10, "Brine pump run-in duration"),
@@ -130,6 +134,15 @@ READ_REGISTERS = {
         (110, "passive_cooling_h", "h", "Passive cooling runtime"),
         (112, "active_cooling_h", "h", "Active cooling runtime"),
         (114, "boiler_6kw_h", "h", "6 kW heater runtime"),
+    ],
+    "Calibration": [
+        (91, "calibration_outdoor", "°C", "Outdoor sensor offset"),
+        (92, "calibration_supply", "°C", "Supplyline sensor offset"),
+        (93, "calibration_return", "°C", "Returnline sensor offset"),
+        (94, "calibration_hotwater", "°C", "Hotwater sensor offset"),
+        (95, "calibration_brine_out", "°C", "Brine out sensor offset"),
+        (96, "calibration_brine_in", "°C", "Brine in sensor offset"),
+        (97, "heating_system_type", "", "Heating system type (0=VL, 4=D)"),
     ],
 }
 
@@ -307,6 +320,15 @@ def display_read_data(payload):
     for dec, name, unit, desc in READ_REGISTERS["Runtime"]:
         if dec in regs:
             print(f"  {name:<28} {regs[dec]:>7} {unit:<6}  {desc}")
+    print()
+
+    # Calibration
+    print("Calibration")
+    print("-" * 60)
+    for dec, name, unit, desc in READ_REGISTERS["Calibration"]:
+        if dec in regs:
+            unit_str = unit if unit else ""
+            print(f"  {name:<28} {regs[dec]:>7} {unit_str:<6}  {desc}")
     print()
 
 
