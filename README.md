@@ -85,7 +85,7 @@ Seven provisioned dashboards:
 | Ruuvi Sensors | `ruuvi-sensors` | Ruuvi sensor data, air quality |
 | Maalämpöpumppu | `thermia-heatpump` | Heat pump temps, COP, runtimes |
 
-Dashboards are provisioned from JSON files — edit directly, then `docker compose restart grafana`. See [docs/architecture.md](docs/architecture.md) for dashboard conventions.
+Dashboards are provisioned from JSON files — edit directly, then `docker compose restart grafana`. See [docs/grafana-dashboards.md](docs/grafana-dashboards.md) for conventions, panel details, and Grafana configuration.
 
 ## Energy Calculations
 
@@ -104,8 +104,10 @@ See [docs/mcp-server.md](docs/mcp-server.md) for setup instructions, tool listin
 
 | Document | Content |
 |----------|---------|
-| [docs/architecture.md](docs/architecture.md) | System architecture, services, data pipelines, dashboards |
+| [docs/architecture.md](docs/architecture.md) | System architecture, Docker services, environment variables |
+| [docs/data-pipelines.md](docs/data-pipelines.md) | Data collection pipelines — CSV sync, MQTT, HTTP polling |
 | [docs/influxdb-data-model.md](docs/influxdb-data-model.md) | Complete InfluxDB schema — all measurements, tags, fields, example queries |
+| [docs/grafana-dashboards.md](docs/grafana-dashboards.md) | Dashboard inventory, conventions, panel details, Grafana configuration |
 | [docs/heat-recovery-efficiency.md](docs/heat-recovery-efficiency.md) | Heat recovery formulas, enthalpy calculations, freezing risk, Flux queries |
 | [docs/heatpump-efficiency.md](docs/heatpump-efficiency.md) | Heat pump COP and thermal power estimation |
 | [docs/thermiq_register_map.md](docs/thermiq_register_map.md) | ThermIQ-ROOM2 register definitions |
