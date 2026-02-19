@@ -100,6 +100,29 @@ building automation data from Claude Desktop.
 
 See [docs/mcp-server.md](docs/mcp-server.md) for setup instructions, tool listing, and example queries.
 
+## ThermIQ CLI Tool
+
+A command-line tool for reading and writing Thermia heat pump registers via MQTT.
+
+```bash
+source venv/bin/activate
+
+# Read current register values from the heat pump
+python scripts/thermiq_write.py --read
+
+# List all writable registers and parameters
+python scripts/thermiq_write.py --list
+
+# Write a setting (by name or register number)
+python scripts/thermiq_write.py indoor_requested_t 22
+python scripts/thermiq_write.py d50 22
+
+# Preview without publishing
+python scripts/thermiq_write.py --dry-run hotwater_stop_t 55
+```
+
+See [docs/thermiq_register_map.md](docs/thermiq_register_map.md) for the complete register map.
+
 ## Documentation
 
 | Document | Content |
