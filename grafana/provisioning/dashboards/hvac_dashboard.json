@@ -15,9 +15,21 @@
       "tags": [],
       "targetBlank": false,
       "title": "Yleiskuva",
-      "tooltip": "Back to temperature overview dashboard",
+      "tooltip": "Back to overview dashboard",
       "type": "link",
-      "url": "/d/wago-overview/temperature-overview"
+      "url": "/d/wago-overview/yleiskuva"
+    },
+    {
+      "asDropdown": false,
+      "icon": "dashboard",
+      "includeVars": true,
+      "keepTime": true,
+      "tags": [],
+      "targetBlank": false,
+      "title": "Huoneet",
+      "tooltip": "View room temperatures with floor plans",
+      "type": "link",
+      "url": "/d/room-temperatures/huonelampo"
     },
     {
       "asDropdown": false,

@@ -1,25 +1,23 @@
 {
   "annotations": {
-    "list": [
-      {
-        "builtIn": 1,
-        "datasource": {
-          "type": "grafana",
-          "uid": "-- Grafana --"
-        },
-        "enable": true,
-        "hide": true,
-        "iconColor": "rgba(0, 211, 255, 1)",
-        "name": "Annotations & Alerts",
-        "type": "dashboard"
-      }
-    ]
+    "list": []
   },
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
-  "id": 1,
   "links": [
+    {
+      "asDropdown": false,
+      "icon": "dashboard",
+      "includeVars": true,
+      "keepTime": true,
+      "tags": [],
+      "targetBlank": false,
+      "title": "Huoneet",
+      "tooltip": "View room temperatures with floor plans",
+      "type": "link",
+      "url": "/d/room-temperatures/huonelampo"
+    },
     {
       "asDropdown": false,
       "icon": "bolt",
@@ -77,995 +75,53 @@
       },
       "fieldConfig": {
         "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
           "decimals": 1,
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": 0
+                "color": "red",
+                "value": null
               },
               {
-                "color": "red",
-                "value": 80
+                "color": "yellow",
+                "value": -10
+              },
+              {
+                "color": "green",
+                "value": 0
               }
             ]
           },
           "unit": "celsius"
         },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byRegexp",
-              "options": ".*_heat$"
-            },
-            "properties": [
-              {
-                "id": "thresholds",
-                "value": {
-                  "mode": "absolute",
-                  "steps": [
-                    {
-                      "color": "rgba(100,116,139,0.6)",
-                      "value": 0
-                    },
-                    {
-                      "color": "rgba(249,115,22,0.7)",
-                      "value": 1
-                    },
-                    {
-                      "color": "rgba(239,68,68,0.7)",
-                      "value": 80
-                    }
-                  ]
-                }
-              },
-              {
-                "id": "unit",
-                "value": "percent"
-              },
-              {
-                "id": "decimals",
-                "value": 0
-              }
-            ]
-          }
-        ]
+        "overrides": []
       },
       "gridPos": {
-        "h": 10,
-        "w": 11,
+        "h": 4,
+        "w": 4,
         "x": 0,
         "y": 0
       },
-      "id": 16,
+      "id": 1,
       "options": {
-        "inlineEditing": true,
-        "panZoom": false,
-        "root": {
-          "background": {
-            "color": {
-              "fixed": "transparent"
-            },
-            "image": {
-              "fixed": "img/floorplan/1krs-vari.jpeg",
-              "mode": "fixed"
-            },
-            "size": "cover"
-          },
-          "border": {
-            "color": {
-              "fixed": "transparent"
-            }
-          },
-          "constraint": {
-            "horizontal": "left",
-            "vertical": "top"
-          },
-          "elements": [
-            {
-              "background": {
-                "color": {
-                  "fixed": "rgba(0,0,0,0.6)"
-                }
-              },
-              "border": {
-                "color": {
-                  "fixed": "transparent"
-                }
-              },
-              "config": {
-                "align": "center",
-                "color": {
-                  "fixed": "#cccccc"
-                },
-                "size": 11,
-                "text": {
-                  "fixed": "Sauna",
-                  "mode": "fixed"
-                },
-                "valign": "middle"
-              },
-              "constraint": {
-                "horizontal": "left",
-                "vertical": "top"
-              },
-              "name": "Sauna label",
-              "placement": {
-                "height": 18,
-                "left": 24,
-                "top": 22,
-                "width": 90
-              },
-              "type": "metric-value"
-            },
-            {
-              "background": {
-                "color": {
-                  "fixed": "rgba(0,0,0,0.6)"
-                }
-              },
-              "border": {
-                "color": {
-                  "fixed": "transparent"
-                }
-              },
-              "config": {
-                "align": "center",
-                "color": {
-                  "fixed": "#ffffff"
-                },
-                "size": 16,
-                "text": {
-                  "field": "Sauna",
-                  "fixed": "",
-                  "mode": "field"
-                },
-                "valign": "middle"
-              },
-              "constraint": {
-                "horizontal": "left",
-                "vertical": "top"
-              },
-              "name": "Sauna",
-              "placement": {
-                "height": 25,
-                "left": 24,
-                "top": 40,
-                "width": 90
-              },
-              "type": "metric-value"
-            },
-            {
-              "background": {
-                "color": {
-                  "fixed": "rgba(0,0,0,0.6)"
-                }
-              },
-              "border": {
-                "color": {
-                  "fixed": "transparent"
-                }
-              },
-              "config": {
-                "align": "center",
-                "color": {
-                  "fixed": "#dddddd"
-                },
-                "size": 10,
-                "text": {
-                  "field": "Sauna_age",
-                  "fixed": "",
-                  "mode": "field"
-                },
-                "valign": "middle"
-              },
-              "constraint": {
-                "horizontal": "left",
-                "vertical": "top"
-              },
-              "name": "Sauna age",
-              "placement": {
-                "height": 16,
-                "left": 24,
-                "top": 65,
-                "width": 90
-              },
-              "type": "metric-value"
-            },
-            {
-              "background": {
-                "color": {
-                  "fixed": "rgba(0,0,0,0.6)"
-                }
-              },
-              "border": {
-                "color": {
-                  "fixed": "transparent"
-                }
-              },
-              "config": {
-                "align": "center",
-                "color": {
-                  "fixed": "#cccccc"
-                },
-                "size": 11,
-                "text": {
-                  "fixed": "Keittiö",
-                  "mode": "fixed"
-                },
-                "valign": "middle"
-              },
-              "constraint": {
-                "horizontal": "left",
-                "vertical": "top"
-              },
-              "name": "Keittiö label",
-              "placement": {
-                "height": 18,
-                "left": 273,
-                "top": 126,
-                "width": 90
-              },
-              "type": "metric-value"
-            },
-            {
-              "background": {
-                "color": {
-                  "fixed": "rgba(0,0,0,0.6)"
-                }
-              },
-              "border": {
-                "color": {
-                  "fixed": "transparent"
-                }
-              },
-              "config": {
-                "align": "center",
-                "color": {
-                  "fixed": "#ffffff"
-                },
-                "size": 16,
-                "text": {
-                  "field": "Keittio",
-                  "fixed": "",
-                  "mode": "field"
-                },
-                "valign": "middle"
-              },
-              "constraint": {
-                "horizontal": "left",
-                "vertical": "top"
-              },
-              "name": "Keittiö",
-              "placement": {
-                "height": 25,
-                "left": 273,
-                "top": 144,
-                "width": 90
-              },
-              "type": "metric-value"
-            },
-            {
-              "background": {
-                "color": {
-                  "fixed": "rgba(0,0,0,0.6)"
-                }
-              },
-              "border": {
-                "color": {
-                  "fixed": "transparent"
-                }
-              },
-              "config": {
-                "align": "center",
-                "color": {
-                  "fixed": "#dddddd"
-                },
-                "size": 10,
-                "text": {
-                  "field": "Keittio_age",
-                  "fixed": "",
-                  "mode": "field"
-                },
-                "valign": "middle"
-              },
-              "constraint": {
-                "horizontal": "left",
-                "vertical": "top"
-              },
-              "name": "Keittiö age",
-              "placement": {
-                "height": 16,
-                "left": 273,
-                "top": 169,
-                "width": 90
-              },
-              "type": "metric-value"
-            },
-            {
-              "background": {
-                "color": {
-                  "fixed": "rgba(0,0,0,0.6)"
-                }
-              },
-              "border": {
-                "color": {
-                  "fixed": "transparent"
-                }
-              },
-              "config": {
-                "align": "center",
-                "color": {
-                  "fixed": "#cccccc"
-                },
-                "size": 11,
-                "text": {
-                  "fixed": "Olohuone",
-                  "mode": "fixed"
-                },
-                "valign": "middle"
-              },
-              "constraint": {
-                "horizontal": "left",
-                "vertical": "top"
-              },
-              "name": "Olohuone label",
-              "placement": {
-                "height": 18,
-                "left": 350,
-                "top": 22,
-                "width": 90
-              },
-              "type": "metric-value"
-            },
-            {
-              "background": {
-                "color": {
-                  "fixed": "rgba(0,0,0,0.6)"
-                }
-              },
-              "border": {
-                "color": {
-                  "fixed": "transparent"
-                }
-              },
-              "config": {
-                "align": "center",
-                "color": {
-                  "fixed": "#ffffff"
-                },
-                "size": 16,
-                "text": {
-                  "field": "Olohuone",
-                  "fixed": "",
-                  "mode": "field"
-                },
-                "valign": "middle"
-              },
-              "connections": [],
-              "constraint": {
-                "horizontal": "left",
-                "vertical": "top"
-              },
-              "name": "Olohuone",
-              "placement": {
-                "height": 25,
-                "left": 350,
-                "top": 40,
-                "width": 90
-              },
-              "type": "metric-value"
-            },
-            {
-              "background": {
-                "color": {
-                  "fixed": "rgba(0,0,0,0.6)"
-                }
-              },
-              "border": {
-                "color": {
-                  "fixed": "transparent"
-                }
-              },
-              "config": {
-                "align": "center",
-                "color": {
-                  "fixed": "#dddddd"
-                },
-                "size": 10,
-                "text": {
-                  "field": "Olohuone_age",
-                  "fixed": "",
-                  "mode": "field"
-                },
-                "valign": "middle"
-              },
-              "constraint": {
-                "horizontal": "left",
-                "vertical": "top"
-              },
-              "name": "Olohuone age",
-              "placement": {
-                "height": 16,
-                "left": 350,
-                "top": 65,
-                "width": 90
-              },
-              "type": "metric-value"
-            },
-            {
-              "background": {
-                "color": {
-                  "fixed": "rgba(0,0,0,0.6)"
-                }
-              },
-              "border": {
-                "color": {
-                  "fixed": "transparent"
-                }
-              },
-              "config": {
-                "align": "center",
-                "color": {
-                  "fixed": "#cccccc"
-                },
-                "size": 11,
-                "text": {
-                  "fixed": "Eteinen",
-                  "mode": "fixed"
-                },
-                "valign": "middle"
-              },
-              "constraint": {
-                "horizontal": "left",
-                "vertical": "top"
-              },
-              "name": "Eteinen label",
-              "placement": {
-                "height": 18,
-                "left": 149,
-                "top": 126,
-                "width": 90
-              },
-              "type": "metric-value"
-            },
-            {
-              "background": {
-                "color": {
-                  "fixed": "rgba(0,0,0,0.6)"
-                }
-              },
-              "border": {
-                "color": {
-                  "fixed": "transparent"
-                }
-              },
-              "config": {
-                "align": "center",
-                "color": {
-                  "fixed": "#ffffff"
-                },
-                "size": 16,
-                "text": {
-                  "field": "Eteinen",
-                  "fixed": "",
-                  "mode": "field"
-                },
-                "valign": "middle"
-              },
-              "constraint": {
-                "horizontal": "left",
-                "vertical": "top"
-              },
-              "name": "Eteinen",
-              "placement": {
-                "height": 25,
-                "left": 149,
-                "top": 144,
-                "width": 90
-              },
-              "type": "metric-value"
-            },
-            {
-              "background": {
-                "color": {
-                  "fixed": "rgba(0,0,0,0.6)"
-                }
-              },
-              "border": {
-                "color": {
-                  "fixed": "transparent"
-                }
-              },
-              "config": {
-                "align": "center",
-                "color": {
-                  "fixed": "#dddddd"
-                },
-                "size": 10,
-                "text": {
-                  "field": "Eteinen_age",
-                  "fixed": "",
-                  "mode": "field"
-                },
-                "valign": "middle"
-              },
-              "constraint": {
-                "horizontal": "left",
-                "vertical": "top"
-              },
-              "name": "Eteinen age",
-              "placement": {
-                "height": 16,
-                "left": 149,
-                "top": 169,
-                "width": 90
-              },
-              "type": "metric-value"
-            },
-            {
-              "background": {
-                "color": {
-                  "fixed": "rgba(0,0,0,0.6)"
-                }
-              },
-              "border": {
-                "color": {
-                  "fixed": "transparent"
-                }
-              },
-              "config": {
-                "align": "center",
-                "color": {
-                  "fixed": "#cccccc"
-                },
-                "size": 11,
-                "text": {
-                  "fixed": "Takka",
-                  "mode": "fixed"
-                },
-                "valign": "middle"
-              },
-              "constraint": {
-                "horizontal": "left",
-                "vertical": "top"
-              },
-              "name": "Takka label",
-              "placement": {
-                "height": 18,
-                "left": 248,
-                "top": 21,
-                "width": 90
-              },
-              "type": "metric-value"
-            },
-            {
-              "background": {
-                "color": {
-                  "fixed": "rgba(0,0,0,0.6)"
-                }
-              },
-              "border": {
-                "color": {
-                  "fixed": "transparent"
-                }
-              },
-              "config": {
-                "align": "center",
-                "color": {
-                  "fixed": "#ffffff"
-                },
-                "size": 16,
-                "text": {
-                  "field": "Takka",
-                  "fixed": "",
-                  "mode": "field"
-                },
-                "valign": "middle"
-              },
-              "constraint": {
-                "horizontal": "left",
-                "vertical": "top"
-              },
-              "name": "Takka",
-              "placement": {
-                "height": 25,
-                "left": 248,
-                "top": 39,
-                "width": 90
-              },
-              "type": "metric-value"
-            },
-            {
-              "background": {
-                "color": {
-                  "fixed": "rgba(0,0,0,0.6)"
-                }
-              },
-              "border": {
-                "color": {
-                  "fixed": "transparent"
-                }
-              },
-              "config": {
-                "align": "center",
-                "color": {
-                  "fixed": "#dddddd"
-                },
-                "size": 10,
-                "text": {
-                  "field": "Takka_age",
-                  "fixed": "",
-                  "mode": "field"
-                },
-                "valign": "middle"
-              },
-              "constraint": {
-                "horizontal": "left",
-                "vertical": "top"
-              },
-              "name": "Takka age",
-              "placement": {
-                "height": 16,
-                "left": 248,
-                "top": 64,
-                "width": 90
-              },
-              "type": "metric-value"
-            },
-            {
-              "background": {
-                "color": {
-                  "fixed": "rgba(0,0,0,0.6)"
-                }
-              },
-              "border": {
-                "color": {
-                  "fixed": "transparent"
-                }
-              },
-              "config": {
-                "align": "center",
-                "color": {
-                  "fixed": "#cccccc"
-                },
-                "size": 11,
-                "text": {
-                  "fixed": "MH alakerta",
-                  "mode": "fixed"
-                },
-                "valign": "middle"
-              },
-              "constraint": {
-                "horizontal": "left",
-                "vertical": "top"
-              },
-              "name": "MH alakerta label",
-              "placement": {
-                "height": 18,
-                "left": 24,
-                "top": 126,
-                "width": 90
-              },
-              "type": "metric-value"
-            },
-            {
-              "background": {
-                "color": {
-                  "fixed": "rgba(0,0,0,0.6)"
-                }
-              },
-              "border": {
-                "color": {
-                  "fixed": "transparent"
-                }
-              },
-              "config": {
-                "align": "center",
-                "color": {
-                  "fixed": "#ffffff"
-                },
-                "size": 16,
-                "text": {
-                  "field": "MH_alakerta",
-                  "fixed": "",
-                  "mode": "field"
-                },
-                "valign": "middle"
-              },
-              "constraint": {
-                "horizontal": "left",
-                "vertical": "top"
-              },
-              "name": "MH alakerta",
-              "placement": {
-                "height": 25,
-                "left": 24,
-                "top": 144,
-                "width": 90
-              },
-              "type": "metric-value"
-            },
-            {
-              "background": {
-                "color": {
-                  "fixed": "rgba(0,0,0,0.6)"
-                }
-              },
-              "border": {
-                "color": {
-                  "fixed": "transparent"
-                }
-              },
-              "config": {
-                "align": "center",
-                "color": {
-                  "fixed": "#dddddd"
-                },
-                "size": 10,
-                "text": {
-                  "field": "MH_alakerta_age",
-                  "fixed": "",
-                  "mode": "field"
-                },
-                "valign": "middle"
-              },
-              "constraint": {
-                "horizontal": "left",
-                "vertical": "top"
-              },
-              "name": "MH alakerta age",
-              "placement": {
-                "height": 16,
-                "left": 24,
-                "top": 169,
-                "width": 90
-              },
-              "type": "metric-value"
-            },
-            {
-              "background": {
-                "color": {
-                  "fixed": "rgba(0,0,0,0.6)"
-                }
-              },
-              "border": {
-                "color": {
-                  "fixed": "transparent"
-                }
-              },
-              "config": {
-                "align": "center",
-                "color": {
-                  "fixed": "#cccccc"
-                },
-                "size": 11,
-                "text": {
-                  "fixed": "Ulkolämpötila",
-                  "mode": "fixed"
-                },
-                "valign": "middle"
-              },
-              "constraint": {
-                "horizontal": "left",
-                "vertical": "top"
-              },
-              "name": "Ulkolämpötila label",
-              "placement": {
-                "height": 18,
-                "left": 318,
-                "top": 231,
-                "width": 100
-              },
-              "type": "metric-value"
-            },
-            {
-              "background": {
-                "color": {
-                  "fixed": "rgba(0,0,0,0.6)"
-                }
-              },
-              "border": {
-                "color": {
-                  "fixed": "transparent"
-                }
-              },
-              "config": {
-                "align": "center",
-                "color": {
-                  "fixed": "#ffffff"
-                },
-                "size": 16,
-                "text": {
-                  "field": "Ulkolämpötila",
-                  "fixed": "",
-                  "mode": "field"
-                },
-                "valign": "middle"
-              },
-              "constraint": {
-                "horizontal": "left",
-                "vertical": "top"
-              },
-              "name": "Ulkolämpötila",
-              "placement": {
-                "height": 25,
-                "left": 318,
-                "top": 249,
-                "width": 100
-              },
-              "type": "metric-value"
-            },
-            {
-              "background": {
-                "color": {
-                  "fixed": "rgba(0,0,0,0.6)"
-                }
-              },
-              "border": {
-                "color": {
-                  "fixed": "transparent"
-                }
-              },
-              "config": {
-                "align": "center",
-                "color": {
-                  "fixed": "#dddddd"
-                },
-                "size": 10,
-                "text": {
-                  "field": "Ulkolämpötila_age",
-                  "fixed": "",
-                  "mode": "field"
-                },
-                "valign": "middle"
-              },
-              "connections": [],
-              "constraint": {
-                "horizontal": "left",
-                "vertical": "top"
-              },
-              "name": "Ulkolämpötila age",
-              "placement": {
-                "height": 16,
-                "left": 318,
-                "top": 274,
-                "width": 100
-              },
-              "type": "metric-value"
-            },
-            {
-              "background": {
-                "color": {
-                  "field": "Eteinen_heat",
-                  "mode": "field"
-                }
-              },
-              "border": {
-                "color": {
-                  "fixed": "transparent"
-                }
-              },
-              "config": {
-                "align": "center",
-                "color": {
-                  "fixed": "#ffffff"
-                },
-                "size": 10,
-                "text": {
-                  "field": "Eteinen_heat",
-                  "fixed": "",
-                  "mode": "field"
-                },
-                "valign": "middle"
-              },
-              "constraint": {
-                "horizontal": "left",
-                "vertical": "top"
-              },
-              "name": "Eteinen heat",
-              "placement": {
-                "height": 16,
-                "left": 149,
-                "top": 185,
-                "width": 90
-              },
-              "type": "metric-value"
-            },
-            {
-              "background": {
-                "color": {
-                  "field": "Keittio_heat",
-                  "mode": "field"
-                }
-              },
-              "border": {
-                "color": {
-                  "fixed": "transparent"
-                }
-              },
-              "config": {
-                "align": "center",
-                "color": {
-                  "fixed": "#ffffff"
-                },
-                "size": 10,
-                "text": {
-                  "field": "Keittio_heat",
-                  "fixed": "",
-                  "mode": "field"
-                },
-                "valign": "middle"
-              },
-              "constraint": {
-                "horizontal": "left",
-                "vertical": "top"
-              },
-              "name": "Keittiö heat",
-              "placement": {
-                "height": 16,
-                "left": 273,
-                "top": 185,
-                "width": 90
-              },
-              "type": "metric-value"
-            },
-            {
-              "background": {
-                "color": {
-                  "field": "MH_alakerta_heat",
-                  "mode": "field"
-                }
-              },
-              "border": {
-                "color": {
-                  "fixed": "transparent"
-                }
-              },
-              "config": {
-                "align": "center",
-                "color": {
-                  "fixed": "#ffffff"
-                },
-                "size": 10,
-                "text": {
-                  "field": "MH_alakerta_heat",
-                  "fixed": "",
-                  "mode": "field"
-                },
-                "valign": "middle"
-              },
-              "constraint": {
-                "horizontal": "left",
-                "vertical": "top"
-              },
-              "name": "MH alakerta heat",
-              "placement": {
-                "height": 16,
-                "left": 24,
-                "top": 185,
-                "width": 90
-              },
-              "type": "metric-value"
-            }
-          ],
-          "name": "root",
-          "placement": {
-            "height": 100,
-            "left": 0,
-            "top": 0,
-            "width": 100
-          },
-          "type": "frame"
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
         },
-        "showAdvancedTypes": true,
-        "tooltip": {
-          "disableForOneClick": false,
-          "mode": "single"
-        },
-        "zoomToContent": false
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
       },
       "pluginVersion": "12.3.2",
       "targets": [
@@ -1074,7 +130,1178 @@
             "type": "influxdb",
             "uid": "influxdb"
           },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: -24h)\n  |> filter(fn: (r) => r._measurement == \"rooms\")\n  |> filter(fn: (r) => r.room_type != \"pid\")\n  |> filter(fn: (r) => r.floor == \"1\")\n  |> last()\n  |> group()\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")",
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"ruuvi\" and r.sensor_name == \"Ulkolämpötila\")\n  |> filter(fn: (r) => r._field == \"temperature\")\n  |> last()",
+          "refId": "A"
+        }
+      ],
+      "title": "Ulkolämpötila",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 1,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 18
+              },
+              {
+                "color": "green",
+                "value": 20
+              },
+              {
+                "color": "yellow",
+                "value": 23
+              },
+              {
+                "color": "red",
+                "value": 25
+              }
+            ]
+          },
+          "unit": "celsius"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 0
+      },
+      "id": 2,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "12.3.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"temperature\")\n  |> filter(fn: (r) => r._field == \"indoor_temp\")\n  |> last()",
+          "refId": "A"
+        }
+      ],
+      "title": "Sisälämpötila",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 1,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 40
+              },
+              {
+                "color": "green",
+                "value": 50
+              }
+            ]
+          },
+          "unit": "celsius"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 0
+      },
+      "id": 3,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "12.3.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"temperature\")\n  |> filter(fn: (r) => r._field == \"hotwater_temp\")\n  |> last()",
+          "refId": "A"
+        }
+      ],
+      "title": "Lämmin käyttövesi",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 0,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 50
+              },
+              {
+                "color": "green",
+                "value": 70
+              }
+            ]
+          },
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 0
+      },
+      "id": 4,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "12.3.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: -6h)\n  |> filter(fn: (r) => r._measurement == \"hvac\")\n  |> filter(fn: (r) => r._field == \"Ulkolampotila\" or r._field == \"Tuloilma_ennen_lammitysta\" or r._field == \"Tuloilma_asetusarvo\")\n  |> last()\n  |> map(fn: (r) => ({r with _time: now()}))\n  |> group()\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> filter(fn: (r) => exists r.Ulkolampotila and exists r.Tuloilma_ennen_lammitysta and exists r.Tuloilma_asetusarvo)\n  |> filter(fn: (r) => r.Tuloilma_asetusarvo != r.Ulkolampotila)\n  |> map(fn: (r) => ({\n    _time: r._time,\n    _value: (r.Tuloilma_ennen_lammitysta - r.Ulkolampotila) / (r.Tuloilma_asetusarvo - r.Ulkolampotila) * 100.0,\n    _field: \"LTO hyötysuhde\"\n  }))\n  |> filter(fn: (r) => r._value > 0.0 and r._value <= 100.0)",
+          "refId": "A"
+        }
+      ],
+      "title": "LTO hyötysuhde",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "max": 100,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 30
+              },
+              {
+                "color": "orange",
+                "value": 50
+              },
+              {
+                "color": "red",
+                "value": 60
+              }
+            ]
+          },
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 0
+      },
+      "id": 5,
+      "options": {
+        "minVizHeight": 75,
+        "minVizWidth": 75,
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true,
+        "sizing": "auto"
+      },
+      "pluginVersion": "12.3.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: -6h)\n  |> filter(fn: (r) => r._measurement == \"hvac\")\n  |> filter(fn: (r) => r._field == \"Ulkolampotila\" or r._field == \"Kastepiste\" or r._field == \"Jateilma\")\n  |> last()\n  |> map(fn: (r) => ({r with _time: now()}))\n  |> group()\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> filter(fn: (r) => exists r.Ulkolampotila and exists r.Kastepiste and exists r.Jateilma)\n  |> map(fn: (r) => {\n      margin = r.Jateilma - r.Kastepiste\n\n      dew_raw = (5.0 - margin) / 5.0\n      dew_risk = if dew_raw < 0.0 then 0.0 else if dew_raw > 1.0 then 1.0 else dew_raw\n      dew_score = dew_risk * 60.0\n\n      temp_raw = (-5.0 - r.Ulkolampotila) / 20.0\n      temp_risk = if temp_raw < 0.0 then 0.0 else if temp_raw > 1.0 then 1.0 else temp_raw\n      temp_score = temp_risk * 25.0\n\n      exh_raw = (5.0 - r.Jateilma) / 5.0\n      exh_risk = if exh_raw < 0.0 then 0.0 else if exh_raw > 1.0 then 1.0 else exh_raw\n      exh_score = exh_risk * 15.0\n\n      total = dew_score + temp_score + exh_score\n      prob = if r.Jateilma < 0.0 then 60.0\n             else if margin < 0.0 then (if total > 95.0 then 95.0 else if total < 80.0 then 80.0 else total)\n             else if total > 95.0 then 95.0\n             else total\n\n      return {_time: r._time, _value: prob, _field: \"Jäätymisriski\"}\n  })",
+          "refId": "A"
+        }
+      ],
+      "title": "LTO jäätymisriski",
+      "type": "gauge"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 1,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 2.5
+              },
+              {
+                "color": "green",
+                "value": 3.5
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 0
+      },
+      "id": 6,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "12.3.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
+          "query": "temps = from(bucket: \"building_automation\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"temperature\")\n  |> filter(fn: (r) => r._field == \"supply_temp\" or r._field == \"return_temp\")\n  |> last()\n  |> keep(columns: [\"_time\", \"_field\", \"_value\"])\n  |> group()\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> filter(fn: (r) => exists r.supply_temp and exists r.return_temp)\n\nstatus = from(bucket: \"building_automation\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"status\")\n  |> filter(fn: (r) => r._field == \"compressor\" or r._field == \"aux_heater_3kw\" or r._field == \"aux_heater_6kw\")\n  |> last()\n  |> keep(columns: [\"_time\", \"_field\", \"_value\"])\n  |> group()\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> filter(fn: (r) => exists r.compressor and exists r.aux_heater_3kw and exists r.aux_heater_6kw)\n\njoin(tables: {temps: temps, status: status}, on: [\"_time\"])\n  |> filter(fn: (r) => r.compressor == 1)\n  |> map(fn: (r) => ({_time: r._time, _value: 1.965 * (r.supply_temp - r.return_temp) / 2.3, _field: \"COP\"}))\n  |> filter(fn: (r) => r._value >= 0.0 and r._value <= 10.0)",
+          "refId": "A"
+        }
+      ],
+      "title": "COP",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {
+              "options": {
+                "0": {
+                  "color": "dark-green",
+                  "index": 0,
+                  "text": "OFF"
+                },
+                "1": {
+                  "color": "orange",
+                  "index": 1,
+                  "text": "ON"
+                }
+              },
+              "type": "value"
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 3,
+        "x": 0,
+        "y": 4
+      },
+      "id": 7,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "12.3.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"status\")\n  |> filter(fn: (r) => r._field == \"compressor\")\n  |> last()",
+          "refId": "A"
+        }
+      ],
+      "title": "Kompressori",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {
+              "options": {
+                "0": {
+                  "color": "dark-green",
+                  "index": 0,
+                  "text": "OFF"
+                },
+                "1": {
+                  "color": "red",
+                  "index": 1,
+                  "text": "ON"
+                }
+              },
+              "type": "value"
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 3,
+        "x": 3,
+        "y": 4
+      },
+      "id": 8,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "12.3.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"status\")\n  |> filter(fn: (r) => r._field == \"aux_heater_3kw\")\n  |> last()",
+          "refId": "A"
+        }
+      ],
+      "title": "Lisävastus 3kW",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {
+              "options": {
+                "0": {
+                  "color": "dark-green",
+                  "index": 0,
+                  "text": "OFF"
+                },
+                "1": {
+                  "color": "red",
+                  "index": 1,
+                  "text": "ON"
+                }
+              },
+              "type": "value"
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 3,
+        "x": 6,
+        "y": 4
+      },
+      "id": 9,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "12.3.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"status\")\n  |> filter(fn: (r) => r._field == \"aux_heater_6kw\")\n  |> last()",
+          "refId": "A"
+        }
+      ],
+      "title": "Lisävastus 6kW",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 1,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "kwatt"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 3,
+        "x": 9,
+        "y": 4
+      },
+      "id": 10,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "12.3.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"temperature\")\n  |> filter(fn: (r) => r._field == \"supply_temp\" or r._field == \"return_temp\")\n  |> last()\n  |> keep(columns: [\"_time\", \"_field\", \"_value\"])\n  |> group()\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> filter(fn: (r) => exists r.supply_temp and exists r.return_temp)\n  |> map(fn: (r) => ({_time: r._time, _value: 1.965 * (r.supply_temp - r.return_temp), _field: \"thermal_power\"}))\n  |> filter(fn: (r) => r._value >= 0.0 and r._value <= 15.0)",
+          "refId": "A"
+        }
+      ],
+      "title": "Lämpöteho",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 0,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 4
+      },
+      "id": 11,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "12.3.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"lights\")\n  |> filter(fn: (r) => r._field == \"is_on\")\n  |> last()\n  |> group()\n  |> sum()\n  |> map(fn: (r) => ({r with _field: \"Valot päällä\"}))",
+          "refId": "A"
+        }
+      ],
+      "title": "Valot päällä",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 0,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 800
+              },
+              {
+                "color": "red",
+                "value": 1200
+              }
+            ]
+          },
+          "unit": "ppm"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 4
+      },
+      "id": 12,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "12.3.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"ruuvi\" and r.sensor_name == \"Keittiö\")\n  |> filter(fn: (r) => r._field == \"co2\")\n  |> last()",
+          "refId": "A"
+        }
+      ],
+      "title": "CO₂",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 0,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 15
+              },
+              {
+                "color": "red",
+                "value": 35
+              }
+            ]
+          },
+          "unit": "conμgm3"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 4
+      },
+      "id": 13,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "12.3.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"ruuvi\" and r.sensor_name == \"Keittiö\")\n  |> filter(fn: (r) => r._field == \"pm2_5\")\n  |> last()",
+          "refId": "A"
+        }
+      ],
+      "title": "PM2.5",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "Lämpötila (°C)",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "smooth",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "showValues": false,
+            "spanNulls": 3600000,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              }
+            ]
+          },
+          "unit": "celsius"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "outdoor_temp"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Ulkolämpötila"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "light-blue",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "indoor_temp"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Sisälämpötila"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "green",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "supply_temp"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Menovesi"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "red",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "return_temp"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Paluuvesi"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "orange",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "hotwater_temp"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Lämmin käyttövesi"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "yellow",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
+      "id": 14,
+      "options": {
+        "legend": {
+          "calcs": ["mean", "last"],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "12.3.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"temperature\")\n  |> filter(fn: (r) => r._field == \"outdoor_temp\" or r._field == \"indoor_temp\" or r._field == \"supply_temp\" or r._field == \"return_temp\" or r._field == \"hotwater_temp\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)",
+          "refId": "A"
+        }
+      ],
+      "title": "Lämpötilat",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "Teho (kW)",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 20,
+            "gradientMode": "opacity",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "showValues": false,
+            "spanNulls": 3600000,
+            "stacking": {
+              "group": "A",
+              "mode": "normal"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              }
+            ]
+          },
+          "unit": "kwatt"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "thermal_power"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Lämpöpumppu"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "green",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "aux_power"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Lisävastukset"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "orange",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
+      "id": 15,
+      "options": {
+        "legend": {
+          "calcs": ["mean", "last"],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "12.3.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"temperature\")\n  |> filter(fn: (r) => r._field == \"supply_temp\" or r._field == \"return_temp\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> keep(columns: [\"_time\", \"_field\", \"_value\"])\n  |> group()\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> filter(fn: (r) => exists r.supply_temp and exists r.return_temp)\n  |> map(fn: (r) => ({_time: r._time, _value: 1.965 * (r.supply_temp - r.return_temp), _field: \"thermal_power\"}))\n  |> filter(fn: (r) => r._value >= 0.0 and r._value <= 15.0)\n  |> group(columns: [\"_field\"])",
           "refId": "A"
         },
         {
@@ -1082,36 +1309,12 @@
             "type": "influxdb",
             "uid": "influxdb"
           },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"ruuvi\")\n  |> filter(fn: (r) => r._field == \"temperature\")\n  |> filter(fn: (r) => r.sensor_name == \"Olohuone\" or r.sensor_name == \"Takka\" or r.sensor_name == \"Sauna\" or r.sensor_name == \"Ulkolämpötila\")\n  |> last()\n  |> map(fn: (r) => ({r with _field: r.sensor_name, _time: now()}))\n  |> group()\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")",
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"status\")\n  |> filter(fn: (r) => r._field == \"aux_heater_3kw\" or r._field == \"aux_heater_6kw\")\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n  |> keep(columns: [\"_time\", \"_field\", \"_value\"])\n  |> group()\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> filter(fn: (r) => exists r.aux_heater_3kw and exists r.aux_heater_6kw)\n  |> map(fn: (r) => ({_time: r._time, _value: 3.0 * float(v: r.aux_heater_3kw) + 6.0 * float(v: r.aux_heater_6kw), _field: \"aux_power\"}))\n  |> group(columns: [\"_field\"])",
           "refId": "B"
-        },
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "influxdb"
-          },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: -24h)\n  |> filter(fn: (r) => r._measurement == \"rooms\")\n  |> filter(fn: (r) => r.room_type != \"pid\")\n  |> filter(fn: (r) => r.floor == \"1\")\n  |> last()\n  |> map(fn: (r) => {\n      age_s = (int(v: now()) - int(v: r._time)) / 1000000000\n      return {\n        _time: now(),\n        _field: r._field + \"_age\",\n        _value: if age_s < 120 then string(v: age_s) + \"s ago\"\n                else if age_s < 7200 then string(v: age_s / 60) + \"m ago\"\n                else if age_s < 172800 then string(v: age_s / 3600) + \"h ago\"\n                else string(v: age_s / 86400) + \"d ago\"\n      }\n  })\n  |> group()\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")",
-          "refId": "C"
-        },
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "influxdb"
-          },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"ruuvi\")\n  |> filter(fn: (r) => r._field == \"temperature\")\n  |> filter(fn: (r) => r.sensor_name == \"Olohuone\" or r.sensor_name == \"Takka\" or r.sensor_name == \"Sauna\" or r.sensor_name == \"Ulkolämpötila\")\n  |> last()\n  |> map(fn: (r) => {\n      age_s = (int(v: now()) - int(v: r._time)) / 1000000000\n      return {\n        _time: now(),\n        _field: r.sensor_name + \"_age\",\n        _value: if age_s < 120 then string(v: age_s) + \"s ago\"\n                else if age_s < 7200 then string(v: age_s / 60) + \"m ago\"\n                else if age_s < 172800 then string(v: age_s / 3600) + \"h ago\"\n                else string(v: age_s / 86400) + \"d ago\"\n      }\n  })\n  |> group()\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")",
-          "refId": "D"
-        },
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "influxdb"
-          },
-          "query": "import \"strings\"\n\nfrom(bucket: \"building_automation\")\n  |> range(start: -24h)\n  |> filter(fn: (r) => r._measurement == \"rooms\")\n  |> filter(fn: (r) => r.room_type == \"pid\")\n  |> filter(fn: (r) => r.floor == \"1\")\n  |> last()\n  |> map(fn: (r) => ({r with\n      _field: strings.trimSuffix(v: r._field, suffix: \"_PID\") + \"_heat\",\n      _time: now()\n  }))\n  |> group()\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")",
-          "refId": "E"
         }
       ],
-      "title": "1. kerros",
-      "type": "canvas"
+      "title": "Arvioitu lämpöteho",
+      "type": "timeseries"
     },
     {
       "datasource": {
@@ -1183,32 +1386,6 @@
               {
                 "id": "displayName",
                 "value": "Keittiö"
-              },
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "yellow",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Eteinen"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Eteinen"
-              },
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "orange",
-                  "mode": "fixed"
-                }
               }
             ]
           },
@@ -1221,992 +1398,6 @@
               {
                 "id": "displayName",
                 "value": "MH alakerta"
-              },
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "red",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Olohuone (Ruuvi)"
-            },
-            "properties": [
-              {
-                "id": "custom.lineStyle",
-                "value": {
-                  "dash": [
-                    10,
-                    5
-                  ],
-                  "fill": "dash"
-                }
-              },
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "purple",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Ulkolämpötila"
-            },
-            "properties": [
-              {
-                "id": "custom.axisPlacement",
-                "value": "right"
-              },
-              {
-                "id": "custom.axisLabel",
-                "value": "Ulkolämpötila (°C)"
-              },
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "light-blue",
-                  "mode": "fixed"
-                }
-              },
-              {
-                "id": "custom.lineStyle",
-                "value": {
-                  "dash": [
-                    10,
-                    5
-                  ],
-                  "fill": "dash"
-                }
-              },
-              {
-                "id": "custom.fillOpacity",
-                "value": 0
-              }
-            ]
-          }
-        ]
-      },
-      "gridPos": {
-        "h": 10,
-        "w": 13,
-        "x": 11,
-        "y": 0
-      },
-      "id": 6,
-      "options": {
-        "legend": {
-          "calcs": [
-            "mean",
-            "min",
-            "max",
-            "last"
-          ],
-          "displayMode": "table",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "hideZeros": false,
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "pluginVersion": "12.3.2",
-      "targets": [
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "influxdb"
-          },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"rooms\")\n  |> filter(fn: (r) => r.room_type == \"common\")\n  |> filter(fn: (r) => r._field != \"Ylakerran_aula\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])",
-          "refId": "A"
-        },
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "influxdb"
-          },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"ruuvi\")\n  |> filter(fn: (r) => r._field == \"temperature\")\n  |> filter(fn: (r) => r.sensor_name == \"Olohuone\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> map(fn: (r) => ({r with _field: r.sensor_name + \" (Ruuvi)\"}))\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])",
-          "refId": "B"
-        },
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "influxdb"
-          },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvac\")\n  |> filter(fn: (r) => r._field == \"Ulkolampotila\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> map(fn: (r) => ({r with _field: \"Ulkolämpötila\"}))\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])",
-          "refId": "C"
-        },
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "influxdb"
-          },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"rooms\")\n  |> filter(fn: (r) => r.room_type == \"bedroom\")\n  |> filter(fn: (r) => r._field == \"MH_alakerta\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])",
-          "refId": "D"
-        }
-      ],
-      "title": "1. kerroksen lämpötilat",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "influxdb",
-        "uid": "influxdb"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "decimals": 1,
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": 0
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          },
-          "unit": "celsius"
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byRegexp",
-              "options": ".*_heat$"
-            },
-            "properties": [
-              {
-                "id": "thresholds",
-                "value": {
-                  "mode": "absolute",
-                  "steps": [
-                    {
-                      "color": "rgba(100,116,139,0.6)",
-                      "value": 0
-                    },
-                    {
-                      "color": "rgba(249,115,22,0.7)",
-                      "value": 1
-                    },
-                    {
-                      "color": "rgba(239,68,68,0.7)",
-                      "value": 80
-                    }
-                  ]
-                }
-              },
-              {
-                "id": "unit",
-                "value": "percent"
-              },
-              {
-                "id": "decimals",
-                "value": 0
-              }
-            ]
-          }
-        ]
-      },
-      "gridPos": {
-        "h": 9,
-        "w": 10,
-        "x": 0,
-        "y": 10
-      },
-      "id": 15,
-      "options": {
-        "inlineEditing": true,
-        "panZoom": false,
-        "root": {
-          "background": {
-            "color": {
-              "fixed": "transparent"
-            },
-            "image": {
-              "fixed": "img/floorplan/2krs-vari.jpeg",
-              "mode": "fixed"
-            },
-            "size": "cover"
-          },
-          "border": {
-            "color": {
-              "fixed": "transparent"
-            }
-          },
-          "constraint": {
-            "horizontal": "left",
-            "vertical": "top"
-          },
-          "elements": [
-            {
-              "background": {
-                "color": {
-                  "fixed": "rgba(0,0,0,0.6)"
-                }
-              },
-              "border": {
-                "color": {
-                  "fixed": "transparent"
-                }
-              },
-              "config": {
-                "align": "center",
-                "color": {
-                  "fixed": "#cccccc"
-                },
-                "size": 11,
-                "text": {
-                  "fixed": "MH aikuiset",
-                  "mode": "fixed"
-                },
-                "valign": "middle"
-              },
-              "constraint": {
-                "horizontal": "left",
-                "vertical": "top"
-              },
-              "name": "MH aikuiset label",
-              "placement": {
-                "height": 18,
-                "left": 67,
-                "top": 49,
-                "width": 90
-              },
-              "type": "metric-value"
-            },
-            {
-              "background": {
-                "color": {
-                  "fixed": "rgba(0,0,0,0.6)"
-                }
-              },
-              "border": {
-                "color": {
-                  "fixed": "transparent"
-                }
-              },
-              "config": {
-                "align": "center",
-                "color": {
-                  "fixed": "#ffffff"
-                },
-                "size": 16,
-                "text": {
-                  "field": "MH_aikuiset",
-                  "fixed": "",
-                  "mode": "field"
-                },
-                "valign": "middle"
-              },
-              "constraint": {
-                "horizontal": "left",
-                "vertical": "top"
-              },
-              "name": "MH aikuiset",
-              "placement": {
-                "height": 25,
-                "left": 67,
-                "top": 67,
-                "width": 90
-              },
-              "type": "metric-value"
-            },
-            {
-              "background": {
-                "color": {
-                  "fixed": "rgba(0,0,0,0.6)"
-                }
-              },
-              "border": {
-                "color": {
-                  "fixed": "transparent"
-                }
-              },
-              "config": {
-                "align": "center",
-                "color": {
-                  "fixed": "#dddddd"
-                },
-                "size": 10,
-                "text": {
-                  "field": "MH_aikuiset_age",
-                  "fixed": "",
-                  "mode": "field"
-                },
-                "valign": "middle"
-              },
-              "connections": [],
-              "constraint": {
-                "horizontal": "left",
-                "vertical": "top"
-              },
-              "name": "MH aikuiset age",
-              "placement": {
-                "height": 16,
-                "left": 67,
-                "top": 92,
-                "width": 90
-              },
-              "type": "metric-value"
-            },
-            {
-              "background": {
-                "color": {
-                  "fixed": "rgba(0,0,0,0.6)"
-                }
-              },
-              "border": {
-                "color": {
-                  "fixed": "transparent"
-                }
-              },
-              "config": {
-                "align": "center",
-                "color": {
-                  "fixed": "#cccccc"
-                },
-                "size": 11,
-                "text": {
-                  "fixed": "Aula",
-                  "mode": "fixed"
-                },
-                "valign": "middle"
-              },
-              "constraint": {
-                "horizontal": "left",
-                "vertical": "top"
-              },
-              "name": "Aula label",
-              "placement": {
-                "height": 18,
-                "left": 184,
-                "top": 186,
-                "width": 90
-              },
-              "type": "metric-value"
-            },
-            {
-              "background": {
-                "color": {
-                  "fixed": "rgba(0,0,0,0.6)"
-                }
-              },
-              "border": {
-                "color": {
-                  "fixed": "transparent"
-                }
-              },
-              "config": {
-                "align": "center",
-                "color": {
-                  "fixed": "#ffffff"
-                },
-                "size": 16,
-                "text": {
-                  "field": "Ylakerran_aula",
-                  "fixed": "",
-                  "mode": "field"
-                },
-                "valign": "middle"
-              },
-              "constraint": {
-                "horizontal": "left",
-                "vertical": "top"
-              },
-              "name": "Yläkerran aula",
-              "placement": {
-                "height": 25,
-                "left": 184,
-                "top": 204,
-                "width": 90
-              },
-              "type": "metric-value"
-            },
-            {
-              "background": {
-                "color": {
-                  "fixed": "rgba(0,0,0,0.6)"
-                }
-              },
-              "border": {
-                "color": {
-                  "fixed": "transparent"
-                }
-              },
-              "config": {
-                "align": "center",
-                "color": {
-                  "fixed": "#dddddd"
-                },
-                "size": 10,
-                "text": {
-                  "field": "Ylakerran_aula_age",
-                  "fixed": "",
-                  "mode": "field"
-                },
-                "valign": "middle"
-              },
-              "constraint": {
-                "horizontal": "left",
-                "vertical": "top"
-              },
-              "name": "Aula age",
-              "placement": {
-                "height": 16,
-                "left": 184,
-                "top": 229,
-                "width": 90
-              },
-              "type": "metric-value"
-            },
-            {
-              "background": {
-                "color": {
-                  "fixed": "rgba(0,0,0,0.6)"
-                }
-              },
-              "border": {
-                "color": {
-                  "fixed": "transparent"
-                }
-              },
-              "config": {
-                "align": "center",
-                "color": {
-                  "fixed": "#cccccc"
-                },
-                "size": 11,
-                "text": {
-                  "fixed": "MH Aarni",
-                  "mode": "fixed"
-                },
-                "valign": "middle"
-              },
-              "constraint": {
-                "horizontal": "left",
-                "vertical": "top"
-              },
-              "name": "MH Aarni label",
-              "placement": {
-                "height": 18,
-                "left": 65,
-                "top": 186,
-                "width": 90
-              },
-              "type": "metric-value"
-            },
-            {
-              "background": {
-                "color": {
-                  "fixed": "rgba(0,0,0,0.6)"
-                }
-              },
-              "border": {
-                "color": {
-                  "fixed": "transparent"
-                }
-              },
-              "config": {
-                "align": "center",
-                "color": {
-                  "fixed": "#ffffff"
-                },
-                "size": 16,
-                "text": {
-                  "field": "MH_Aarni",
-                  "fixed": "",
-                  "mode": "field"
-                },
-                "valign": "middle"
-              },
-              "constraint": {
-                "horizontal": "left",
-                "vertical": "top"
-              },
-              "name": "MH Aarni",
-              "placement": {
-                "height": 25,
-                "left": 65,
-                "top": 204,
-                "width": 90
-              },
-              "type": "metric-value"
-            },
-            {
-              "background": {
-                "color": {
-                  "fixed": "rgba(0,0,0,0.6)"
-                }
-              },
-              "border": {
-                "color": {
-                  "fixed": "transparent"
-                }
-              },
-              "config": {
-                "align": "center",
-                "color": {
-                  "fixed": "#dddddd"
-                },
-                "size": 10,
-                "text": {
-                  "field": "MH_Aarni_age",
-                  "fixed": "",
-                  "mode": "field"
-                },
-                "valign": "middle"
-              },
-              "constraint": {
-                "horizontal": "left",
-                "vertical": "top"
-              },
-              "name": "MH Aarni age",
-              "placement": {
-                "height": 16,
-                "left": 65,
-                "top": 229,
-                "width": 90
-              },
-              "type": "metric-value"
-            },
-            {
-              "background": {
-                "color": {
-                  "fixed": "rgba(0,0,0,0.6)"
-                }
-              },
-              "border": {
-                "color": {
-                  "fixed": "transparent"
-                }
-              },
-              "config": {
-                "align": "center",
-                "color": {
-                  "fixed": "#cccccc"
-                },
-                "size": 11,
-                "text": {
-                  "fixed": "MH Seela",
-                  "mode": "fixed"
-                },
-                "valign": "middle"
-              },
-              "constraint": {
-                "horizontal": "left",
-                "vertical": "top"
-              },
-              "name": "MH Seela label",
-              "placement": {
-                "height": 18,
-                "left": 303,
-                "top": 186,
-                "width": 90
-              },
-              "type": "metric-value"
-            },
-            {
-              "background": {
-                "color": {
-                  "fixed": "rgba(0,0,0,0.6)"
-                }
-              },
-              "border": {
-                "color": {
-                  "fixed": "transparent"
-                }
-              },
-              "config": {
-                "align": "center",
-                "color": {
-                  "fixed": "#ffffff"
-                },
-                "size": 16,
-                "text": {
-                  "field": "MH_Seela",
-                  "fixed": "",
-                  "mode": "field"
-                },
-                "valign": "middle"
-              },
-              "constraint": {
-                "horizontal": "left",
-                "vertical": "top"
-              },
-              "name": "MH Seela",
-              "placement": {
-                "height": 25,
-                "left": 303,
-                "top": 204,
-                "width": 90
-              },
-              "type": "metric-value"
-            },
-            {
-              "background": {
-                "color": {
-                  "fixed": "rgba(0,0,0,0.6)"
-                }
-              },
-              "border": {
-                "color": {
-                  "fixed": "transparent"
-                }
-              },
-              "config": {
-                "align": "center",
-                "color": {
-                  "fixed": "#dddddd"
-                },
-                "size": 10,
-                "text": {
-                  "field": "MH_Seela_age",
-                  "fixed": "",
-                  "mode": "field"
-                },
-                "valign": "middle"
-              },
-              "constraint": {
-                "horizontal": "left",
-                "vertical": "top"
-              },
-              "name": "MH Seela age",
-              "placement": {
-                "height": 16,
-                "left": 303,
-                "top": 229,
-                "width": 90
-              },
-              "type": "metric-value"
-            },
-            {
-              "background": {
-                "color": {
-                  "field": "MH_aikuiset_heat",
-                  "mode": "field"
-                }
-              },
-              "border": {
-                "color": {
-                  "fixed": "transparent"
-                }
-              },
-              "config": {
-                "align": "center",
-                "color": {
-                  "fixed": "#ffffff"
-                },
-                "size": 10,
-                "text": {
-                  "field": "MH_aikuiset_heat",
-                  "fixed": "",
-                  "mode": "field"
-                },
-                "valign": "middle"
-              },
-              "constraint": {
-                "horizontal": "left",
-                "vertical": "top"
-              },
-              "name": "MH aikuiset heat",
-              "placement": {
-                "height": 16,
-                "left": 67,
-                "top": 108,
-                "width": 90
-              },
-              "type": "metric-value"
-            },
-            {
-              "background": {
-                "color": {
-                  "field": "Ylakerran_aula_heat",
-                  "mode": "field"
-                }
-              },
-              "border": {
-                "color": {
-                  "fixed": "transparent"
-                }
-              },
-              "config": {
-                "align": "center",
-                "color": {
-                  "fixed": "#ffffff"
-                },
-                "size": 10,
-                "text": {
-                  "field": "Ylakerran_aula_heat",
-                  "fixed": "",
-                  "mode": "field"
-                },
-                "valign": "middle"
-              },
-              "constraint": {
-                "horizontal": "left",
-                "vertical": "top"
-              },
-              "name": "Aula heat",
-              "placement": {
-                "height": 16,
-                "left": 184,
-                "top": 245,
-                "width": 90
-              },
-              "type": "metric-value"
-            },
-            {
-              "background": {
-                "color": {
-                  "field": "MH_Aarni_heat",
-                  "mode": "field"
-                }
-              },
-              "border": {
-                "color": {
-                  "fixed": "transparent"
-                }
-              },
-              "config": {
-                "align": "center",
-                "color": {
-                  "fixed": "#ffffff"
-                },
-                "size": 10,
-                "text": {
-                  "field": "MH_Aarni_heat",
-                  "fixed": "",
-                  "mode": "field"
-                },
-                "valign": "middle"
-              },
-              "constraint": {
-                "horizontal": "left",
-                "vertical": "top"
-              },
-              "name": "MH Aarni heat",
-              "placement": {
-                "height": 16,
-                "left": 65,
-                "top": 245,
-                "width": 90
-              },
-              "type": "metric-value"
-            },
-            {
-              "background": {
-                "color": {
-                  "field": "MH_Seela_heat",
-                  "mode": "field"
-                }
-              },
-              "border": {
-                "color": {
-                  "fixed": "transparent"
-                }
-              },
-              "config": {
-                "align": "center",
-                "color": {
-                  "fixed": "#ffffff"
-                },
-                "size": 10,
-                "text": {
-                  "field": "MH_Seela_heat",
-                  "fixed": "",
-                  "mode": "field"
-                },
-                "valign": "middle"
-              },
-              "constraint": {
-                "horizontal": "left",
-                "vertical": "top"
-              },
-              "name": "MH Seela heat",
-              "placement": {
-                "height": 16,
-                "left": 303,
-                "top": 245,
-                "width": 90
-              },
-              "type": "metric-value"
-            }
-          ],
-          "name": "root",
-          "placement": {
-            "height": 100,
-            "left": 0,
-            "top": 0,
-            "width": 100
-          },
-          "type": "frame"
-        },
-        "showAdvancedTypes": true,
-        "tooltip": {
-          "disableForOneClick": false,
-          "mode": "single"
-        },
-        "zoomToContent": false
-      },
-      "pluginVersion": "12.3.2",
-      "targets": [
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "influxdb"
-          },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: -24h)\n  |> filter(fn: (r) => r._measurement == \"rooms\")\n  |> filter(fn: (r) => r.room_type != \"pid\")\n  |> filter(fn: (r) => r.floor == \"2\")\n  |> last()\n  |> group()\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")",
-          "refId": "A"
-        },
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "influxdb"
-          },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: -24h)\n  |> filter(fn: (r) => r._measurement == \"rooms\")\n  |> filter(fn: (r) => r.room_type != \"pid\")\n  |> filter(fn: (r) => r.floor == \"2\")\n  |> last()\n  |> map(fn: (r) => {\n      age_s = (int(v: now()) - int(v: r._time)) / 1000000000\n      return {\n        _time: now(),\n        _field: r._field + \"_age\",\n        _value: if age_s < 120 then string(v: age_s) + \"s ago\"\n                else if age_s < 7200 then string(v: age_s / 60) + \"m ago\"\n                else if age_s < 172800 then string(v: age_s / 3600) + \"h ago\"\n                else string(v: age_s / 86400) + \"d ago\"\n      }\n  })\n  |> group()\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")",
-          "refId": "B"
-        },
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "influxdb"
-          },
-          "query": "import \"strings\"\n\nfrom(bucket: \"building_automation\")\n  |> range(start: -24h)\n  |> filter(fn: (r) => r._measurement == \"rooms\")\n  |> filter(fn: (r) => r.room_type == \"pid\")\n  |> filter(fn: (r) => r.floor == \"2\")\n  |> last()\n  |> map(fn: (r) => ({r with\n      _field: strings.trimSuffix(v: r._field, suffix: \"_PID\") + \"_heat\",\n      _time: now()\n  }))\n  |> group()\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")",
-          "refId": "C"
-        }
-      ],
-      "title": "2. kerros",
-      "type": "canvas"
-    },
-    {
-      "datasource": {
-        "type": "influxdb",
-        "uid": "influxdb"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "Lämpötila (°C)",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "barWidthFactor": 0.6,
-            "drawStyle": "line",
-            "fillOpacity": 10,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "smooth",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "never",
-            "showValues": false,
-            "spanNulls": 3600000,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "dashed"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "transparent",
-                "value": 0
-              },
-              {
-                "color": "rgba(150, 150, 150, 0.5)",
-                "value": 22
-              }
-            ]
-          },
-          "unit": "celsius"
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "MH_Seela"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "MH Seela"
-              },
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "green",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "MH_Aarni"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "MH Aarni"
-              },
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "yellow",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "MH_aikuiset"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "MH aikuiset"
-              },
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "orange",
-                  "mode": "fixed"
-                }
               }
             ]
           },
@@ -2219,208 +1410,21 @@
               {
                 "id": "displayName",
                 "value": "Yläkerran aula"
-              },
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "purple",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Ulkolämpötila"
-            },
-            "properties": [
-              {
-                "id": "custom.axisPlacement",
-                "value": "right"
-              },
-              {
-                "id": "custom.axisLabel",
-                "value": "Ulkolämpötila (°C)"
-              },
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "light-blue",
-                  "mode": "fixed"
-                }
-              },
-              {
-                "id": "custom.lineStyle",
-                "value": {
-                  "dash": [
-                    10,
-                    5
-                  ],
-                  "fill": "dash"
-                }
-              },
-              {
-                "id": "custom.fillOpacity",
-                "value": 0
               }
             ]
           }
         ]
       },
       "gridPos": {
-        "h": 9,
-        "w": 14,
-        "x": 10,
-        "y": 10
-      },
-      "id": 5,
-      "options": {
-        "legend": {
-          "calcs": [
-            "mean",
-            "min",
-            "max",
-            "last"
-          ],
-          "displayMode": "table",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "hideZeros": false,
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "pluginVersion": "12.3.2",
-      "targets": [
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "influxdb"
-          },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"rooms\")\n  |> filter(fn: (r) => r.room_type == \"bedroom\")\n  |> filter(fn: (r) => r._field != \"MH_alakerta\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])",
-          "refId": "A"
-        },
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "influxdb"
-          },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvac\")\n  |> filter(fn: (r) => r._field == \"Ulkolampotila\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> map(fn: (r) => ({r with _field: \"Ulkolämpötila\"}))\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])",
-          "refId": "B"
-        },
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "influxdb"
-          },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"rooms\")\n  |> filter(fn: (r) => r.room_type == \"common\")\n  |> filter(fn: (r) => r._field == \"Ylakerran_aula\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])",
-          "refId": "C"
-        }
-      ],
-      "title": "2. kerroksen lämpötilat",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "influxdb",
-        "uid": "influxdb"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "Lämpötila (°C)",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "barWidthFactor": 0.6,
-            "drawStyle": "line",
-            "fillOpacity": 10,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "smooth",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "never",
-            "showValues": false,
-            "spanNulls": 3600000,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": 0
-              }
-            ]
-          },
-          "unit": "celsius"
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Kellari"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Kellari"
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Kellari_eteinen"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Kellarin eteinen"
-              }
-            ]
-          }
-        ]
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
+        "h": 7,
+        "w": 8,
         "x": 0,
-        "y": 19
+        "y": 16
       },
-      "id": 7,
+      "id": 16,
       "options": {
         "legend": {
-          "calcs": [
-            "mean",
-            "min",
-            "max",
-            "last"
-          ],
+          "calcs": ["mean", "last"],
           "displayMode": "table",
           "placement": "bottom",
           "showLegend": true
@@ -2438,11 +1442,11 @@
             "type": "influxdb",
             "uid": "influxdb"
           },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"rooms\")\n  |> filter(fn: (r) => r.room_type == \"basement\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])",
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"rooms\")\n  |> filter(fn: (r) => r.room_type == \"common\" or r.room_type == \"bedroom\")\n  |> filter(fn: (r) => r._field == \"Keittio\" or r._field == \"Eteinen\" or r._field == \"MH_alakerta\" or r._field == \"Ylakerran_aula\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])",
           "refId": "A"
         }
       ],
-      "title": "Kellarin lämpötilat",
+      "title": "Huonelämpötilat",
       "type": "timeseries"
     },
     {
@@ -2459,7 +1463,7 @@
             "axisBorderShow": false,
             "axisCenteredZero": false,
             "axisColorMode": "text",
-            "axisLabel": "Lämpötila (°C)",
+            "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
             "barWidthFactor": 0.6,
@@ -2498,83 +1502,69 @@
                 "value": 0
               }
             ]
-          },
-          "unit": "celsius"
+          }
         },
         "overrides": [
           {
             "matcher": {
               "id": "byName",
-              "options": "Sauna"
+              "options": "humidity"
             },
             "properties": [
               {
-                "id": "color",
-                "value": {
-                  "fixedColor": "red",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Kosteus"
-            },
-            "properties": [
-              {
-                "id": "custom.axisPlacement",
-                "value": "right"
+                "id": "displayName",
+                "value": "Kosteus (%)"
               },
               {
                 "id": "unit",
                 "value": "percent"
               },
               {
+                "id": "custom.axisPlacement",
+                "value": "left"
+              },
+              {
                 "id": "custom.axisLabel",
                 "value": "Kosteus (%)"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "co2"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "CO₂ (ppm)"
               },
               {
-                "id": "color",
-                "value": {
-                  "fixedColor": "blue",
-                  "mode": "fixed"
-                }
+                "id": "unit",
+                "value": "ppm"
               },
               {
-                "id": "custom.fillOpacity",
-                "value": 5
+                "id": "custom.axisPlacement",
+                "value": "right"
               },
               {
-                "id": "custom.lineStyle",
-                "value": {
-                  "dash": [
-                    10,
-                    5
-                  ],
-                  "fill": "dash"
-                }
+                "id": "custom.axisLabel",
+                "value": "CO₂ (ppm)"
               }
             ]
           }
         ]
       },
       "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 19
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 16
       },
-      "id": 14,
+      "id": 17,
       "options": {
         "legend": {
-          "calcs": [
-            "mean",
-            "min",
-            "max",
-            "last"
-          ],
+          "calcs": ["mean", "last"],
           "displayMode": "table",
           "placement": "bottom",
           "showLegend": true
@@ -2592,239 +1582,12 @@
             "type": "influxdb",
             "uid": "influxdb"
           },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"ruuvi\")\n  |> filter(fn: (r) => r.sensor_name == \"Sauna\")\n  |> filter(fn: (r) => r._field == \"temperature\" or r._field == \"humidity\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> map(fn: (r) => ({r with _field: if r._field == \"temperature\" then \"Sauna\" else \"Kosteus\"}))\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])",
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"ruuvi\" and r.sensor_name == \"Keittiö\")\n  |> filter(fn: (r) => r._field == \"humidity\" or r._field == \"co2\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)",
           "refId": "A"
         }
       ],
-      "title": "Saunan lämpötila",
+      "title": "Ilmankosteus & CO₂",
       "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "influxdb",
-        "uid": "influxdb"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "custom": {
-            "axisPlacement": "auto",
-            "fillOpacity": 80,
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineWidth": 0,
-            "spanNulls": false
-          },
-          "mappings": [
-            {
-              "options": {
-                "from": 0,
-                "result": {
-                  "color": "blue",
-                  "index": 0,
-                  "text": "Pois"
-                },
-                "to": 1
-              },
-              "type": "range"
-            },
-            {
-              "options": {
-                "from": 1,
-                "result": {
-                  "color": "yellow",
-                  "index": 1,
-                  "text": "Osittain"
-                },
-                "to": 99
-              },
-              "type": "range"
-            },
-            {
-              "options": {
-                "from": 99,
-                "result": {
-                  "color": "red",
-                  "index": 2,
-                  "text": "Täysi"
-                },
-                "to": 101
-              },
-              "type": "range"
-            }
-          ],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": 0
-              },
-              {
-                "color": "yellow",
-                "value": 1
-              },
-              {
-                "color": "red",
-                "value": 99
-              }
-            ]
-          },
-          "unit": "percent"
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "MH_Seela_PID"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "MH Seela"
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "MH_Aarni_PID"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "MH Aarni"
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "MH_aikuiset_PID"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "MH aikuiset"
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "MH_alakerta_PID"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "MH alakerta"
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Ylakerran_aula_PID"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Yläkerran aula"
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Keittio_PID"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Keittiö"
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Eteinen_PID"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Eteinen"
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Kellari_PID"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Kellari"
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Kellari_eteinen_PID"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Kellarin eteinen"
-              }
-            ]
-          }
-        ]
-      },
-      "gridPos": {
-        "h": 9,
-        "w": 12,
-        "x": 0,
-        "y": 27
-      },
-      "id": 11,
-      "options": {
-        "alignValue": "center",
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "mergeValues": true,
-        "rowHeight": 0.8,
-        "showValue": "auto",
-        "tooltip": {
-          "hideZeros": false,
-          "mode": "single",
-          "sort": "none"
-        }
-      },
-      "pluginVersion": "12.3.2",
-      "targets": [
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "influxdb"
-          },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"rooms\")\n  |> filter(fn: (r) => r.room_type == \"pid\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])",
-          "refId": "A"
-        }
-      ],
-      "title": "Lämmityksen tila huoneittain",
-      "type": "state-timeline"
     },
     {
       "datasource": {
@@ -2840,13 +1603,13 @@
             "axisBorderShow": false,
             "axisCenteredZero": false,
             "axisColorMode": "text",
-            "axisLabel": "PID summa (%)",
+            "axisLabel": "Lämpötila (°C)",
             "axisPlacement": "auto",
             "barAlignment": 0,
             "barWidthFactor": 0.6,
             "drawStyle": "line",
-            "fillOpacity": 20,
-            "gradientMode": "opacity",
+            "fillOpacity": 10,
+            "gradientMode": "none",
             "hideFrom": {
               "legend": false,
               "tooltip": false,
@@ -2854,7 +1617,7 @@
             },
             "insertNulls": false,
             "lineInterpolation": "smooth",
-            "lineWidth": 2,
+            "lineWidth": 1,
             "pointSize": 5,
             "scaleDistribution": {
               "type": "linear"
@@ -2864,14 +1627,13 @@
             "spanNulls": 3600000,
             "stacking": {
               "group": "A",
-              "mode": "normal"
+              "mode": "none"
             },
             "thresholdsStyle": {
               "mode": "off"
             }
           },
           "mappings": [],
-          "min": 0,
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -2881,45 +1643,19 @@
               }
             ]
           },
-          "unit": "percent"
+          "unit": "celsius"
         },
         "overrides": [
           {
             "matcher": {
               "id": "byName",
-              "options": "2. kerros"
+              "options": "brine_in_temp"
             },
             "properties": [
               {
-                "id": "color",
-                "value": {
-                  "fixedColor": "orange",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "1. kerros"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "green",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Kellari"
-            },
-            "properties": [
+                "id": "displayName",
+                "value": "Liuos sisään"
+              },
               {
                 "id": "color",
                 "value": {
@@ -2928,24 +1664,38 @@
                 }
               }
             ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "brine_out_temp"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Liuos ulos"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "dark-blue",
+                  "mode": "fixed"
+                }
+              }
+            ]
           }
         ]
       },
       "gridPos": {
-        "h": 9,
-        "w": 12,
-        "x": 12,
-        "y": 27
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 16
       },
-      "id": 10,
+      "id": 18,
       "options": {
         "legend": {
-          "calcs": [
-            "mean",
-            "min",
-            "max",
-            "last"
-          ],
+          "calcs": ["mean", "last"],
           "displayMode": "table",
           "placement": "bottom",
           "showLegend": true
@@ -2963,16 +1713,16 @@
             "type": "influxdb",
             "uid": "influxdb"
           },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"rooms\")\n  |> filter(fn: (r) => r.room_type == \"pid\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> group(columns: [\"_time\", \"floor\"])\n  |> sum()\n  |> map(fn: (r) => ({_time: r._time, _value: r._value, _field: if r.floor == \"2\" then \"2. kerros\" else if r.floor == \"1\" then \"1. kerros\" else \"Kellari\"}))\n  |> group(columns: [\"_field\"])",
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"temperature\")\n  |> filter(fn: (r) => r._field == \"brine_in_temp\" or r._field == \"brine_out_temp\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)",
           "refId": "A"
         }
       ],
-      "title": "Lämmitystarve kerroksittain (PID summa)",
+      "title": "Liuospiiri",
       "type": "timeseries"
     }
   ],
   "preload": false,
-  "refresh": "5s",
+  "refresh": "30s",
   "schemaVersion": 42,
   "tags": [
     "building-automation",
@@ -2982,7 +1732,7 @@
     "list": []
   },
   "time": {
-    "from": "now-1d",
+    "from": "now-24h",
     "to": "now"
   },
   "timepicker": {
@@ -2998,7 +1748,7 @@
     ]
   },
   "timezone": "Europe/Helsinki",
-  "title": "Temperature Overview",
+  "title": "Yleiskuva",
   "uid": "wago-overview",
-  "version": 235
+  "version": 1
 }
