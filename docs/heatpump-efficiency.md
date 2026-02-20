@@ -78,22 +78,20 @@ circuit, we cannot determine the true flow rate.
 
 ### Calculation Method
 
-Instead of estimating compressor power from the energy balance (P_heat - P_ground),
-we use the **nominal compressor electrical input** as a constant:
+The chart shows thermal power output, not electrical consumption:
 
 ```
-P_compressor = 2.3 kW × compressor_status   (0 or 1)
-P_aux        = 3.0 kW × aux_3kw_status + 6.0 kW × aux_6kw_status
-P_ground     = P_heat - P_compressor         (energy balance, derived)
+P_heat = 1.965 × ΔT_heating                 (total heat pump thermal output)
+P_aux  = 3.0 kW × aux_3kw_status + 6.0 kW × aux_6kw_status
 ```
 
-The stacked chart shows three layers (bottom to top):
+The stacked chart shows two layers (bottom to top):
 
-1. **Kompressori** (orange) — Compressor electrical input: 2.3 kW when running
-2. **Maaenergia** (green) — Ground heat extraction: P_heat − 2.3 kW
-3. **Lisävastukset** (red) — Auxiliary electric heaters: 0, 3, 6, or 9 kW
+1. **Lämpöteho** (green) — Heat pump thermal output: 1.965 × ΔT
+2. **Lisävastukset** (red) — Auxiliary electric heaters: 0, 3, 6, or 9 kW
 
-The total stack height equals the total thermal output.
+The compressor electrical input (2.3 kW) is not shown here as it is not
+thermal output — it is accounted for in the COP calculation instead.
 
 ### Assumption: Fixed Compressor Power
 
