@@ -137,6 +137,12 @@ ALARM_BITFIELDS = {
 influx_client = None
 write_api = None
 
+# Cache last known register values so partial MQTT messages still produce
+# complete InfluxDB points.  ThermIQ occasionally sends 126-127 registers
+# instead of 128, causing fields to be missing if we only use the current
+# message.  The cache is updated on every message and used as a fallback.
+_register_cache = {}
+
 
 def normalize_register_key(key):
     """Convert register key to decimal index.
@@ -158,16 +164,27 @@ def normalize_register_key(key):
 
 
 def parse_registers(payload):
-    """Parse MQTT payload into a dict of {decimal_index: int_value}."""
-    registers = {}
+    """Parse MQTT payload into a dict of {decimal_index: int_value}.
+
+    Merges with cached values so that registers missing from the current
+    message still use their last known value.
+    """
+    current = {}
     for key, value in payload.items():
         idx = normalize_register_key(key)
         if idx is not None:
             try:
-                registers[idx] = int(value)
+                current[idx] = int(value)
             except (ValueError, TypeError):
                 pass
-    return registers
+
+    # Merge: current values take priority, cache fills gaps
+    merged = {**_register_cache, **current}
+
+    # Update cache with latest values
+    _register_cache.update(current)
+
+    return merged
 
 
 def extract_bits(value, bit_definitions):
