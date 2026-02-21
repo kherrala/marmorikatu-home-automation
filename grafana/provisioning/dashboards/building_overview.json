@@ -211,7 +211,7 @@
             "type": "influxdb",
             "uid": "influxdb"
           },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: -6h)\n  |> filter(fn: (r) => r._measurement == \"rooms\")\n  |> filter(fn: (r) => r.room_type == \"bedroom\" or r.room_type == \"common\" or r.room_type == \"basement\")\n  |> last()\n  |> group()\n  |> mean()\n  |> map(fn: (r) => ({r with _field: \"Sisälämpötila\"}))",
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: -6h)\n  |> filter(fn: (r) => r._measurement == \"rooms\")\n  |> filter(fn: (r) => r.room_type == \"bedroom\" or r.room_type == \"common\" or r.room_type == \"basement\")\n  |> filter(fn: (r) => r._field != \"Kellari_eteinen\")\n  |> last()\n  |> group()\n  |> mean()\n  |> map(fn: (r) => ({r with _field: \"Sisälämpötila\"}))",
           "refId": "A"
         }
       ],
@@ -364,12 +364,14 @@
           },
           "decimals": 0,
           "mappings": [],
+          "max": 100,
+          "min": 0,
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
                 "color": "red",
-                "value": 0
+                "value": null
               },
               {
                 "color": "yellow",
@@ -392,6 +394,158 @@
         "y": 0
       },
       "id": 4,
+      "options": {
+        "minVizHeight": 75,
+        "minVizWidth": 75,
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true,
+        "sizing": "auto"
+      },
+      "pluginVersion": "12.3.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: -6h)\n  |> filter(fn: (r) => r._measurement == \"hvac\")\n  |> filter(fn: (r) => r._field == \"Ulkolampotila\" or r._field == \"Tuloilma_ennen_lammitysta\" or r._field == \"Tuloilma_asetusarvo\")\n  |> last()\n  |> map(fn: (r) => ({r with _time: now()}))\n  |> group()\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> filter(fn: (r) => exists r.Ulkolampotila and exists r.Tuloilma_ennen_lammitysta and exists r.Tuloilma_asetusarvo)\n  |> filter(fn: (r) => r.Tuloilma_asetusarvo != r.Ulkolampotila)\n  |> map(fn: (r) => ({\n    _time: r._time,\n    _value: (r.Tuloilma_ennen_lammitysta - r.Ulkolampotila) / (r.Tuloilma_asetusarvo - r.Ulkolampotila) * 100.0,\n    _field: \"LTO hyötysuhde\"\n  }))\n  |> filter(fn: (r) => r._value > 0.0 and r._value <= 100.0)",
+          "refId": "A"
+        }
+      ],
+      "title": "LTO hyötysuhde",
+      "type": "gauge"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 0,
+          "mappings": [],
+          "max": 500,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 100
+              },
+              {
+                "color": "orange",
+                "value": 200
+              },
+              {
+                "color": "red",
+                "value": 350
+              }
+            ]
+          },
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 3,
+        "x": 15,
+        "y": 0
+      },
+      "id": 19,
+      "options": {
+        "minVizHeight": 75,
+        "minVizWidth": 75,
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true,
+        "sizing": "auto"
+      },
+      "pluginVersion": "12.3.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: -6h)\n  |> filter(fn: (r) => r._measurement == \"rooms\")\n  |> filter(fn: (r) => r.room_type == \"pid\")\n  |> last()\n  |> group()\n  |> sum()\n  |> map(fn: (r) => ({r with _field: \"Lämmitystarve\"}))",
+          "refId": "A"
+        }
+      ],
+      "title": "Lämmitystarve",
+      "type": "gauge"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 0,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 25
+              },
+              {
+                "color": "green",
+                "value": 35
+              },
+              {
+                "color": "yellow",
+                "value": 55
+              },
+              {
+                "color": "red",
+                "value": 65
+              }
+            ]
+          },
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 3,
+        "x": 18,
+        "y": 0
+      },
+      "id": 20,
       "options": {
         "colorMode": "value",
         "graphMode": "area",
@@ -416,161 +570,11 @@
             "type": "influxdb",
             "uid": "influxdb"
           },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: -6h)\n  |> filter(fn: (r) => r._measurement == \"hvac\")\n  |> filter(fn: (r) => r._field == \"Ulkolampotila\" or r._field == \"Tuloilma_ennen_lammitysta\" or r._field == \"Tuloilma_asetusarvo\")\n  |> last()\n  |> map(fn: (r) => ({r with _time: now()}))\n  |> group()\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> filter(fn: (r) => exists r.Ulkolampotila and exists r.Tuloilma_ennen_lammitysta and exists r.Tuloilma_asetusarvo)\n  |> filter(fn: (r) => r.Tuloilma_asetusarvo != r.Ulkolampotila)\n  |> map(fn: (r) => ({\n    _time: r._time,\n    _value: (r.Tuloilma_ennen_lammitysta - r.Ulkolampotila) / (r.Tuloilma_asetusarvo - r.Ulkolampotila) * 100.0,\n    _field: \"LTO hyötysuhde\"\n  }))\n  |> filter(fn: (r) => r._value > 0.0 and r._value <= 100.0)",
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"ruuvi\" and r.sensor_name == \"Keittiö\")\n  |> filter(fn: (r) => r._field == \"humidity\")\n  |> last()",
           "refId": "A"
         }
       ],
-      "title": "LTO hyötysuhde",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "influxdb",
-        "uid": "influxdb"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "decimals": 0,
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": 0
-              },
-              {
-                "color": "yellow",
-                "value": 50
-              },
-              {
-                "color": "orange",
-                "value": 150
-              },
-              {
-                "color": "red",
-                "value": 300
-              }
-            ]
-          },
-          "unit": "percent"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 3,
-        "x": 15,
-        "y": 0
-      },
-      "id": 19,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "percentChangeColorMode": "standard",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "showPercentChange": false,
-        "textMode": "auto",
-        "wideLayout": true
-      },
-      "pluginVersion": "12.3.2",
-      "targets": [
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "influxdb"
-          },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: -6h)\n  |> filter(fn: (r) => r._measurement == \"rooms\")\n  |> filter(fn: (r) => r.room_type == \"pid\")\n  |> filter(fn: (r) => r.floor == \"1\")\n  |> last()\n  |> group()\n  |> sum()\n  |> map(fn: (r) => ({r with _field: \"1. krs\"}))",
-          "refId": "A"
-        }
-      ],
-      "title": "1. krs PID",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "influxdb",
-        "uid": "influxdb"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "decimals": 0,
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": 0
-              },
-              {
-                "color": "yellow",
-                "value": 50
-              },
-              {
-                "color": "orange",
-                "value": 150
-              },
-              {
-                "color": "red",
-                "value": 300
-              }
-            ]
-          },
-          "unit": "percent"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 3,
-        "x": 18,
-        "y": 0
-      },
-      "id": 20,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "percentChangeColorMode": "standard",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "showPercentChange": false,
-        "textMode": "auto",
-        "wideLayout": true
-      },
-      "pluginVersion": "12.3.2",
-      "targets": [
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "influxdb"
-          },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: -6h)\n  |> filter(fn: (r) => r._measurement == \"rooms\")\n  |> filter(fn: (r) => r.room_type == \"pid\")\n  |> filter(fn: (r) => r.floor == \"2\")\n  |> last()\n  |> group()\n  |> sum()\n  |> map(fn: (r) => ({r with _field: \"2. krs\"}))",
-          "refId": "A"
-        }
-      ],
-      "title": "2. krs PID",
+      "title": "Kosteus",
       "type": "stat"
     },
     {
@@ -986,7 +990,7 @@
             "type": "influxdb",
             "uid": "influxdb"
           },
-          "query": "keittio = from(bucket: \"building_automation\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"ruuvi\" and r.sensor_name == \"Keittiö\")\n  |> filter(fn: (r) => r._field == \"pressure\")\n  |> last()\n  |> keep(columns: [\"_time\", \"_value\"])\n  |> set(key: \"_field\", value: \"keittio\")\n\ntakka = from(bucket: \"building_automation\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"ruuvi\" and r.sensor_name == \"Takka\")\n  |> filter(fn: (r) => r._field == \"pressure\")\n  |> last()\n  |> keep(columns: [\"_time\", \"_value\"])\n  |> set(key: \"_field\", value: \"takka\")\n\nunion(tables: [keittio, takka])\n  |> group()\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> filter(fn: (r) => exists r.keittio and exists r.takka)\n  |> map(fn: (r) => ({_time: r._time, _value: r.keittio - r.takka, _field: \"IVK tila\"}))",
+          "query": "import \"array\"\n\nkeittio = from(bucket: \"building_automation\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"ruuvi\" and r.sensor_name == \"Keittiö\")\n  |> filter(fn: (r) => r._field == \"pressure\")\n  |> last()\n  |> findRecord(fn: (key) => true, idx: 0)\n\ntakka = from(bucket: \"building_automation\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"ruuvi\" and r.sensor_name == \"Takka\")\n  |> filter(fn: (r) => r._field == \"pressure\")\n  |> last()\n  |> findRecord(fn: (key) => true, idx: 0)\n\narray.from(rows: [{_time: now(), _value: keittio._value - takka._value, _field: \"IVK tila\"}])",
           "refId": "A"
         }
       ],
@@ -1137,81 +1141,6 @@
         }
       ],
       "title": "LTO jäätymisriski",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "influxdb",
-        "uid": "influxdb"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "decimals": 0,
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": 0
-              },
-              {
-                "color": "yellow",
-                "value": 50
-              },
-              {
-                "color": "orange",
-                "value": 100
-              },
-              {
-                "color": "red",
-                "value": 200
-              }
-            ]
-          },
-          "unit": "percent"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 3,
-        "w": 3,
-        "x": 18,
-        "y": 4
-      },
-      "id": 21,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "percentChangeColorMode": "standard",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "showPercentChange": false,
-        "textMode": "auto",
-        "wideLayout": true
-      },
-      "pluginVersion": "12.3.2",
-      "targets": [
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "influxdb"
-          },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: -6h)\n  |> filter(fn: (r) => r._measurement == \"rooms\")\n  |> filter(fn: (r) => r.room_type == \"pid\")\n  |> filter(fn: (r) => r.floor == \"0\")\n  |> last()\n  |> group()\n  |> sum()\n  |> map(fn: (r) => ({r with _field: \"Kellari\"}))",
-          "refId": "A"
-        }
-      ],
-      "title": "Kellari PID",
       "type": "stat"
     },
     {
@@ -1427,7 +1356,7 @@
             "type": "influxdb",
             "uid": "influxdb"
           },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"temperature\")\n  |> filter(fn: (r) => r._field == \"outdoor_temp\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> map(fn: (r) => ({r with _field: \"Thermia ulko\"}))\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])",
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"thermia\")\n  |> filter(fn: (r) => r._field == \"outdoor_temp\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> map(fn: (r) => ({r with _field: \"Thermia ulko\"}))\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])",
           "refId": "B"
         },
         {
@@ -1580,7 +1509,7 @@
             "type": "influxdb",
             "uid": "influxdb"
           },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"rooms\")\n  |> filter(fn: (r) => r.room_type == \"bedroom\" or r.room_type == \"common\" or r.room_type == \"basement\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> group(columns: [\"_time\", \"floor\"])\n  |> mean()\n  |> map(fn: (r) => ({_time: r._time, _value: r._value, _field: if r.floor == \"2\" then \"2. kerros\" else if r.floor == \"1\" then \"1. kerros\" else \"Kellari\"}))\n  |> group(columns: [\"_field\"])",
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"rooms\")\n  |> filter(fn: (r) => r.room_type == \"bedroom\" or r.room_type == \"common\" or r.room_type == \"basement\")\n  |> filter(fn: (r) => r._field != \"Kellari_eteinen\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> group(columns: [\"_time\", \"floor\"])\n  |> mean()\n  |> map(fn: (r) => ({_time: r._time, _value: r._value, _field: if r.floor == \"2\" then \"2. kerros\" else if r.floor == \"1\" then \"1. kerros\" else \"Kellari\"}))\n  |> group(columns: [\"_field\"])",
           "refId": "A"
         }
       ],
@@ -1646,16 +1575,16 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "humidity"
+              "options": "voc"
             },
             "properties": [
               {
                 "id": "displayName",
-                "value": "Kosteus (%)"
+                "value": "VOC"
               },
               {
                 "id": "unit",
-                "value": "percent"
+                "value": "none"
               },
               {
                 "id": "custom.axisPlacement",
@@ -1663,23 +1592,23 @@
               },
               {
                 "id": "custom.axisLabel",
-                "value": "Kosteus (%)"
+                "value": "VOC (index)"
               }
             ]
           },
           {
             "matcher": {
               "id": "byName",
-              "options": "co2"
+              "options": "pm2_5"
             },
             "properties": [
               {
                 "id": "displayName",
-                "value": "CO₂ (ppm)"
+                "value": "PM2.5"
               },
               {
                 "id": "unit",
-                "value": "ppm"
+                "value": "conμgm3"
               },
               {
                 "id": "custom.axisPlacement",
@@ -1687,7 +1616,7 @@
               },
               {
                 "id": "custom.axisLabel",
-                "value": "CO₂ (ppm)"
+                "value": "PM2.5 (µg/m³)"
               }
             ]
           }
@@ -1723,11 +1652,11 @@
             "type": "influxdb",
             "uid": "influxdb"
           },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"ruuvi\" and r.sensor_name == \"Keittiö\")\n  |> filter(fn: (r) => r._field == \"humidity\" or r._field == \"co2\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)",
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"ruuvi\" and r.sensor_name == \"Keittiö\")\n  |> filter(fn: (r) => r._field == \"voc\" or r._field == \"pm2_5\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)",
           "refId": "A"
         }
       ],
-      "title": "Ilmankosteus & CO₂",
+      "title": "VOC & PM2.5",
       "type": "timeseries"
     }
   ],
