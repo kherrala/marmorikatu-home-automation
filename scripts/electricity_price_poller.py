@@ -52,8 +52,8 @@ def process_prices(data):
             point = Point("electricity") \
                 .tag("source", "spot-hinta.fi") \
                 .tag("market", "FI") \
-                .field("price_no_tax", float(entry["PriceNoTax"])) \
-                .field("price_with_tax", float(entry["PriceWithTax"])) \
+                .field("price_no_tax", float(entry["PriceNoTax"]) * 100.0) \
+                .field("price_with_tax", float(entry["PriceWithTax"]) * 100.0) \
                 .time(dt_utc, WritePrecision.S)
             points.append(point)
         except (KeyError, ValueError) as e:
