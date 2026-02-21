@@ -66,7 +66,7 @@
         },
         "overrides": []
       },
-      "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0},
+      "gridPos": {"h": 6, "w": 6, "x": 0, "y": 0},
       "id": 1,
       "options": {
         "colorMode": "value",
@@ -118,7 +118,7 @@
         },
         "overrides": []
       },
-      "gridPos": {"h": 4, "w": 6, "x": 6, "y": 0},
+      "gridPos": {"h": 6, "w": 6, "x": 6, "y": 0},
       "id": 2,
       "options": {
         "colorMode": "value",
@@ -171,7 +171,7 @@
         },
         "overrides": []
       },
-      "gridPos": {"h": 4, "w": 6, "x": 12, "y": 0},
+      "gridPos": {"h": 6, "w": 6, "x": 12, "y": 0},
       "id": 3,
       "options": {
         "colorMode": "value",
@@ -214,7 +214,7 @@
         },
         "overrides": []
       },
-      "gridPos": {"h": 4, "w": 6, "x": 18, "y": 0},
+      "gridPos": {"h": 6, "w": 6, "x": 18, "y": 0},
       "id": 4,
       "options": {
         "displayLabels": ["percent"],
@@ -274,7 +274,7 @@
         },
         "overrides": []
       },
-      "gridPos": {"h": 9, "w": 12, "x": 0, "y": 4},
+      "gridPos": {"h": 9, "w": 12, "x": 0, "y": 6},
       "id": 5,
       "options": {
         "barRadius": 0,
@@ -337,7 +337,7 @@
         },
         "overrides": []
       },
-      "gridPos": {"h": 9, "w": 12, "x": 12, "y": 4},
+      "gridPos": {"h": 9, "w": 12, "x": 12, "y": 6},
       "id": 6,
       "options": {
         "barRadius": 0,
@@ -408,7 +408,7 @@
         },
         "overrides": []
       },
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 13},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 15},
       "id": 7,
       "options": {
         "legend": {
@@ -481,7 +481,7 @@
           }
         ]
       },
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 13},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 15},
       "id": 8,
       "options": {
         "showHeader": true,
