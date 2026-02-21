@@ -1812,7 +1812,23 @@
           },
           "unit": "suffix: c/kWh"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Mennyt"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "semi-dark-gray",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
         "h": 9,
@@ -1845,10 +1861,20 @@
             "type": "influxdb",
             "uid": "influxdb"
           },
-          "query": "import \"date\"\nimport \"experimental\"\n\ntoday_start = date.truncate(t: now(), unit: 1d)\ntomorrow_start = experimental.addDuration(d: 1d, to: today_start)\n\nfrom(bucket: \"building_automation\")\n  |> range(start: today_start, stop: tomorrow_start)\n  |> filter(fn: (r) => r._measurement == \"electricity\")\n  |> filter(fn: (r) => r._field == \"price_with_tax\")\n  |> map(fn: (r) => ({r with _field: \"Hinta (sis. ALV)\"}))\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])",
+          "query": "import \"date\"\nimport \"experimental\"\n\ntoday_start = date.truncate(t: now(), unit: 1d)\n\nfrom(bucket: \"building_automation\")\n  |> range(start: today_start, stop: now())\n  |> filter(fn: (r) => r._measurement == \"electricity\")\n  |> filter(fn: (r) => r._field == \"price_with_tax\")\n  |> map(fn: (r) => ({r with _field: \"Mennyt\"}))\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])",
           "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
+          "query": "import \"date\"\nimport \"experimental\"\n\ntomorrow_start = experimental.addDuration(d: 1d, to: date.truncate(t: now(), unit: 1d))\n\nfrom(bucket: \"building_automation\")\n  |> range(start: now(), stop: tomorrow_start)\n  |> filter(fn: (r) => r._measurement == \"electricity\")\n  |> filter(fn: (r) => r._field == \"price_with_tax\")\n  |> map(fn: (r) => ({r with _field: \"Tuleva\"}))\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])",
+          "refId": "B"
         }
       ],
+      "timeFrom": "now/d",
+      "timeShift": null,
       "title": "Sähkön hinta tänään",
       "type": "timeseries"
     },
