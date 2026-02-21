@@ -518,7 +518,7 @@
     "list": [
       {
         "current": {
-          "selected": false,
+          "selected": true,
           "text": "1h",
           "value": "1h"
         },
@@ -529,12 +529,12 @@
         "multi": false,
         "name": "interval",
         "options": [
-          {"selected": true, "text": "Tunti", "value": "1h"},
-          {"selected": false, "text": "Päivä", "value": "1d"},
-          {"selected": false, "text": "Viikko", "value": "1w"},
-          {"selected": false, "text": "Kuukausi", "value": "1mo"}
+          {"selected": true, "text": "1h", "value": "1h"},
+          {"selected": false, "text": "1d", "value": "1d"},
+          {"selected": false, "text": "1w", "value": "1w"},
+          {"selected": false, "text": "1mo", "value": "1mo"}
         ],
-        "query": "1h : Tunti, 1d : Päivä, 1w : Viikko, 1mo : Kuukausi",
+        "query": "1h,1d,1w,1mo",
         "skipUrlSync": false,
         "type": "custom"
       },
