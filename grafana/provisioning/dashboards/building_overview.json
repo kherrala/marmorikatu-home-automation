@@ -65,6 +65,18 @@
       "tooltip": "Thermia heat pump details",
       "type": "link",
       "url": "/d/thermia-heatpump/maalampopumppu"
+    },
+    {
+      "asDropdown": false,
+      "icon": "bolt",
+      "includeVars": true,
+      "keepTime": true,
+      "tags": [],
+      "targetBlank": false,
+      "title": "Energia",
+      "tooltip": "Energy cost analysis",
+      "type": "link",
+      "url": "/d/energy-cost/energiakustannukset"
     }
   ],
   "panels": [
