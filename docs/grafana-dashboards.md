@@ -1,6 +1,6 @@
 # Grafana Dashboards
 
-Seven provisioned dashboards for building automation data visualization.
+Eight provisioned dashboards for building automation data visualization.
 
 ## Dashboard Inventory
 
@@ -13,6 +13,7 @@ Seven provisioned dashboards for building automation data visualization.
 | `lights_status.json` | `wago-lights` | Light Switch Status | Light switch on/off status by floor |
 | `ruuvi_sensors.json` | `ruuvi-sensors` | Ruuvi Sensors | Ruuvi sensor data, air quality |
 | `thermia_heatpump.json` | `thermia-heatpump` | Maalämpöpumppu | Heat pump temps, COP, power, runtimes |
+| `energy_cost.json` | `energy-cost` | Energiakustannukset | Estimated consumption & costs by consumer |
 
 All files in `grafana/provisioning/dashboards/`.
 
@@ -38,6 +39,7 @@ All dashboards are tagged `building-automation` plus a topic-specific tag:
 | `ruuvi` | Ruuvi Sensors |
 | `thermia` | Maalämpöpumppu |
 | `lights` | Light Switch Status |
+| `energy` | Energiakustannukset |
 
 ### Cross-Dashboard Navigation
 
@@ -170,6 +172,28 @@ Heat pump monitoring with panels for:
 
 Light switch on/off status organized by floor, with state timeline showing
 when lights were turned on and off.
+
+### Energiakustannukset (`energy-cost`)
+
+Estimated electricity consumption and cost analysis. Since there is no working
+power meter, consumption is estimated from component status data:
+
+- **Heat pump**: Compressor power interpolated from supply temperature
+  (1.77–2.27 kW) plus auxiliary heaters (3 kW + 6 kW exact)
+- **Lighting**: Count of active switches × assumed wattage (configurable, default 10W)
+- **Sauna**: 6 kW when sauna temperature is rising (positive derivative)
+- **HVAC fans**: Fixed assumed wattage when running (configurable, default 300W)
+
+Cost = consumption × (spot price + 0.49 margin + 6.09 transfer) c/kWh.
+
+Dashboard variables:
+- `interval`: Aggregation period (1h / 1d / 1w / 1mo)
+- `watt_per_light`: Assumed wattage per light switch (5–20W)
+- `watt_fan`: Assumed HVAC fan wattage (200–500W)
+
+Panels: summary stats (total kWh, total €, avg price, pie chart), stacked bar
+charts (consumption and cost by consumer per interval), electricity price
+timeseries, and per-consumer breakdown table.
 
 ### Histogram Dashboards
 

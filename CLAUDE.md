@@ -61,4 +61,6 @@ See [docs/influxdb-data-model.md](docs/influxdb-data-model.md) for complete sche
 
 The HVAC dashboard contains Flux queries for heat recovery efficiency (sensible + enthalpy), recovered/coil/waste heat power, and freezing probability. Freezing probability uses dew point proximity (`Jateilma - Kastepiste` margin) as primary risk factor (60% weight), with outdoor temperature (25%) and exhaust temperature (15%) as secondary factors. Key details: `Tuloilma_asetusarvo` is used as exhaust temp proxy for efficiency calculations, outdoor humidity falls back to 85% RH, data aligned to 2-hour boundaries via integer division on nanosecond timestamps.
 
+The Energy Cost dashboard (`energy-cost`) estimates electricity consumption from component status data (heat pump compressor + aux heaters, lighting, sauna heater, HVAC fans) and combines with spot electricity prices to show cost breakdowns. Uses configurable dashboard variables for assumed wattages. Cost model: spot price + 0.49 c/kWh margin + 6.09 c/kWh transfer.
+
 See [docs/heat-recovery-efficiency.md](docs/heat-recovery-efficiency.md) for complete formulas, Flux queries, and derivations. See also [docs/heatpump-efficiency.md](docs/heatpump-efficiency.md) for heat pump COP calculations and [docs/thermiq_register_map.md](docs/thermiq_register_map.md) for ThermIQ register definitions.
