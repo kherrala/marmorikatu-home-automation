@@ -82,8 +82,8 @@ def poll_and_store():
         write_to_influxdb(points)
 
         # Log price range summary
-        prices = [entry.get("PriceWithTax", 0) for entry in data]
-        print(f"Price range: {min(prices):.2f} - {max(prices):.2f} c/kWh ({len(data)} entries)")
+        prices = [entry.get("PriceWithTax", 0) * 100.0 for entry in data]
+        print(f"Price range: {min(prices):.1f} - {max(prices):.1f} c/kWh ({len(data)} entries)")
 
 
 def signal_handler(sig, frame):
