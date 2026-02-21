@@ -16,7 +16,15 @@
       "Bash(tree:*)",
       "Bash(find:*)",
       "Bash(paste:*)",
-      "Bash(iconv:*)"
+      "Bash(iconv:*)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(gh api:*)",
+      "WebFetch(domain:github.com)",
+      "Bash(python scripts/thermiq_write.py:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(scp:*)",
+      "Bash(ssh:*)"
     ]
   }
 }
