@@ -27,8 +27,9 @@ once per minute.
 | Parameter | Value |
 |-----------|-------|
 | Nominal heating output | 8.13 kW |
-| Compressor electrical input | 2.3 kW |
-| COP at B0/W35 | 4.6 |
+| Compressor electrical input | 1.77 kW (B0/W35) — 2.27 kW (B0/W50) |
+| COP at B0/W35 | 4.3 |
+| COP at B0/W50 | 3.4 |
 | Heating circuit flow rate | 0.47 l/s |
 | Brine circuit flow rate | 0.19 l/s (spec minimum) |
 | Auxiliary heaters | 3 kW + 6 kW electric |
@@ -90,31 +91,31 @@ The stacked chart shows two layers (bottom to top):
 1. **Lämpöteho** (green) — Heat pump thermal output: 1.965 × ΔT
 2. **Lisävastukset** (red) — Auxiliary electric heaters: 0, 3, 6, or 9 kW
 
-The compressor electrical input (2.3 kW) is not shown here as it is not
+The compressor electrical input is not shown here as it is not
 thermal output — it is accounted for in the COP calculation instead.
-
-### Assumption: Fixed Compressor Power
-
-The Thermia Diplomat 8 uses a fixed-speed compressor, so its electrical
-consumption is approximately constant regardless of operating conditions.
-In reality, compressor power varies slightly with refrigerant pressures
-(which depend on supply and brine temperatures), but 2.3 kW is a reasonable
-average for the B0/W35 operating point.
 
 ## Panel 3: Coefficient of Performance (Hyötysuhde / COP)
 
 ### Formula
 
 ```
+P_compressor = 1.77 + (supply_temp - 35) × 0.5 / 15    [kW]
+             = interpolated between 1.77 kW (B0/W35) and 2.27 kW (B0/W50)
+
 COP_hp     = P_heat / P_compressor
-           = (1.965 × ΔT_heating) / 2.3
+           = (1.965 × ΔT_heating) / P_compressor
 
 COP_system = (P_heat + P_aux) / (P_compressor + P_aux)
+
+COP_ref    = 4.3 - (supply_temp - 35) × 0.06
+           = interpolated between 4.3 (B0/W35) and 3.4 (B0/W50)
 ```
 
 Where:
+- **P_compressor** — Electrical input interpolated from manufacturer data at B0/W35 and B0/W50
 - **COP_hp** (Lämpöpumpun COP) — Heat pump alone, ignoring auxiliary heaters
 - **COP_system** (Järjestelmän COP) — Total system including auxiliary heaters
+- **COP_ref** (Referenssi) — Manufacturer reference COP for current supply temperature
 
 ### Filtering
 
@@ -124,7 +125,10 @@ values.
 
 ### Reference Line
 
-A dashed threshold line at COP 4.6 marks the nominal efficiency at B0/W35.
+A dashed gray line shows the manufacturer reference COP interpolated between
+B0/W35 (COP 4.3) and B0/W50 (COP 3.4) based on the current supply temperature.
+This allows comparing actual performance against the expected efficiency at
+any operating point.
 
 ### Interpretation
 
@@ -172,15 +176,16 @@ Key points:
 
 ## Limitations
 
-1. **Compressor power is assumed constant** at 2.3 kW. Actual power varies
-   with operating pressures (±10–15%).
+1. **Compressor power is interpolated** between two operating points
+   (B0/W35 and B0/W50). Actual power varies with brine temperature and
+   refrigerant pressures, but brine is assumed fixed at 0°C.
 
 2. **Heating flow rate is assumed constant** at 0.47 l/s. The fixed-speed
    circulation pump provides approximately constant flow, but actual flow
    depends on system hydraulic resistance.
 
 3. **Ground power is derived**, not measured. It equals P_heat − P_compressor,
-   inheriting errors from both the heating flow assumption and the fixed
+   inheriting errors from the heating flow assumption and the interpolated
    compressor power.
 
 4. **No accounting for defrost cycles** or other transient operating modes
