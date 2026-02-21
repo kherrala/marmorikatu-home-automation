@@ -798,6 +798,11 @@
                   "color": "orange",
                   "index": 1,
                   "text": "ON"
+                },
+                "2": {
+                  "color": "blue",
+                  "index": 2,
+                  "text": "KV"
                 }
               },
               "type": "value"
@@ -813,6 +818,10 @@
               {
                 "color": "orange",
                 "value": 1
+              },
+              {
+                "color": "blue",
+                "value": 2
               }
             ]
           }
@@ -850,7 +859,7 @@
             "type": "influxdb",
             "uid": "influxdb"
           },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"status\")\n  |> filter(fn: (r) => r._field == \"compressor\")\n  |> last()",
+          "query": "import \"array\"\n\ncomp = from(bucket: \"building_automation\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"status\")\n  |> filter(fn: (r) => r._field == \"compressor\")\n  |> last()\n  |> findRecord(fn: (key) => true, idx: 0)\n\nhw = from(bucket: \"building_automation\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"status\")\n  |> filter(fn: (r) => r._field == \"hotwater_production\")\n  |> last()\n  |> findRecord(fn: (key) => true, idx: 0)\n\nstatus = if comp._value == 1 and hw._value == 1 then 2\n  else if comp._value == 1 then 1\n  else 0\n\narray.from(rows: [{_time: now(), _value: status, _field: \"compressor\"}])",
           "refId": "A"
         }
       ],
