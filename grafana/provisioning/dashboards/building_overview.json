@@ -1066,7 +1066,7 @@
             "type": "influxdb",
             "uid": "influxdb"
           },
-          "query": "temps = from(bucket: \"building_automation\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"temperature\")\n  |> filter(fn: (r) => r._field == \"supply_temp\" or r._field == \"return_temp\")\n  |> last()\n  |> keep(columns: [\"_time\", \"_field\", \"_value\"])\n  |> group()\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> filter(fn: (r) => exists r.supply_temp and exists r.return_temp)\n\nstatus = from(bucket: \"building_automation\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"status\")\n  |> filter(fn: (r) => r._field == \"compressor\" or r._field == \"aux_heater_3kw\" or r._field == \"aux_heater_6kw\")\n  |> last()\n  |> keep(columns: [\"_time\", \"_field\", \"_value\"])\n  |> group()\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> filter(fn: (r) => exists r.compressor and exists r.aux_heater_3kw and exists r.aux_heater_6kw)\n\njoin(tables: {temps: temps, status: status}, on: [\"_time\"])\n  |> filter(fn: (r) => r.compressor == 1)\n  |> map(fn: (r) => ({_time: r._time, _value: 1.965 * (r.supply_temp - r.return_temp) / 2.3, _field: \"COP\"}))\n  |> filter(fn: (r) => r._value >= 0.0 and r._value <= 10.0)",
+          "query": "temps = from(bucket: \"building_automation\")\n  |> range(start: -24h)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"temperature\")\n  |> filter(fn: (r) => r._field == \"supply_temp\" or r._field == \"return_temp\")\n  |> last()\n  |> keep(columns: [\"_time\", \"_field\", \"_value\"])\n  |> group()\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> filter(fn: (r) => exists r.supply_temp and exists r.return_temp)\n\nstatus = from(bucket: \"building_automation\")\n  |> range(start: -24h)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"status\")\n  |> filter(fn: (r) => r._field == \"compressor\" or r._field == \"aux_heater_3kw\" or r._field == \"aux_heater_6kw\")\n  |> last()\n  |> keep(columns: [\"_time\", \"_field\", \"_value\"])\n  |> group()\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> filter(fn: (r) => exists r.compressor and exists r.aux_heater_3kw and exists r.aux_heater_6kw)\n\njoin(tables: {temps: temps, status: status}, on: [\"_time\"])\n  |> filter(fn: (r) => r.compressor == 1)\n  |> map(fn: (r) => ({_time: r._time, _value: 1.965 * (r.supply_temp - r.return_temp) / 2.3, _field: \"COP\"}))\n  |> filter(fn: (r) => r._value >= 0.0 and r._value <= 10.0)",
           "refId": "A"
         }
       ],
@@ -1861,7 +1861,7 @@
             "type": "influxdb",
             "uid": "influxdb"
           },
-          "query": "import \"date\"\nimport \"experimental\"\n\ntoday_start = date.truncate(t: now(), unit: 1d)\n\nfrom(bucket: \"building_automation\")\n  |> range(start: today_start, stop: now())\n  |> filter(fn: (r) => r._measurement == \"electricity\")\n  |> filter(fn: (r) => r._field == \"price_with_tax\")\n  |> map(fn: (r) => ({r with _field: \"Mennyt\"}))\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])",
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: -12h, stop: now())\n  |> filter(fn: (r) => r._measurement == \"electricity\")\n  |> filter(fn: (r) => r._field == \"price_with_tax\")\n  |> map(fn: (r) => ({r with _field: \"Mennyt\"}))\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])",
           "refId": "A"
         },
         {
@@ -1869,12 +1869,10 @@
             "type": "influxdb",
             "uid": "influxdb"
           },
-          "query": "import \"date\"\nimport \"experimental\"\n\ntomorrow_start = experimental.addDuration(d: 1d, to: date.truncate(t: now(), unit: 1d))\n\nfrom(bucket: \"building_automation\")\n  |> range(start: now(), stop: tomorrow_start)\n  |> filter(fn: (r) => r._measurement == \"electricity\")\n  |> filter(fn: (r) => r._field == \"price_with_tax\")\n  |> map(fn: (r) => ({r with _field: \"Tuleva\"}))\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])",
+          "query": "import \"date\"\nimport \"experimental\"\n\ntomorrow_end = experimental.addDuration(d: 2d, to: date.truncate(t: now(), unit: 1d))\n\nfrom(bucket: \"building_automation\")\n  |> range(start: now(), stop: tomorrow_end)\n  |> filter(fn: (r) => r._measurement == \"electricity\")\n  |> filter(fn: (r) => r._field == \"price_with_tax\")\n  |> map(fn: (r) => ({r with _field: \"Tuleva\"}))\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])",
           "refId": "B"
         }
       ],
-      "timeFrom": "now/d",
-      "timeShift": null,
       "title": "Sähkön hinta tänään",
       "type": "timeseries"
     },
@@ -1998,8 +1996,8 @@
     "list": []
   },
   "time": {
-    "from": "now-6h",
-    "to": "now"
+    "from": "now-12h",
+    "to": "now+1d/d"
   },
   "timepicker": {
     "refresh_intervals": [
