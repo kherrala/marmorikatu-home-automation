@@ -699,7 +699,7 @@
                 "result": {
                   "color": "green",
                   "index": 1,
-                  "text": "Kotona"
+                  "text": "ON"
                 },
                 "to": 1.75
               },
@@ -797,12 +797,12 @@
                 "1": {
                   "color": "orange",
                   "index": 1,
-                  "text": "ON"
+                  "text": "LÄMPÖ"
                 },
                 "2": {
                   "color": "blue",
                   "index": 2,
-                  "text": "KV"
+                  "text": "VESI"
                 }
               },
               "type": "value"
