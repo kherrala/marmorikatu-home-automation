@@ -435,7 +435,7 @@
           },
           "decimals": 0,
           "mappings": [],
-          "max": 500,
+          "max": 900,
           "min": 0,
           "thresholds": {
             "mode": "absolute",
@@ -446,15 +446,15 @@
               },
               {
                 "color": "yellow",
-                "value": 100
-              },
-              {
-                "color": "orange",
                 "value": 200
               },
               {
+                "color": "orange",
+                "value": 450
+              },
+              {
                 "color": "red",
-                "value": 350
+                "value": 700
               }
             ]
           },
