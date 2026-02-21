@@ -1869,7 +1869,7 @@
             "type": "influxdb",
             "uid": "influxdb"
           },
-          "query": "import \"date\"\nimport \"experimental\"\n\ntomorrow_end = experimental.addDuration(d: 2d, to: date.truncate(t: now(), unit: 1d))\n\nfrom(bucket: \"building_automation\")\n  |> range(start: now(), stop: tomorrow_end)\n  |> filter(fn: (r) => r._measurement == \"electricity\")\n  |> filter(fn: (r) => r._field == \"price_with_tax\")\n  |> map(fn: (r) => ({r with _field: \"Tuleva\"}))\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])",
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: now(), stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"electricity\")\n  |> filter(fn: (r) => r._field == \"price_with_tax\")\n  |> map(fn: (r) => ({r with _field: \"Tuleva\"}))\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])",
           "refId": "B"
         }
       ],
@@ -1997,7 +1997,7 @@
   },
   "time": {
     "from": "now-12h",
-    "to": "now+1d/d"
+    "to": "now+24h"
   },
   "timepicker": {
     "refresh_intervals": [
