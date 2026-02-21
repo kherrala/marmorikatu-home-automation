@@ -161,7 +161,7 @@ services:
     container_name: wago-electricity
     environment:
       - SPOT_HINTA_API_URL=https://api.spot-hinta.fi/TodayAndDayForward
-      - POLL_INTERVAL=900
+      - RETRY_INTERVAL=600
       - INFLUXDB_URL=http://influxdb:8086
       - INFLUXDB_TOKEN=wago-secret-token
       - INFLUXDB_ORG=wago
