@@ -1036,19 +1036,23 @@
             "steps": [
               {
                 "color": "#c1c0c0",
-                "value": 0
+                "value": null
               },
               {
                 "color": "red",
                 "value": 0.01
               },
               {
-                "color": "yellow",
+                "color": "orange",
                 "value": 2.5
               },
               {
+                "color": "yellow",
+                "value": 3.4
+              },
+              {
                 "color": "green",
-                "value": 3.5
+                "value": 4.3
               }
             ]
           }
