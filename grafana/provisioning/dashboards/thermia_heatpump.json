@@ -899,7 +899,7 @@
       },
       "gridPos": {
         "h": 9,
-        "w": 8,
+        "w": 6,
         "x": 0,
         "y": 8
       },
@@ -1074,8 +1074,8 @@
       },
       "gridPos": {
         "h": 9,
-        "w": 8,
-        "x": 8,
+        "w": 6,
+        "x": 6,
         "y": 8
       },
       "id": 11,
@@ -1235,8 +1235,8 @@
       },
       "gridPos": {
         "h": 9,
-        "w": 8,
-        "x": 16,
+        "w": 6,
+        "x": 12,
         "y": 8
       },
       "id": 9,
@@ -1279,6 +1279,233 @@
       ],
       "title": "Lämmin käyttövesi",
       "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "axisPlacement": "auto",
+            "fillOpacity": 80,
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineWidth": 0,
+            "spanNulls": false
+          },
+          "mappings": [
+            {
+              "options": {
+                "from": 0,
+                "result": {
+                  "color": "blue",
+                  "index": 0,
+                  "text": "Pois"
+                },
+                "to": 1
+              },
+              "type": "range"
+            },
+            {
+              "options": {
+                "from": 1,
+                "result": {
+                  "color": "yellow",
+                  "index": 1,
+                  "text": "Osittain"
+                },
+                "to": 99
+              },
+              "type": "range"
+            },
+            {
+              "options": {
+                "from": 99,
+                "result": {
+                  "color": "red",
+                  "index": 2,
+                  "text": "Täysi"
+                },
+                "to": 101
+              },
+              "type": "range"
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": 0
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 99
+              }
+            ]
+          },
+          "unit": "percent"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "MH_Seela_PID"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "MH Seela"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "MH_Aarni_PID"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "MH Aarni"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "MH_aikuiset_PID"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "MH aikuiset"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "MH_alakerta_PID"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "MH alakerta"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Ylakerran_aula_PID"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Yläkerran aula"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Keittio_PID"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Keittiö"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Eteinen_PID"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Eteinen"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Kellari_PID"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Kellari"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Kellari_eteinen_PID"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Kellarin eteinen"
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 6,
+        "x": 18,
+        "y": 8
+      },
+      "id": 32,
+      "options": {
+        "alignValue": "center",
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "mergeValues": true,
+        "rowHeight": 0.8,
+        "showValue": "auto",
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "12.3.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"rooms\")\n  |> filter(fn: (r) => r.room_type == \"pid\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])",
+          "refId": "A"
+        }
+      ],
+      "title": "Huoneiden lämmitys",
+      "type": "state-timeline"
     },
     {
       "datasource": {
