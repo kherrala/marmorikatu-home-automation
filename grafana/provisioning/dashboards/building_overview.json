@@ -1399,6 +1399,18 @@
                   "fixedColor": "light-blue",
                   "mode": "fixed"
                 }
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "left"
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 2
               }
             ]
           },
@@ -1414,6 +1426,75 @@
                   "fixedColor": "dark-blue",
                   "mode": "fixed"
                 }
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "left"
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 2
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "1. kerros"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "green",
+                  "mode": "fixed"
+                }
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "2. kerros"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "orange",
+                  "mode": "fixed"
+                }
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Kellari"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "semi-dark-blue",
+                  "mode": "fixed"
+                }
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
               }
             ]
           }
@@ -1421,7 +1502,7 @@
       },
       "gridPos": {
         "h": 9,
-        "w": 6,
+        "w": 8,
         "x": 0,
         "y": 7
       },
@@ -1458,155 +1539,18 @@
             "uid": "influxdb"
           },
           "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvac\")\n  |> filter(fn: (r) => r._field == \"Ulkolampotila\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> map(fn: (r) => ({r with _field: \"HVAC ulko\"}))\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])",
-          "refId": "C"
-        }
-      ],
-      "title": "Ulkolämpötilat",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "influxdb",
-        "uid": "influxdb"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "Lämpötila (°C)",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "barWidthFactor": 0.6,
-            "drawStyle": "line",
-            "fillOpacity": 10,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "smooth",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "never",
-            "showValues": false,
-            "spanNulls": 3600000,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "dashed"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "transparent",
-                "value": 0
-              },
-              {
-                "color": "rgba(150, 150, 150, 0.5)",
-                "value": 22
-              }
-            ]
-          },
-          "unit": "celsius"
+          "refId": "B"
         },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "1. kerros"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "green",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "2. kerros"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "orange",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Kellari"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "blue",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          }
-        ]
-      },
-      "gridPos": {
-        "h": 9,
-        "w": 4,
-        "x": 6,
-        "y": 7
-      },
-      "id": 16,
-      "options": {
-        "legend": {
-          "calcs": [
-            "mean",
-            "last"
-          ],
-          "displayMode": "table",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "hideZeros": false,
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "pluginVersion": "12.3.2",
-      "targets": [
         {
           "datasource": {
             "type": "influxdb",
             "uid": "influxdb"
           },
           "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"rooms\")\n  |> filter(fn: (r) => r.room_type == \"bedroom\" or r.room_type == \"common\" or r.room_type == \"basement\")\n  |> filter(fn: (r) => r._field != \"Kellari_eteinen\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> group(columns: [\"_time\", \"floor\"])\n  |> mean()\n  |> map(fn: (r) => ({_time: r._time, _value: r._value, _field: if r.floor == \"2\" then \"2. kerros\" else if r.floor == \"1\" then \"1. kerros\" else \"Kellari\"}))\n  |> group(columns: [\"_field\"])",
-          "refId": "A"
+          "refId": "C"
         }
       ],
-      "title": "Huonelämpötilat",
+      "title": "Lämpötilat",
       "type": "timeseries"
     },
     {
@@ -1717,8 +1661,8 @@
       },
       "gridPos": {
         "h": 9,
-        "w": 5,
-        "x": 10,
+        "w": 8,
+        "x": 8,
         "y": 7
       },
       "id": 17,
@@ -1827,8 +1771,8 @@
       },
       "gridPos": {
         "h": 9,
-        "w": 9,
-        "x": 15,
+        "w": 8,
+        "x": 16,
         "y": 7
       },
       "id": 23,
