@@ -28,7 +28,7 @@ once per minute.
 |-----------|-------|
 | Nominal heating output | 8.13 kW |
 | Compressor electrical input | 1.77 kW (B0/W35) — 2.27 kW (B0/W50) |
-| COP at B0/W35 | 4.3 |
+| COP at B0/W35 | 4.6 |
 | COP at B0/W50 | 3.4 |
 | Heating circuit flow rate | 0.47 l/s |
 | Brine circuit flow rate | 0.19 l/s (spec minimum) |
@@ -107,8 +107,8 @@ COP_hp     = P_heat / P_compressor
 
 COP_system = (P_heat + P_aux) / (P_compressor + P_aux)
 
-COP_ref    = 4.3 - (supply_temp - 35) × 0.06
-           = interpolated between 4.3 (B0/W35) and 3.4 (B0/W50)
+COP_ref    = 4.6 - (supply_temp - 35) × 0.08
+           = interpolated between 4.6 (B0/W35) and 3.4 (B0/W50)
 ```
 
 Where:
@@ -126,7 +126,7 @@ values.
 ### Reference Line
 
 A dashed gray line shows the manufacturer reference COP interpolated between
-B0/W35 (COP 4.3) and B0/W50 (COP 3.4) based on the current supply temperature.
+B0/W35 (COP 4.6) and B0/W50 (COP 3.4) based on the current supply temperature.
 This allows comparing actual performance against the expected efficiency at
 any operating point.
 
