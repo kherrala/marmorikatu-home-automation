@@ -261,11 +261,16 @@
             "axisColorMode": "text",
             "axisLabel": "",
             "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.8,
+            "drawStyle": "bars",
             "fillOpacity": 80,
             "gradientMode": "none",
             "hideFrom": {"legend": false, "tooltip": false, "viz": false},
             "lineWidth": 0,
+            "pointSize": 5,
             "scaleDistribution": {"type": "linear"},
+            "showPoints": "never",
             "stacking": {"group": "A", "mode": "normal"},
             "thresholdsStyle": {"mode": "off"}
           },
@@ -277,24 +282,16 @@
       "gridPos": {"h": 9, "w": 12, "x": 0, "y": 6},
       "id": 5,
       "options": {
-        "barRadius": 0,
-        "barWidth": 0.8,
-        "fullHighlight": false,
-        "groupWidth": 0.7,
         "legend": {
           "calcs": ["sum"],
           "displayMode": "list",
           "placement": "bottom",
           "showLegend": true
         },
-        "orientation": "auto",
-        "showValue": "never",
-        "stacking": "normal",
         "tooltip": {
           "mode": "multi",
           "sort": "desc"
-        },
-        "xTickLabelRotation": 0
+        }
       },
       "pluginVersion": "12.3.2",
       "targets": [
@@ -305,7 +302,7 @@
         }
       ],
       "title": "Arvioitu sähkönkulutus",
-      "type": "barchart"
+      "type": "timeseries"
     },
     {
       "datasource": {
@@ -323,11 +320,16 @@
             "axisColorMode": "text",
             "axisLabel": "",
             "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.8,
+            "drawStyle": "bars",
             "fillOpacity": 80,
             "gradientMode": "none",
             "hideFrom": {"legend": false, "tooltip": false, "viz": false},
             "lineWidth": 0,
+            "pointSize": 5,
             "scaleDistribution": {"type": "linear"},
+            "showPoints": "never",
             "stacking": {"group": "A", "mode": "normal"},
             "thresholdsStyle": {"mode": "off"}
           },
@@ -340,24 +342,16 @@
       "gridPos": {"h": 9, "w": 12, "x": 12, "y": 6},
       "id": 6,
       "options": {
-        "barRadius": 0,
-        "barWidth": 0.8,
-        "fullHighlight": false,
-        "groupWidth": 0.7,
         "legend": {
           "calcs": ["sum"],
           "displayMode": "list",
           "placement": "bottom",
           "showLegend": true
         },
-        "orientation": "auto",
-        "showValue": "never",
-        "stacking": "normal",
         "tooltip": {
           "mode": "multi",
           "sort": "desc"
-        },
-        "xTickLabelRotation": 0
+        }
       },
       "pluginVersion": "12.3.2",
       "targets": [
@@ -368,7 +362,7 @@
         }
       ],
       "title": "Arvioitu sähkökustannus",
-      "type": "barchart"
+      "type": "timeseries"
     },
     {
       "datasource": {
