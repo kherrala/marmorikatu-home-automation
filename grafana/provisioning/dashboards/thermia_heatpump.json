@@ -18,7 +18,7 @@
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
-  "id": 8,
+  "id": 9,
   "links": [
     {
       "asDropdown": false,
@@ -82,868 +82,6 @@
     }
   ],
   "panels": [
-    {
-      "datasource": {
-        "type": "influxdb",
-        "uid": "influxdb"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "decimals": 1,
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": 0
-              },
-              {
-                "color": "green",
-                "value": 40
-              },
-              {
-                "color": "orange",
-                "value": 55
-              },
-              {
-                "color": "red",
-                "value": 65
-              }
-            ]
-          },
-          "unit": "celsius"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 0,
-        "y": 0
-      },
-      "id": 5,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "percentChangeColorMode": "standard",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "showPercentChange": false,
-        "textMode": "auto",
-        "wideLayout": true
-      },
-      "pluginVersion": "12.3.2",
-      "targets": [
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "influxdb"
-          },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"temperature\")\n  |> filter(fn: (r) => r._field == \"hotwater_temp\")\n  |> last()",
-          "refId": "A"
-        }
-      ],
-      "title": "Lämmin käyttövesi",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "influxdb",
-        "uid": "influxdb"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "decimals": 1,
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": 0
-              },
-              {
-                "color": "green",
-                "value": 25
-              },
-              {
-                "color": "orange",
-                "value": 40
-              },
-              {
-                "color": "red",
-                "value": 50
-              }
-            ]
-          },
-          "unit": "celsius"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 4,
-        "y": 0
-      },
-      "id": 3,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "percentChangeColorMode": "standard",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "showPercentChange": false,
-        "textMode": "auto",
-        "wideLayout": true
-      },
-      "pluginVersion": "12.3.2",
-      "targets": [
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "influxdb"
-          },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"temperature\")\n  |> filter(fn: (r) => r._field == \"supply_temp\")\n  |> last()",
-          "refId": "A"
-        }
-      ],
-      "title": "Menovesi",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "influxdb",
-        "uid": "influxdb"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": 0
-              }
-            ]
-          },
-          "unit": "h"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 8,
-        "y": 0
-      },
-      "id": 14,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "percentChangeColorMode": "standard",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "showPercentChange": false,
-        "textMode": "auto",
-        "wideLayout": true
-      },
-      "pluginVersion": "12.3.2",
-      "targets": [
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "influxdb"
-          },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"runtime\")\n  |> filter(fn: (r) => r._field == \"runtime_compressor\")\n  |> spread()",
-          "refId": "A"
-        }
-      ],
-      "title": "Kompressori",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "influxdb",
-        "uid": "influxdb"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": 0
-              }
-            ]
-          },
-          "unit": "h"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 12,
-        "y": 0
-      },
-      "id": 15,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "percentChangeColorMode": "standard",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "showPercentChange": false,
-        "textMode": "auto",
-        "wideLayout": true
-      },
-      "pluginVersion": "12.3.2",
-      "targets": [
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "influxdb"
-          },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"runtime\")\n  |> filter(fn: (r) => r._field == \"runtime_3kw\")\n  |> spread()",
-          "refId": "A"
-        }
-      ],
-      "title": "Lisävastus 3kW",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "influxdb",
-        "uid": "influxdb"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            }
-          },
-          "mappings": [],
-          "unit": "h"
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "runtime_compressor"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Kompressori"
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "runtime_3kw"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Lisävastus 3kW"
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "runtime_6kw"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Lisävastus 6kW"
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "runtime_hotwater"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Lämmin vesi"
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "runtime_passive_cooling"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Passiivijäähdytys"
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "runtime_active_cooling"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Aktiivijäähdytys"
-              }
-            ]
-          }
-        ]
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 8,
-        "x": 16,
-        "y": 0
-      },
-      "id": 31,
-      "options": {
-        "displayLabels": [
-          "percent"
-        ],
-        "legend": {
-          "displayMode": "table",
-          "placement": "right",
-          "showLegend": true,
-          "values": [
-            "value"
-          ]
-        },
-        "pieType": "pie",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "sort": "desc",
-        "tooltip": {
-          "hideZeros": false,
-          "mode": "single",
-          "sort": "none"
-        }
-      },
-      "pluginVersion": "12.3.2",
-      "targets": [
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "influxdb"
-          },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"runtime\")\n  |> spread()\n  |> group()\n  |> pivot(rowKey: [\"_stop\"], columnKey: [\"_field\"], valueColumn: \"_value\")",
-          "refId": "A"
-        }
-      ],
-      "title": "Käyttötunnit jakaumittain",
-      "type": "piechart"
-    },
-    {
-      "datasource": {
-        "type": "influxdb",
-        "uid": "influxdb"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "decimals": 1,
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "dark-blue",
-                "value": 0
-              },
-              {
-                "color": "blue",
-                "value": -10
-              },
-              {
-                "color": "green",
-                "value": 0
-              },
-              {
-                "color": "orange",
-                "value": 25
-              }
-            ]
-          },
-          "unit": "celsius"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 0,
-        "y": 4
-      },
-      "id": 2,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "percentChangeColorMode": "standard",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "showPercentChange": false,
-        "textMode": "auto",
-        "wideLayout": true
-      },
-      "pluginVersion": "12.3.2",
-      "targets": [
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "influxdb"
-          },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"temperature\")\n  |> filter(fn: (r) => r._field == \"outdoor_temp\")\n  |> last()",
-          "refId": "A"
-        }
-      ],
-      "title": "Ulkolämpötila",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "influxdb",
-        "uid": "influxdb"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "decimals": 1,
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": 0
-              },
-              {
-                "color": "green",
-                "value": 20
-              },
-              {
-                "color": "orange",
-                "value": 35
-              },
-              {
-                "color": "red",
-                "value": 45
-              }
-            ]
-          },
-          "unit": "celsius"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 4,
-        "y": 4
-      },
-      "id": 4,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "percentChangeColorMode": "standard",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "showPercentChange": false,
-        "textMode": "auto",
-        "wideLayout": true
-      },
-      "pluginVersion": "12.3.2",
-      "targets": [
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "influxdb"
-          },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"temperature\")\n  |> filter(fn: (r) => r._field == \"return_temp\")\n  |> last()",
-          "refId": "A"
-        }
-      ],
-      "title": "Paluuvesi",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "influxdb",
-        "uid": "influxdb"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": 0
-              }
-            ]
-          },
-          "unit": "h"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 8,
-        "y": 4
-      },
-      "id": 17,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "percentChangeColorMode": "standard",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "showPercentChange": false,
-        "textMode": "auto",
-        "wideLayout": true
-      },
-      "pluginVersion": "12.3.2",
-      "targets": [
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "influxdb"
-          },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"runtime\")\n  |> filter(fn: (r) => r._field == \"runtime_hotwater\")\n  |> spread()",
-          "refId": "A"
-        }
-      ],
-      "title": "Lämmin vesi",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "influxdb",
-        "uid": "influxdb"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": 0
-              }
-            ]
-          },
-          "unit": "h"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 12,
-        "y": 4
-      },
-      "id": 16,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "percentChangeColorMode": "standard",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "showPercentChange": false,
-        "textMode": "auto",
-        "wideLayout": true
-      },
-      "pluginVersion": "12.3.2",
-      "targets": [
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "influxdb"
-          },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"runtime\")\n  |> filter(fn: (r) => r._field == \"runtime_6kw\")\n  |> spread()",
-          "refId": "A"
-        }
-      ],
-      "title": "Lisävastus 6kW",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "influxdb",
-        "uid": "influxdb"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "barWidthFactor": 0.6,
-            "drawStyle": "line",
-            "fillOpacity": 10,
-            "gradientMode": "opacity",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "smooth",
-            "lineWidth": 2,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "never",
-            "showValues": false,
-            "spanNulls": 3600000,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "decimals": 0,
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": 0
-              }
-            ]
-          },
-          "unit": "none"
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "integral"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Integraali"
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "integral_limit_a1"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Raja A1"
-              },
-              {
-                "id": "custom.lineStyle",
-                "value": {
-                  "dash": [
-                    10,
-                    10
-                  ],
-                  "fill": "dash"
-                }
-              },
-              {
-                "id": "custom.fillOpacity",
-                "value": 0
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "integral_limit_a2"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Raja A2"
-              },
-              {
-                "id": "custom.lineStyle",
-                "value": {
-                  "dash": [
-                    10,
-                    10
-                  ],
-                  "fill": "dash"
-                }
-              },
-              {
-                "id": "custom.fillOpacity",
-                "value": 0
-              }
-            ]
-          }
-        ]
-      },
-      "gridPos": {
-        "h": 9,
-        "w": 6,
-        "x": 0,
-        "y": 8
-      },
-      "id": 26,
-      "options": {
-        "legend": {
-          "calcs": [
-            "mean",
-            "min",
-            "max",
-            "last"
-          ],
-          "displayMode": "table",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "hideZeros": false,
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "pluginVersion": "12.3.2",
-      "targets": [
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "influxdb"
-          },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"performance\")\n  |> filter(fn: (r) => r._field == \"integral\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)",
-          "refId": "A"
-        },
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "influxdb"
-          },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"setting\")\n  |> filter(fn: (r) => r._field == \"integral_limit_a1\" or r._field == \"integral_limit_a2\")\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n  |> map(fn: (r) => ({r with _value: r._value * -1.0}))",
-          "refId": "B"
-        }
-      ],
-      "title": "Integraali",
-      "type": "timeseries"
-    },
     {
       "datasource": {
         "type": "influxdb",
@@ -1073,10 +211,10 @@
         ]
       },
       "gridPos": {
-        "h": 9,
-        "w": 6,
-        "x": 6,
-        "y": 8
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 0
       },
       "id": 11,
       "options": {
@@ -1084,7 +222,7 @@
         "legend": {
           "displayMode": "list",
           "placement": "bottom",
-          "showLegend": true
+          "showLegend": false
         },
         "mergeValues": true,
         "rowHeight": 0.8,
@@ -1153,7 +291,7 @@
               "mode": "off"
             }
           },
-          "decimals": 1,
+          "decimals": 0,
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
@@ -1164,30 +302,30 @@
               }
             ]
           },
-          "unit": "celsius"
+          "unit": "none"
         },
         "overrides": [
           {
             "matcher": {
               "id": "byName",
-              "options": "hotwater_temp"
+              "options": "integral"
             },
             "properties": [
               {
                 "id": "displayName",
-                "value": "LKV lämpötila"
+                "value": "Integraali"
               }
             ]
           },
           {
             "matcher": {
               "id": "byName",
-              "options": "hotwater_start_temp"
+              "options": "integral_limit_a1"
             },
             "properties": [
               {
                 "id": "displayName",
-                "value": "LKV aloitus"
+                "value": "Raja A1"
               },
               {
                 "id": "custom.lineStyle",
@@ -1208,12 +346,12 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "hotwater_stop_temp"
+              "options": "integral_limit_a2"
             },
             "properties": [
               {
                 "id": "displayName",
-                "value": "LKV lopetus"
+                "value": "Raja A2"
               },
               {
                 "id": "custom.lineStyle",
@@ -1234,12 +372,12 @@
         ]
       },
       "gridPos": {
-        "h": 9,
-        "w": 6,
-        "x": 12,
-        "y": 8
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 0
       },
-      "id": 9,
+      "id": 26,
       "options": {
         "legend": {
           "calcs": [
@@ -1250,7 +388,7 @@
           ],
           "displayMode": "table",
           "placement": "bottom",
-          "showLegend": true
+          "showLegend": false
         },
         "tooltip": {
           "hideZeros": false,
@@ -1265,7 +403,7 @@
             "type": "influxdb",
             "uid": "influxdb"
           },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"temperature\")\n  |> filter(fn: (r) => r._field == \"hotwater_temp\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)",
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"performance\")\n  |> filter(fn: (r) => r._field == \"integral\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)",
           "refId": "A"
         },
         {
@@ -1273,12 +411,312 @@
             "type": "influxdb",
             "uid": "influxdb"
           },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"setting\")\n  |> filter(fn: (r) => r._field == \"hotwater_start_temp\" or r._field == \"hotwater_stop_temp\")\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)",
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"setting\")\n  |> filter(fn: (r) => r._field == \"integral_limit_a1\" or r._field == \"integral_limit_a2\")\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n  |> map(fn: (r) => ({r with _value: r._value * -1.0}))",
           "refId": "B"
         }
       ],
-      "title": "Lämmin käyttövesi",
+      "title": "Integraali",
       "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 1,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": 0
+              },
+              {
+                "color": "green",
+                "value": 40
+              },
+              {
+                "color": "orange",
+                "value": 55
+              },
+              {
+                "color": "red",
+                "value": 65
+              }
+            ]
+          },
+          "unit": "celsius"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 0
+      },
+      "id": 5,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "12.3.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"temperature\")\n  |> filter(fn: (r) => r._field == \"hotwater_temp\")\n  |> last()",
+          "refId": "A"
+        }
+      ],
+      "title": "Lämmin käyttövesi",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 1,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "dark-blue",
+                "value": 0
+              },
+              {
+                "color": "blue",
+                "value": -10
+              },
+              {
+                "color": "green",
+                "value": 0
+              },
+              {
+                "color": "orange",
+                "value": 25
+              }
+            ]
+          },
+          "unit": "celsius"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 0
+      },
+      "id": 2,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "12.3.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"temperature\")\n  |> filter(fn: (r) => r._field == \"outdoor_temp\")\n  |> last()",
+          "refId": "A"
+        }
+      ],
+      "title": "Ulkolämpötila",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 1,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": 0
+              },
+              {
+                "color": "green",
+                "value": 25
+              },
+              {
+                "color": "orange",
+                "value": 40
+              },
+              {
+                "color": "red",
+                "value": 50
+              }
+            ]
+          },
+          "unit": "celsius"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 4
+      },
+      "id": 3,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "12.3.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"temperature\")\n  |> filter(fn: (r) => r._field == \"supply_temp\")\n  |> last()",
+          "refId": "A"
+        }
+      ],
+      "title": "Menovesi",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 1,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": 0
+              },
+              {
+                "color": "green",
+                "value": 20
+              },
+              {
+                "color": "orange",
+                "value": 35
+              },
+              {
+                "color": "red",
+                "value": 45
+              }
+            ]
+          },
+          "unit": "celsius"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 4
+      },
+      "id": 4,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "12.3.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"temperature\")\n  |> filter(fn: (r) => r._field == \"return_temp\")\n  |> last()",
+          "refId": "A"
+        }
+      ],
+      "title": "Paluuvesi",
+      "type": "stat"
     },
     {
       "datasource": {
@@ -1471,9 +909,9 @@
         ]
       },
       "gridPos": {
-        "h": 9,
-        "w": 6,
-        "x": 18,
+        "h": 8,
+        "w": 8,
+        "x": 0,
         "y": 8
       },
       "id": 32,
@@ -1482,7 +920,7 @@
         "legend": {
           "displayMode": "list",
           "placement": "bottom",
-          "showLegend": true
+          "showLegend": false
         },
         "mergeValues": true,
         "rowHeight": 0.8,
@@ -1506,6 +944,397 @@
       ],
       "title": "Huoneiden lämmitys",
       "type": "state-timeline"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          },
+          "mappings": [],
+          "unit": "h"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "runtime_compressor"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Kompressori"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "runtime_3kw"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Lisävastus 3kW"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "runtime_6kw"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Lisävastus 6kW"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "runtime_hotwater"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Lämmin vesi"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "runtime_passive_cooling"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Passiivijäähdytys"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "runtime_active_cooling"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Aktiivijäähdytys"
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 8
+      },
+      "id": 31,
+      "options": {
+        "displayLabels": [
+          "percent"
+        ],
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "values": [
+            "value"
+          ]
+        },
+        "pieType": "pie",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "sort": "desc",
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "12.3.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"runtime\")\n  |> spread()\n  |> group()\n  |> pivot(rowKey: [\"_stop\"], columnKey: [\"_field\"], valueColumn: \"_value\")",
+          "refId": "A"
+        }
+      ],
+      "title": "Käyttötunnit jakaumittain",
+      "type": "piechart"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              }
+            ]
+          },
+          "unit": "h"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 8
+      },
+      "id": 14,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "12.3.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"runtime\")\n  |> filter(fn: (r) => r._field == \"runtime_compressor\")\n  |> spread()",
+          "refId": "A"
+        }
+      ],
+      "title": "Kompressori",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              }
+            ]
+          },
+          "unit": "h"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 8
+      },
+      "id": 17,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "12.3.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"runtime\")\n  |> filter(fn: (r) => r._field == \"runtime_hotwater\")\n  |> spread()",
+          "refId": "A"
+        }
+      ],
+      "title": "Lämmin vesi",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              }
+            ]
+          },
+          "unit": "h"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 12
+      },
+      "id": 15,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "12.3.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"runtime\")\n  |> filter(fn: (r) => r._field == \"runtime_3kw\")\n  |> spread()",
+          "refId": "A"
+        }
+      ],
+      "title": "Lisävastus 3kW",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              }
+            ]
+          },
+          "unit": "h"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 12
+      },
+      "id": 16,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "12.3.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"runtime\")\n  |> filter(fn: (r) => r._field == \"runtime_6kw\")\n  |> spread()",
+          "refId": "A"
+        }
+      ],
+      "title": "Lisävastus 6kW",
+      "type": "stat"
     },
     {
       "datasource": {
@@ -1545,41 +1374,40 @@
             "spanNulls": 3600000,
             "stacking": {
               "group": "A",
-              "mode": "normal"
+              "mode": "none"
             },
             "thresholdsStyle": {
-              "mode": "off"
+              "mode": "dashed"
             }
           },
           "decimals": 1,
           "mappings": [],
-          "min": 0,
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "transparent",
                 "value": 0
               }
             ]
           },
-          "unit": "kwatt"
+          "unit": "none"
         },
         "overrides": [
           {
             "matcher": {
               "id": "byName",
-              "options": "thermal_power"
+              "options": "hp_cop"
             },
             "properties": [
               {
                 "id": "displayName",
-                "value": "Lämpöteho"
+                "value": "Lämpöpumpun COP"
               },
               {
                 "id": "color",
                 "value": {
-                  "fixedColor": "green",
+                  "fixedColor": "orange",
                   "mode": "fixed"
                 }
               }
@@ -1588,19 +1416,56 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "aux_power"
+              "options": "system_cop"
             },
             "properties": [
               {
                 "id": "displayName",
-                "value": "Lisävastukset"
+                "value": "Järjestelmän COP"
               },
               {
                 "id": "color",
                 "value": {
-                  "fixedColor": "red",
+                  "fixedColor": "purple",
                   "mode": "fixed"
                 }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "ref_cop"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Referenssi B0W (4,6→3,4)"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "rgba(150, 150, 150, 0.6)",
+                  "mode": "fixed"
+                }
+              },
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "dash": [
+                    10,
+                    10
+                  ],
+                  "fill": "dash"
+                }
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 1
               }
             ]
           }
@@ -1610,9 +1475,9 @@
         "h": 9,
         "w": 8,
         "x": 0,
-        "y": 17
+        "y": 16
       },
-      "id": 29,
+      "id": 30,
       "options": {
         "legend": {
           "calcs": [
@@ -1638,19 +1503,11 @@
             "type": "influxdb",
             "uid": "influxdb"
           },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"temperature\")\n  |> filter(fn: (r) => r._field == \"supply_temp\" or r._field == \"return_temp\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> keep(columns: [\"_time\", \"_field\", \"_value\"])\n  |> group()\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> filter(fn: (r) => exists r.supply_temp and exists r.return_temp)\n  |> map(fn: (r) => ({_time: r._time, _value: 1.965 * (r.supply_temp - r.return_temp), _field: \"thermal_power\"}))\n  |> filter(fn: (r) => r._value >= 0.0 and r._value <= 15.0)\n  |> group(columns: [\"_field\"])",
+          "query": "temps = from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"temperature\")\n  |> filter(fn: (r) => r._field == \"supply_temp\" or r._field == \"return_temp\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> keep(columns: [\"_time\", \"_field\", \"_value\"])\n  |> group()\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> filter(fn: (r) => exists r.supply_temp and exists r.return_temp)\n\nstatus = from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"status\")\n  |> filter(fn: (r) => r._field == \"compressor\" or r._field == \"aux_heater_3kw\" or r._field == \"aux_heater_6kw\")\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n  |> keep(columns: [\"_time\", \"_field\", \"_value\"])\n  |> group()\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> filter(fn: (r) => exists r.compressor and exists r.aux_heater_3kw and exists r.aux_heater_6kw)\n\njoin(tables: {temps: temps, status: status}, on: [\"_time\"])\n  |> filter(fn: (r) => r.compressor == 1)\n  |> map(fn: (r) => ({\n    _time: r._time,\n    hp_cop: 1.965 * (r.supply_temp - r.return_temp) / (1.77 + (r.supply_temp - 35.0) * 0.5 / 15.0),\n    system_cop: (1.965 * (r.supply_temp - r.return_temp) + 3.0 * float(v: r.aux_heater_3kw) + 6.0 * float(v: r.aux_heater_6kw)) / (1.77 + (r.supply_temp - 35.0) * 0.5 / 15.0 + 3.0 * float(v: r.aux_heater_3kw) + 6.0 * float(v: r.aux_heater_6kw)),\n    ref_cop: 4.6 - (r.supply_temp - 35.0) * 0.08\n  }))\n  |> filter(fn: (r) => r.hp_cop >= 0.0 and r.hp_cop <= 10.0 and r.system_cop >= 0.0 and r.system_cop <= 10.0)",
           "refId": "A"
-        },
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "influxdb"
-          },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"status\")\n  |> filter(fn: (r) => r._field == \"aux_heater_3kw\" or r._field == \"aux_heater_6kw\")\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n  |> keep(columns: [\"_time\", \"_field\", \"_value\"])\n  |> group()\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> filter(fn: (r) => exists r.aux_heater_3kw and exists r.aux_heater_6kw)\n  |> map(fn: (r) => ({_time: r._time, _value: 3.0 * float(v: r.aux_heater_3kw) + 6.0 * float(v: r.aux_heater_6kw), _field: \"aux_power\"}))\n  |> group(columns: [\"_field\"])",
-          "refId": "B"
         }
       ],
-      "title": "Arvioitu lämpöteho",
+      "title": "Hyötysuhde (COP)",
       "type": "timeseries"
     },
     {
@@ -1767,7 +1624,7 @@
         "h": 9,
         "w": 8,
         "x": 8,
-        "y": 17
+        "y": 16
       },
       "id": 7,
       "options": {
@@ -1800,6 +1657,386 @@
         }
       ],
       "title": "Lämmityspiiri",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "opacity",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "showValues": false,
+            "spanNulls": 3600000,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "decimals": 1,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              }
+            ]
+          },
+          "unit": "celsius"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "brine_in_temp"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Liuos sisään"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "brine_out_temp"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Liuos ulos"
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 8,
+        "x": 16,
+        "y": 16
+      },
+      "id": 8,
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "min",
+            "max",
+            "last"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "12.3.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"temperature\")\n  |> filter(fn: (r) => r._field == \"brine_in_temp\" or r._field == \"brine_out_temp\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)",
+          "refId": "A"
+        }
+      ],
+      "title": "Liuospiiri",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "opacity",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "showValues": false,
+            "spanNulls": 3600000,
+            "stacking": {
+              "group": "A",
+              "mode": "normal"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "decimals": 1,
+          "mappings": [],
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              }
+            ]
+          },
+          "unit": "kwatt"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "thermal_power"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Lämpöteho"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "green",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "aux_power"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Lisävastukset"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "red",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 8,
+        "x": 0,
+        "y": 25
+      },
+      "id": 29,
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "min",
+            "max",
+            "last"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "12.3.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"temperature\")\n  |> filter(fn: (r) => r._field == \"supply_temp\" or r._field == \"return_temp\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> keep(columns: [\"_time\", \"_field\", \"_value\"])\n  |> group()\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> filter(fn: (r) => exists r.supply_temp and exists r.return_temp)\n  |> map(fn: (r) => ({_time: r._time, _value: 1.965 * (r.supply_temp - r.return_temp), _field: \"thermal_power\"}))\n  |> filter(fn: (r) => r._value >= 0.0 and r._value <= 15.0)\n  |> group(columns: [\"_field\"])",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"status\")\n  |> filter(fn: (r) => r._field == \"aux_heater_3kw\" or r._field == \"aux_heater_6kw\")\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n  |> keep(columns: [\"_time\", \"_field\", \"_value\"])\n  |> group()\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> filter(fn: (r) => exists r.aux_heater_3kw and exists r.aux_heater_6kw)\n  |> map(fn: (r) => ({_time: r._time, _value: 3.0 * float(v: r.aux_heater_3kw) + 6.0 * float(v: r.aux_heater_6kw), _field: \"aux_power\"}))\n  |> group(columns: [\"_field\"])",
+          "refId": "B"
+        }
+      ],
+      "title": "Arvioitu lämpöteho",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "opacity",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "showValues": false,
+            "spanNulls": 3600000,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "decimals": 1,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              }
+            ]
+          },
+          "unit": "celsius"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "outdoor_temp"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Ulkolämpötila"
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 8,
+        "x": 8,
+        "y": 25
+      },
+      "id": 24,
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "min",
+            "max",
+            "last"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "12.3.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"temperature\")\n  |> filter(fn: (r) => r._field == \"outdoor_temp\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)",
+          "refId": "A"
+        }
+      ],
+      "title": "Ulkolämpötila",
       "type": "timeseries"
     },
     {
@@ -1898,7 +2135,7 @@
         "h": 9,
         "w": 4,
         "x": 16,
-        "y": 17
+        "y": 25
       },
       "id": 22,
       "options": {
@@ -2064,7 +2301,7 @@
         "h": 9,
         "w": 4,
         "x": 20,
-        "y": 17
+        "y": 25
       },
       "id": 21,
       "options": {
@@ -2097,177 +2334,6 @@
       ],
       "title": "Laitehälytykset",
       "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "influxdb",
-        "uid": "influxdb"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "barWidthFactor": 0.6,
-            "drawStyle": "line",
-            "fillOpacity": 10,
-            "gradientMode": "opacity",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "smooth",
-            "lineWidth": 2,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "never",
-            "showValues": false,
-            "spanNulls": 3600000,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "dashed"
-            }
-          },
-          "decimals": 1,
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "transparent",
-                "value": null
-              }
-            ]
-          },
-          "unit": "none"
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "hp_cop"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Lämpöpumpun COP"
-              },
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "orange",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "system_cop"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Järjestelmän COP"
-              },
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "purple",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "ref_cop"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Referenssi B0W (4,6→3,4)"
-              },
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "rgba(150, 150, 150, 0.6)",
-                  "mode": "fixed"
-                }
-              },
-              {
-                "id": "custom.lineStyle",
-                "value": {
-                  "dash": [10, 10],
-                  "fill": "dash"
-                }
-              },
-              {
-                "id": "custom.fillOpacity",
-                "value": 0
-              },
-              {
-                "id": "custom.lineWidth",
-                "value": 1
-              }
-            ]
-          }
-        ]
-      },
-      "gridPos": {
-        "h": 9,
-        "w": 8,
-        "x": 0,
-        "y": 26
-      },
-      "id": 30,
-      "options": {
-        "legend": {
-          "calcs": [
-            "mean",
-            "min",
-            "max",
-            "last"
-          ],
-          "displayMode": "table",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "hideZeros": false,
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "pluginVersion": "12.3.2",
-      "targets": [
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "influxdb"
-          },
-          "query": "temps = from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"temperature\")\n  |> filter(fn: (r) => r._field == \"supply_temp\" or r._field == \"return_temp\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> keep(columns: [\"_time\", \"_field\", \"_value\"])\n  |> group()\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> filter(fn: (r) => exists r.supply_temp and exists r.return_temp)\n\nstatus = from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"status\")\n  |> filter(fn: (r) => r._field == \"compressor\" or r._field == \"aux_heater_3kw\" or r._field == \"aux_heater_6kw\")\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n  |> keep(columns: [\"_time\", \"_field\", \"_value\"])\n  |> group()\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> filter(fn: (r) => exists r.compressor and exists r.aux_heater_3kw and exists r.aux_heater_6kw)\n\njoin(tables: {temps: temps, status: status}, on: [\"_time\"])\n  |> filter(fn: (r) => r.compressor == 1)\n  |> map(fn: (r) => ({\n    _time: r._time,\n    hp_cop: 1.965 * (r.supply_temp - r.return_temp) / (1.77 + (r.supply_temp - 35.0) * 0.5 / 15.0),\n    system_cop: (1.965 * (r.supply_temp - r.return_temp) + 3.0 * float(v: r.aux_heater_3kw) + 6.0 * float(v: r.aux_heater_6kw)) / (1.77 + (r.supply_temp - 35.0) * 0.5 / 15.0 + 3.0 * float(v: r.aux_heater_3kw) + 6.0 * float(v: r.aux_heater_6kw)),\n    ref_cop: 4.6 - (r.supply_temp - 35.0) * 0.08\n  }))\n  |> filter(fn: (r) => r.hp_cop >= 0.0 and r.hp_cop <= 10.0 and r.system_cop >= 0.0 and r.system_cop <= 10.0)",
-          "refId": "A"
-        }
-      ],
-      "title": "Hyötysuhde (COP)",
-      "type": "timeseries"
     },
     {
       "datasource": {
@@ -2386,8 +2452,8 @@
       "gridPos": {
         "h": 9,
         "w": 8,
-        "x": 8,
-        "y": 26
+        "x": 0,
+        "y": 34
       },
       "id": 28,
       "options": {
@@ -2420,6 +2486,129 @@
         }
       ],
       "title": "Lämpötilaero",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "opacity",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "showValues": false,
+            "spanNulls": 3600000,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "decimals": 0,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              }
+            ]
+          },
+          "unit": "none"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "demand1"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "DEMAND1"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "demand2"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "DEMAND2"
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 8,
+        "x": 8,
+        "y": 34
+      },
+      "id": 27,
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "min",
+            "max",
+            "last"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "12.3.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"performance\")\n  |> filter(fn: (r) => r._field == \"demand1\" or r._field == \"demand2\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)",
+          "refId": "A"
+        }
+      ],
+      "title": "Lisälämmitystarve",
       "type": "timeseries"
     },
     {
@@ -2614,7 +2803,7 @@
         "h": 9,
         "w": 8,
         "x": 16,
-        "y": 26
+        "y": 34
       },
       "id": 23,
       "options": {
@@ -2749,7 +2938,7 @@
         "h": 9,
         "w": 8,
         "x": 0,
-        "y": 35
+        "y": 43
       },
       "id": 10,
       "options": {
@@ -2845,12 +3034,64 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "outdoor_temp"
+              "options": "hotwater_temp"
             },
             "properties": [
               {
                 "id": "displayName",
-                "value": "Ulkolämpötila"
+                "value": "LKV lämpötila"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "hotwater_start_temp"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "LKV aloitus"
+              },
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "dash": [
+                    10,
+                    10
+                  ],
+                  "fill": "dash"
+                }
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "hotwater_stop_temp"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "LKV lopetus"
+              },
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "dash": [
+                    10,
+                    10
+                  ],
+                  "fill": "dash"
+                }
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
               }
             ]
           }
@@ -2860,9 +3101,9 @@
         "h": 9,
         "w": 8,
         "x": 8,
-        "y": 35
+        "y": 43
       },
-      "id": 24,
+      "id": 9,
       "options": {
         "legend": {
           "calcs": [
@@ -2888,134 +3129,19 @@
             "type": "influxdb",
             "uid": "influxdb"
           },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"temperature\")\n  |> filter(fn: (r) => r._field == \"outdoor_temp\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)",
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"temperature\")\n  |> filter(fn: (r) => r._field == \"hotwater_temp\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)",
           "refId": "A"
-        }
-      ],
-      "title": "Ulkolämpötila",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "influxdb",
-        "uid": "influxdb"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "barWidthFactor": 0.6,
-            "drawStyle": "line",
-            "fillOpacity": 10,
-            "gradientMode": "opacity",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "smooth",
-            "lineWidth": 2,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "never",
-            "showValues": false,
-            "spanNulls": 3600000,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "decimals": 1,
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": 0
-              }
-            ]
-          },
-          "unit": "celsius"
         },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "brine_in_temp"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Liuos sisään"
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "brine_out_temp"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Liuos ulos"
-              }
-            ]
-          }
-        ]
-      },
-      "gridPos": {
-        "h": 9,
-        "w": 8,
-        "x": 16,
-        "y": 35
-      },
-      "id": 8,
-      "options": {
-        "legend": {
-          "calcs": [
-            "mean",
-            "min",
-            "max",
-            "last"
-          ],
-          "displayMode": "table",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "hideZeros": false,
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "pluginVersion": "12.3.2",
-      "targets": [
         {
           "datasource": {
             "type": "influxdb",
             "uid": "influxdb"
           },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"temperature\")\n  |> filter(fn: (r) => r._field == \"brine_in_temp\" or r._field == \"brine_out_temp\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)",
-          "refId": "A"
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"setting\")\n  |> filter(fn: (r) => r._field == \"hotwater_start_temp\" or r._field == \"hotwater_stop_temp\")\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)",
+          "refId": "B"
         }
       ],
-      "title": "Liuospiiri",
+      "title": "Lämmin käyttövesi",
       "type": "timeseries"
     },
     {
@@ -3093,8 +3219,8 @@
       "gridPos": {
         "h": 9,
         "w": 8,
-        "x": 0,
-        "y": 44
+        "x": 16,
+        "y": 43
       },
       "id": 25,
       "options": {
@@ -3128,129 +3254,6 @@
       ],
       "title": "Painelinja",
       "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "influxdb",
-        "uid": "influxdb"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "barWidthFactor": 0.6,
-            "drawStyle": "line",
-            "fillOpacity": 10,
-            "gradientMode": "opacity",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "smooth",
-            "lineWidth": 2,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "never",
-            "showValues": false,
-            "spanNulls": 3600000,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "decimals": 0,
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": 0
-              }
-            ]
-          },
-          "unit": "none"
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "demand1"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "DEMAND1"
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "demand2"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "DEMAND2"
-              }
-            ]
-          }
-        ]
-      },
-      "gridPos": {
-        "h": 9,
-        "w": 8,
-        "x": 8,
-        "y": 44
-      },
-      "id": 27,
-      "options": {
-        "legend": {
-          "calcs": [
-            "mean",
-            "min",
-            "max",
-            "last"
-          ],
-          "displayMode": "table",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "hideZeros": false,
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "pluginVersion": "12.3.2",
-      "targets": [
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "influxdb"
-          },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"performance\")\n  |> filter(fn: (r) => r._field == \"demand1\" or r._field == \"demand2\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)",
-          "refId": "A"
-        }
-      ],
-      "title": "Lisälämmitystarve",
-      "type": "timeseries"
     }
   ],
   "preload": false,
@@ -3271,5 +3274,5 @@
   "timezone": "Europe/Helsinki",
   "title": "Maalämpöpumppu",
   "uid": "thermia-heatpump",
-  "version": 31
+  "version": 21
 }
