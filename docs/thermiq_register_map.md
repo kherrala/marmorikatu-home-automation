@@ -171,9 +171,13 @@ In this sample: integral = -454 C×min, A1 limit = 100, A2 limit = 990 (99×10).
 | d83 | r53 | 60 | s | shunt_time | Shunt operating time |
 | d84 | r54 | 55 | °C | hotwater_stop_t | Hot water stop temp |
 | d87 | r57 | 9 | — | language | Display language |
-| d93 | r5d | 1 | °C | returnline_sensor_offset | Return line sensor calibration |
-| d96 | r60 | 1 | °C | brine_out_sensor_offset | Brine out sensor calibration |
-| d97 | r61 | 0 | — | heatingsystem_type | Heating system type |
+| d91 | r5b | 0 | °C | calibration_outdoor | Calibration outdoor sensor |
+| d92 | r5c | 0 | °C | calibration_supply | Calibration supplyline sensor |
+| d93 | r5d | 1 | °C | calibration_return | Calibration returnline sensor |
+| d94 | r5e | 0 | °C | calibration_hotwater | Calibration hotwater sensor |
+| d95 | r5f | 0 | °C | calibration_brine_out | Calibration brine out sensor |
+| d96 | r60 | 1 | °C | calibration_brine_in | Calibration brine in sensor |
+| d97 | r61 | 0 | — | heating_system_type | Heating system type |
 | d99 | r63 | 60 | min | internal_logging_t | Internal logging interval |
 | d100 | r64 | 3 | ×10s | brine_runout_t | Brine pump run-out duration |
 | d101 | r65 | 3 | ×10s | brine_run_in_t | Brine pump run-in duration |
