@@ -223,7 +223,7 @@
           "placement": "right",
           "values": ["value"]
         },
-        "pieType": "donut",
+        "pieType": "pie",
         "reduceOptions": {
           "calcs": ["sum"],
           "fields": "",
@@ -600,5 +600,5 @@
   "timezone": "Europe/Helsinki",
   "title": "Energiakustannukset",
   "uid": "energy-cost",
-  "version": 1
+  "version": 2
 }
