@@ -1417,33 +1417,6 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "HVAC ulko"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "dark-blue",
-                  "mode": "fixed"
-                }
-              },
-              {
-                "id": "custom.axisPlacement",
-                "value": "left"
-              },
-              {
-                "id": "custom.fillOpacity",
-                "value": 0
-              },
-              {
-                "id": "custom.lineWidth",
-                "value": 2
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
               "options": "1. kerros"
             },
             "properties": [
@@ -1538,19 +1511,11 @@
             "type": "influxdb",
             "uid": "influxdb"
           },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvac\")\n  |> filter(fn: (r) => r._field == \"Ulkolampotila\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> map(fn: (r) => ({r with _field: \"HVAC ulko\"}))\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])",
-          "refId": "B"
-        },
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "influxdb"
-          },
           "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"rooms\")\n  |> filter(fn: (r) => r.room_type == \"bedroom\" or r.room_type == \"common\" or r.room_type == \"basement\")\n  |> filter(fn: (r) => r._field != \"Kellari_eteinen\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> group(columns: [\"_time\", \"floor\"])\n  |> mean()\n  |> map(fn: (r) => ({_time: r._time, _value: r._value, _field: if r.floor == \"2\" then \"2. kerros\" else if r.floor == \"1\" then \"1. kerros\" else \"Kellari\"}))\n  |> group(columns: [\"_field\"])",
           "refId": "C"
         }
       ],
-      "title": "Lämpötilat",
+      "title": "Ulko- ja huonelämpötilat",
       "type": "timeseries"
     },
     {
@@ -1689,7 +1654,7 @@
             "type": "influxdb",
             "uid": "influxdb"
           },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"ruuvi\" and r.sensor_name == \"Keittiö\")\n  |> filter(fn: (r) => r._field == \"voc\" or r._field == \"pm2_5\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)",
+          "query": "windowPeriod = if int(v: v.windowPeriod) < 60000000000 then 1m else v.windowPeriod\n\nfrom(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"ruuvi\" and r.sensor_name == \"Keittiö\")\n  |> filter(fn: (r) => r._field == \"voc\" or r._field == \"pm2_5\")\n  |> aggregateWindow(every: windowPeriod, fn: mean, createEmpty: false)",
           "refId": "A"
         }
       ],
