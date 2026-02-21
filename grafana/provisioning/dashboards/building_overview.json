@@ -519,19 +519,19 @@
               },
               {
                 "color": "yellow",
-                "value": 25
+                "value": 15
               },
               {
                 "color": "green",
-                "value": 35
+                "value": 20
               },
               {
                 "color": "yellow",
-                "value": 55
+                "value": 50
               },
               {
                 "color": "red",
-                "value": 65
+                "value": 60
               }
             ]
           },
