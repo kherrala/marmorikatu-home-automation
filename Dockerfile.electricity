@@ -1,0 +1,12 @@
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# Install dependencies
+RUN pip install --no-cache-dir requests influxdb-client python-dateutil
+
+# Copy the polling script
+COPY scripts/electricity_price_poller.py /app/electricity_price_poller.py
+
+# Run the poller
+CMD ["python", "-u", "/app/electricity_price_poller.py"]

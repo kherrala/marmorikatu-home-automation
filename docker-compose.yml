@@ -154,6 +154,23 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  electricity:
+    build:
+      context: .
+      dockerfile: Dockerfile.electricity
+    container_name: wago-electricity
+    environment:
+      - SPOT_HINTA_API_URL=https://api.spot-hinta.fi/TodayAndDayForward
+      - POLL_INTERVAL=900
+      - INFLUXDB_URL=http://influxdb:8086
+      - INFLUXDB_TOKEN=wago-secret-token
+      - INFLUXDB_ORG=wago
+      - INFLUXDB_BUCKET=building_automation
+    depends_on:
+      influxdb:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   influxdb-data:
   influxdb-config:
