@@ -1,5 +1,19 @@
 {
   "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
   },
   "editable": true,
   "fiscalYearStartMonth": 0,
@@ -695,55 +709,30 @@
           "mappings": [
             {
               "options": {
-                "from": 0,
-                "result": {
-                  "color": "blue",
+                "0": {
+                  "color": "dark-green",
                   "index": 0,
-                  "text": "Poissa"
+                  "text": "OFF"
                 },
-                "to": 1
-              },
-              "type": "range"
-            },
-            {
-              "options": {
-                "from": 1,
-                "result": {
-                  "color": "green",
+                "1": {
+                  "color": "orange",
                   "index": 1,
                   "text": "ON"
-                },
-                "to": 1.75
+                }
               },
-              "type": "range"
-            },
-            {
-              "options": {
-                "from": 1.75,
-                "result": {
-                  "color": "orange",
-                  "index": 2,
-                  "text": "Tehostus"
-                },
-                "to": 10
-              },
-              "type": "range"
+              "type": "value"
             }
           ],
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
-                "color": "blue",
+                "color": "dark-green",
                 "value": 0
               },
               {
-                "color": "green",
-                "value": 1
-              },
-              {
                 "color": "orange",
-                "value": 1.75
+                "value": 1
               }
             ]
           }
@@ -756,7 +745,7 @@
         "x": 0,
         "y": 4
       },
-      "id": 22,
+      "id": 25,
       "options": {
         "colorMode": "background",
         "graphMode": "none",
@@ -781,11 +770,11 @@
             "type": "influxdb",
             "uid": "influxdb"
           },
-          "query": "import \"array\"\n\nkeittio = from(bucket: \"building_automation\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"ruuvi\" and r.sensor_name == \"Keittiö\")\n  |> filter(fn: (r) => r._field == \"pressure\")\n  |> last()\n  |> findRecord(fn: (key) => true, idx: 0)\n\ntakka = from(bucket: \"building_automation\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"ruuvi\" and r.sensor_name == \"Takka\")\n  |> filter(fn: (r) => r._field == \"pressure\")\n  |> last()\n  |> findRecord(fn: (key) => true, idx: 0)\n\narray.from(rows: [{_time: now(), _value: keittio._value - takka._value, _field: \"IVK tila\"}])",
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: -15m)\n  |> filter(fn: (r) => r._measurement == \"ruuvi\" and r.sensor_name == \"Sauna\")\n  |> filter(fn: (r) => r._field == \"temperature\")\n  |> aggregateWindow(every: 1m, fn: mean, createEmpty: false)\n  |> derivative(unit: 1m, nonNegative: false)\n  |> map(fn: (r) => ({r with _value: if r._value > 0.05 then 1.0 else 0.0}))\n  |> mean()\n  |> map(fn: (r) => ({r with _value: if r._value >= 0.3 then 1.0 else 0.0, _field: \"Sauna\"}))",
           "refId": "A"
         }
       ],
-      "title": "IVK tila",
+      "title": "Sauna",
       "type": "stat"
     },
     {
@@ -891,6 +880,112 @@
           "mappings": [
             {
               "options": {
+                "from": 0,
+                "result": {
+                  "color": "blue",
+                  "index": 0,
+                  "text": "Poissa"
+                },
+                "to": 1
+              },
+              "type": "range"
+            },
+            {
+              "options": {
+                "from": 1,
+                "result": {
+                  "color": "green",
+                  "index": 1,
+                  "text": "ON"
+                },
+                "to": 1.75
+              },
+              "type": "range"
+            },
+            {
+              "options": {
+                "from": 1.75,
+                "result": {
+                  "color": "orange",
+                  "index": 2,
+                  "text": "Tehostus"
+                },
+                "to": 10
+              },
+              "type": "range"
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": 0
+              },
+              {
+                "color": "green",
+                "value": 1
+              },
+              {
+                "color": "orange",
+                "value": 1.75
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 3,
+        "x": 6,
+        "y": 4
+      },
+      "id": 22,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "12.3.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
+          "query": "import \"array\"\n\nkeittio = from(bucket: \"building_automation\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"ruuvi\" and r.sensor_name == \"Keittiö\")\n  |> filter(fn: (r) => r._field == \"pressure\")\n  |> last()\n  |> findRecord(fn: (key) => true, idx: 0)\n\ntakka = from(bucket: \"building_automation\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"ruuvi\" and r.sensor_name == \"Takka\")\n  |> filter(fn: (r) => r._field == \"pressure\")\n  |> last()\n  |> findRecord(fn: (key) => true, idx: 0)\n\narray.from(rows: [{_time: now(), _value: keittio._value - takka._value, _field: \"IVK tila\"}])",
+          "refId": "A"
+        }
+      ],
+      "title": "IVK tila",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {
+              "options": {
                 "0": {
                   "color": "dark-green",
                   "index": 0,
@@ -938,7 +1033,7 @@
       "gridPos": {
         "h": 3,
         "w": 3,
-        "x": 6,
+        "x": 9,
         "y": 4
       },
       "id": 8,
@@ -1016,7 +1111,7 @@
       "gridPos": {
         "h": 3,
         "w": 3,
-        "x": 9,
+        "x": 12,
         "y": 4
       },
       "id": 6,
@@ -1092,7 +1187,7 @@
       "gridPos": {
         "h": 3,
         "w": 3,
-        "x": 12,
+        "x": 15,
         "y": 4
       },
       "id": 5,
@@ -1163,7 +1258,7 @@
       "gridPos": {
         "h": 3,
         "w": 3,
-        "x": 15,
+        "x": 18,
         "y": 4
       },
       "id": 12,
@@ -1239,8 +1334,8 @@
       },
       "gridPos": {
         "h": 3,
-        "w": 6,
-        "x": 18,
+        "w": 3,
+        "x": 21,
         "y": 4
       },
       "id": 19,
@@ -1273,87 +1368,6 @@
         }
       ],
       "title": "Lämmitystarve",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "influxdb",
-        "uid": "influxdb"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [
-            {
-              "options": {
-                "0": {
-                  "color": "dark-green",
-                  "index": 0,
-                  "text": "OFF"
-                },
-                "1": {
-                  "color": "orange",
-                  "index": 1,
-                  "text": "ON"
-                }
-              },
-              "type": "value"
-            }
-          ],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "dark-green",
-                "value": 0
-              },
-              {
-                "color": "orange",
-                "value": 1
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 3,
-        "w": 3,
-        "x": 0,
-        "y": 7
-      },
-      "id": 25,
-      "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "percentChangeColorMode": "standard",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "showPercentChange": false,
-        "textMode": "auto",
-        "wideLayout": true
-      },
-      "pluginVersion": "12.3.2",
-      "targets": [
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "influxdb"
-          },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: -15m)\n  |> filter(fn: (r) => r._measurement == \"ruuvi\" and r.sensor_name == \"Sauna\")\n  |> filter(fn: (r) => r._field == \"temperature\")\n  |> aggregateWindow(every: 1m, fn: mean, createEmpty: false)\n  |> derivative(unit: 1m, nonNegative: false)\n  |> map(fn: (r) => ({r with _value: if r._value > 0.05 then 1.0 else 0.0}))\n  |> mean()\n  |> map(fn: (r) => ({r with _value: if r._value >= 0.3 then 1.0 else 0.0, _field: \"Sauna\"}))",
-          "refId": "A"
-        }
-      ],
-      "title": "Sauna",
       "type": "stat"
     },
     {
@@ -1428,7 +1442,7 @@
               },
               {
                 "id": "custom.axisPlacement",
-                "value": "left"
+                "value": "right"
               },
               {
                 "id": "custom.fillOpacity",
@@ -1455,7 +1469,7 @@
               },
               {
                 "id": "custom.axisPlacement",
-                "value": "right"
+                "value": "left"
               }
             ]
           },
@@ -1474,7 +1488,7 @@
               },
               {
                 "id": "custom.axisPlacement",
-                "value": "right"
+                "value": "left"
               }
             ]
           },
@@ -1493,7 +1507,7 @@
               },
               {
                 "id": "custom.axisPlacement",
-                "value": "right"
+                "value": "left"
               }
             ]
           }
@@ -1503,7 +1517,7 @@
         "h": 10,
         "w": 8,
         "x": 0,
-        "y": 10
+        "y": 7
       },
       "id": 14,
       "options": {
@@ -1654,7 +1668,7 @@
         "h": 10,
         "w": 8,
         "x": 8,
-        "y": 10
+        "y": 7
       },
       "id": 17,
       "options": {
@@ -1764,7 +1778,7 @@
         "h": 10,
         "w": 8,
         "x": 16,
-        "y": 10
+        "y": 7
       },
       "id": 23,
       "options": {
@@ -1845,5 +1859,5 @@
   "timezone": "Europe/Helsinki",
   "title": "Yleiskuva",
   "uid": "wago-overview",
-  "version": 42
+  "version": 43
 }
