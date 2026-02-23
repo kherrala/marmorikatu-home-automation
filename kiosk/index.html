@@ -33,26 +33,37 @@
       display: block;
     }
 
-    /* ── Swipe edge strips ───────────────────────────────────────────────── */
-    /* Only the left and right edges capture gestures; the centre is fully
-       transparent so iframes receive all clicks, scrolls and touches there. */
+    /* ── Swipe / click edge strips ───────────────────────────────────────── */
+    /* The left and right edges capture gestures and clicks for navigation.
+       The centre passes all events directly to the iframe. */
     .swipe-edge {
       position: fixed;
       top: 0;
       bottom: 0;
       width: 56px;
       z-index: 100;
-      cursor: grab;
-      /* Faint gradient hint that the edge is interactive */
-      background: linear-gradient(
-        to var(--dir),
-        rgba(255,255,255,0.04),
-        transparent
-      );
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
-    .swipe-edge:active { cursor: grabbing; }
-    #swipe-left  { left: 0;  --dir: right; }
-    #swipe-right { right: 0; --dir: left;  }
+    #swipe-left  { left: 0; }
+    #swipe-right { right: 0; }
+
+    /* Arrow chevrons – visible on hover/focus, barely there otherwise */
+    .swipe-edge::after {
+      content: var(--chevron);
+      font-size: 28px;
+      color: rgba(255,255,255,0.18);
+      transition: color 0.2s, transform 0.2s;
+      user-select: none;
+    }
+    .swipe-edge:hover::after {
+      color: rgba(255,255,255,0.65);
+      transform: scale(1.2);
+    }
+    #swipe-left  { --chevron: "‹"; }
+    #swipe-right { --chevron: "›"; }
 
     /* ── Navigation dots ─────────────────────────────────────────────────── */
     #nav {
@@ -112,13 +123,13 @@
     <div class="slide" id="slide-1">
       <iframe title="Nysse"></iframe>
     </div>
-    <!-- 2: Local weather (Tampere) -->
+    <!-- 2: Local weather – yr.no (no cookie consent wall) -->
     <div class="slide" id="slide-2">
       <iframe title="Sää Tampere"></iframe>
     </div>
   </div>
 
-  <!-- Swipe zones on left and right edges only -->
+  <!-- Swipe / click zones on left and right edges only -->
   <div class="swipe-edge" id="swipe-left"></div>
   <div class="swipe-edge" id="swipe-right"></div>
 
@@ -150,7 +161,8 @@
     const slides     = Array.from(document.querySelectorAll('.slide'));
     const dots       = Array.from(document.querySelectorAll('.dot'));
     const pauseBadge = document.getElementById('pause-badge');
-    const edges      = Array.from(document.querySelectorAll('.swipe-edge'));
+    const edgeLeft   = document.getElementById('swipe-left');
+    const edgeRight  = document.getElementById('swipe-right');
 
     // ── Slide switching ─────────────────────────────────────────────────────
     function show(idx) {
@@ -181,7 +193,12 @@
       }, PAUSE_MS);
     }
 
-    // ── Swipe detection (attached to both edge strips) ───────────────────────
+    // ── Swipe + click detection ──────────────────────────────────────────────
+    // A gesture on an edge strip is either:
+    //   • a click / tap  → navigate in the direction of that edge
+    //   • a drag / swipe → navigate in the direction of the drag
+    // Both also pause the carousel for PAUSE_MS.
+
     let startX = 0, startY = 0, tracking = false, didSwipe = false;
 
     function onTouchStart(e) {
@@ -201,13 +218,16 @@
       }
     }
 
-    function onTouchEnd(e) {
+    function onTouchEnd(e, isLeft) {
       if (!tracking) return;
       tracking = false;
       handleInteraction();
       const dx = e.changedTouches[0].clientX - startX;
       if (didSwipe && Math.abs(dx) > 40) {
         show(dx < 0 ? current + 1 : current - 1);
+      } else if (!didSwipe) {
+        // Tap on edge – navigate by edge direction
+        show(isLeft ? current - 1 : current + 1);
       }
     }
 
@@ -223,23 +243,29 @@
       if (Math.abs(e.clientX - startX) > 12) didSwipe = true;
     }
 
-    function onMouseUp(e) {
+    function onMouseUp(e, isLeft) {
       if (!tracking) return;
       tracking = false;
       handleInteraction();
       const dx = e.clientX - startX;
       if (didSwipe && Math.abs(dx) > 40) {
         show(dx < 0 ? current + 1 : current - 1);
+      } else if (!didSwipe) {
+        // Click on edge – navigate by edge direction
+        show(isLeft ? current - 1 : current + 1);
       }
     }
 
-    edges.forEach(el => {
-      el.addEventListener('touchstart', onTouchStart, { passive: true });
-      el.addEventListener('touchmove',  onTouchMove,  { passive: false });
-      el.addEventListener('touchend',   onTouchEnd,   { passive: true });
+    [
+      [edgeLeft,  true ],
+      [edgeRight, false],
+    ].forEach(([el, isLeft]) => {
+      el.addEventListener('touchstart', onTouchStart,              { passive: true  });
+      el.addEventListener('touchmove',  onTouchMove,               { passive: false });
+      el.addEventListener('touchend',   e => onTouchEnd(e, isLeft),{ passive: true  });
       el.addEventListener('mousedown',  onMouseDown);
       el.addEventListener('mousemove',  onMouseMove);
-      el.addEventListener('mouseup',    onMouseUp);
+      el.addEventListener('mouseup',    e => onMouseUp(e, isLeft));
     });
 
     // Cancel mid-drag if pointer leaves window
@@ -249,7 +275,8 @@
     const host = window.location.hostname;
     document.querySelector('#slide-0 iframe').src = `http://${host}:3000/?kiosk`;
     document.querySelector('#slide-1 iframe').src = `http://${host}:3002`;
-    document.querySelector('#slide-2 iframe').src = 'https://www.ilmatieteenlaitos.fi/saa/tampere';
+    document.querySelector('#slide-2 iframe').src =
+      'https://www.yr.no/en/forecast/daily-table/2-634963/Finland/Pirkanmaa/Tampere';
 
     // ── Init ─────────────────────────────────────────────────────────────────
     const hour    = new Date().getHours();
