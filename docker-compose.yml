@@ -46,6 +46,8 @@ services:
       - GF_DATE_FORMATS_INTERVAL_YEAR=YYYY
       # Set Temperature Overview as default home dashboard
       - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/etc/grafana/provisioning/dashboards/building_overview.json
+      # Allow embedding in iframes
+      - GF_SECURITY_ALLOW_EMBEDDING=true
     depends_on:
       influxdb:
         condition: service_healthy
