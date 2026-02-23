@@ -278,9 +278,9 @@
 
     // ── Set iframe sources from origin hostname ──────────────────────────────
     const host = window.location.hostname;
-    document.querySelector('#slide-0 iframe').src = `http://${host}:81/?kiosk`;
+    document.querySelector('#slide-0 iframe').src = `http://${host}:3000/?kiosk`;
     document.querySelector('#slide-1 iframe').src = `http://${host}:3002`;
-    document.querySelector('#slide-2 iframe').src = `http://${host}:82/webvisu/webvisu.htm`;
+    document.querySelector('#slide-2 iframe').src = `http://${host}/webvisu/webvisu.htm`;
 
     // ── Init ─────────────────────────────────────────────────────────────────
     const hour    = new Date().getHours();
