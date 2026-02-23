@@ -33,16 +33,26 @@
       display: block;
     }
 
-    /* ── Swipe overlay ───────────────────────────────────────────────────── */
-    /* Covers the full screen so swipe gestures are reliably captured even
-       when an iframe is underneath. Tap-through is handled in JS. */
-    #overlay {
+    /* ── Swipe edge strips ───────────────────────────────────────────────── */
+    /* Only the left and right edges capture gestures; the centre is fully
+       transparent so iframes receive all clicks, scrolls and touches there. */
+    .swipe-edge {
       position: fixed;
-      inset: 0;
+      top: 0;
+      bottom: 0;
+      width: 56px;
       z-index: 100;
       cursor: grab;
+      /* Faint gradient hint that the edge is interactive */
+      background: linear-gradient(
+        to var(--dir),
+        rgba(255,255,255,0.04),
+        transparent
+      );
     }
-    #overlay:active { cursor: grabbing; }
+    .swipe-edge:active { cursor: grabbing; }
+    #swipe-left  { left: 0;  --dir: right; }
+    #swipe-right { right: 0; --dir: left;  }
 
     /* ── Navigation dots ─────────────────────────────────────────────────── */
     #nav {
@@ -50,13 +60,13 @@
       bottom: 0;
       left: 0;
       right: 0;
-      height: 48px;
+      height: 44px;
       display: flex;
       align-items: center;
       justify-content: center;
       gap: 14px;
       z-index: 200;
-      background: linear-gradient(transparent, rgba(0,0,0,0.55));
+      background: linear-gradient(transparent, rgba(0,0,0,0.5));
       pointer-events: none;
     }
 
@@ -72,7 +82,7 @@
       transform: scale(1.45);
     }
 
-    /* Pause indicator – fades in when carousel is paused by the user */
+    /* ── Pause badge ─────────────────────────────────────────────────────── */
     #pause-badge {
       position: fixed;
       top: 12px;
@@ -108,8 +118,9 @@
     </div>
   </div>
 
-  <!-- Swipe-detection overlay (covers iframes) -->
-  <div id="overlay"></div>
+  <!-- Swipe zones on left and right edges only -->
+  <div class="swipe-edge" id="swipe-left"></div>
+  <div class="swipe-edge" id="swipe-right"></div>
 
   <!-- Navigation dots -->
   <div id="nav">
@@ -122,12 +133,12 @@
 
   <script>
     // ── Config ──────────────────────────────────────────────────────────────
-    const TOTAL         = 3;
-    const CAROUSEL_MS   = 30_000;  // rotate every 30 s
-    const PAUSE_MS      = 30_000;  // pause carousel this long after interaction
-    const NYSSE_IDX     = 1;       // index of the Nysse slide
-    const PEAK_START    = 6;       // 06:00 – default to Nysse view
-    const PEAK_END      = 9;       // 09:00
+    const TOTAL       = 3;
+    const CAROUSEL_MS = 30_000;
+    const PAUSE_MS    = 30_000;
+    const NYSSE_IDX   = 1;
+    const PEAK_START  = 6;
+    const PEAK_END    = 9;
 
     // ── State ───────────────────────────────────────────────────────────────
     let current       = 0;
@@ -138,8 +149,8 @@
     // ── DOM refs ────────────────────────────────────────────────────────────
     const slides     = Array.from(document.querySelectorAll('.slide'));
     const dots       = Array.from(document.querySelectorAll('.dot'));
-    const overlay    = document.getElementById('overlay');
     const pauseBadge = document.getElementById('pause-badge');
+    const edges      = Array.from(document.querySelectorAll('.swipe-edge'));
 
     // ── Slide switching ─────────────────────────────────────────────────────
     function show(idx) {
@@ -170,29 +181,27 @@
       }, PAUSE_MS);
     }
 
-    // ── Swipe detection ──────────────────────────────────────────────────────
+    // ── Swipe detection (attached to both edge strips) ───────────────────────
     let startX = 0, startY = 0, tracking = false, didSwipe = false;
 
-    // Touch
-    overlay.addEventListener('touchstart', (e) => {
-      startX    = e.touches[0].clientX;
-      startY    = e.touches[0].clientY;
-      tracking  = true;
-      didSwipe  = false;
-    }, { passive: true });
+    function onTouchStart(e) {
+      startX   = e.touches[0].clientX;
+      startY   = e.touches[0].clientY;
+      tracking = true;
+      didSwipe = false;
+    }
 
-    overlay.addEventListener('touchmove', (e) => {
+    function onTouchMove(e) {
       if (!tracking) return;
       const dx = e.touches[0].clientX - startX;
       const dy = e.touches[0].clientY - startY;
-      // Only lock into swipe mode when horizontal movement dominates
       if (Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy)) {
         didSwipe = true;
-        e.preventDefault(); // suppress scroll during horizontal swipe
+        e.preventDefault();
       }
-    }, { passive: false });
+    }
 
-    overlay.addEventListener('touchend', (e) => {
+    function onTouchEnd(e) {
       if (!tracking) return;
       tracking = false;
       handleInteraction();
@@ -200,22 +209,21 @@
       if (didSwipe && Math.abs(dx) > 40) {
         show(dx < 0 ? current + 1 : current - 1);
       }
-    }, { passive: true });
+    }
 
-    // Mouse (desktop / development)
-    overlay.addEventListener('mousedown', (e) => {
+    function onMouseDown(e) {
       startX   = e.clientX;
       startY   = e.clientY;
       tracking = true;
       didSwipe = false;
-    });
+    }
 
-    overlay.addEventListener('mousemove', (e) => {
+    function onMouseMove(e) {
       if (!tracking) return;
       if (Math.abs(e.clientX - startX) > 12) didSwipe = true;
-    });
+    }
 
-    overlay.addEventListener('mouseup', (e) => {
+    function onMouseUp(e) {
       if (!tracking) return;
       tracking = false;
       handleInteraction();
@@ -223,9 +231,18 @@
       if (didSwipe && Math.abs(dx) > 40) {
         show(dx < 0 ? current + 1 : current - 1);
       }
+    }
+
+    edges.forEach(el => {
+      el.addEventListener('touchstart', onTouchStart, { passive: true });
+      el.addEventListener('touchmove',  onTouchMove,  { passive: false });
+      el.addEventListener('touchend',   onTouchEnd,   { passive: true });
+      el.addEventListener('mousedown',  onMouseDown);
+      el.addEventListener('mousemove',  onMouseMove);
+      el.addEventListener('mouseup',    onMouseUp);
     });
 
-    // Cancel tracking if pointer leaves window mid-drag
+    // Cancel mid-drag if pointer leaves window
     document.addEventListener('mouseleave', () => { tracking = false; });
 
     // ── Init ─────────────────────────────────────────────────────────────────
