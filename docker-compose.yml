@@ -163,6 +163,8 @@ services:
     container_name: wago-kiosk
     ports:
       - "80:80"
+      - "81:81"
+      - "82:82"
     restart: unless-stopped
 
   electricity:
