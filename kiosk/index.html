@@ -276,6 +276,21 @@
     // Cancel mid-drag if pointer leaves window
     document.addEventListener('mouseleave', () => { tracking = false; });
 
+    // ── Passive interaction detection ────────────────────────────────────────
+    // mousemove fires on the parent document (edge strips, nav bar) whenever
+    // the cursor is outside an iframe. Throttled to one reset per second.
+    let lastMoveReset = 0;
+    document.addEventListener('mousemove', () => {
+      const now = Date.now();
+      if (now - lastMoveReset > 1000) {
+        lastMoveReset = now;
+        handleInteraction();
+      }
+    });
+
+    // When the user clicks into an iframe the parent window loses focus.
+    window.addEventListener('blur', handleInteraction);
+
     // ── Set iframe sources from origin hostname ──────────────────────────────
     const host = window.location.hostname;
     document.querySelector('#slide-0 iframe').src = `http://${host}:3000/?kiosk`;
