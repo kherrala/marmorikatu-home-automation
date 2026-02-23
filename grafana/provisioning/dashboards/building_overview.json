@@ -144,7 +144,7 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 4,
+        "h": 3,
         "w": 3,
         "x": 0,
         "y": 0
@@ -223,7 +223,7 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 4,
+        "h": 3,
         "w": 3,
         "x": 3,
         "y": 0
@@ -294,7 +294,7 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 4,
+        "h": 3,
         "w": 3,
         "x": 6,
         "y": 0
@@ -365,7 +365,7 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 4,
+        "h": 3,
         "w": 3,
         "x": 9,
         "y": 0
@@ -440,7 +440,7 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 4,
+        "h": 3,
         "w": 3,
         "x": 12,
         "y": 0
@@ -513,7 +513,7 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 4,
+        "h": 3,
         "w": 3,
         "x": 15,
         "y": 0
@@ -571,25 +571,25 @@
               },
               {
                 "color": "yellow",
-                "value": 15
+                "value": 700
               },
               {
                 "color": "red",
-                "value": 35
+                "value": 1000
               }
             ]
           },
-          "unit": "conμgm3"
+          "unit": "ppm"
         },
         "overrides": []
       },
       "gridPos": {
-        "h": 4,
+        "h": 3,
         "w": 3,
         "x": 18,
         "y": 0
       },
-      "id": 13,
+      "id": 12,
       "options": {
         "colorMode": "value",
         "graphMode": "area",
@@ -614,11 +614,11 @@
             "type": "influxdb",
             "uid": "influxdb"
           },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"ruuvi\" and r.sensor_name == \"Keittiö\")\n  |> filter(fn: (r) => r._field == \"pm2_5\")\n  |> last()",
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"ruuvi\" and r.sensor_name == \"Keittiö\")\n  |> filter(fn: (r) => r._field == \"co2\")\n  |> last()",
           "refId": "A"
         }
       ],
-      "title": "PM2.5",
+      "title": "CO₂",
       "type": "stat"
     },
     {
@@ -659,7 +659,7 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 4,
+        "h": 3,
         "w": 3,
         "x": 21,
         "y": 0
@@ -743,7 +743,7 @@
         "h": 3,
         "w": 3,
         "x": 0,
-        "y": 4
+        "y": 3
       },
       "id": 25,
       "options": {
@@ -833,7 +833,7 @@
         "h": 3,
         "w": 3,
         "x": 3,
-        "y": 4
+        "y": 3
       },
       "id": 7,
       "options": {
@@ -939,7 +939,7 @@
         "h": 3,
         "w": 3,
         "x": 6,
-        "y": 4
+        "y": 3
       },
       "id": 22,
       "options": {
@@ -1034,7 +1034,7 @@
         "h": 3,
         "w": 3,
         "x": 9,
-        "y": 4
+        "y": 3
       },
       "id": 8,
       "options": {
@@ -1078,33 +1078,32 @@
           "color": {
             "mode": "thresholds"
           },
-          "decimals": 1,
+          "decimals": 0,
           "mappings": [],
+          "max": 900,
+          "min": 0,
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
-                "color": "#c1c0c0",
+                "color": "green",
                 "value": 0
               },
               {
-                "color": "red",
-                "value": 0.01
+                "color": "yellow",
+                "value": 450
               },
               {
                 "color": "orange",
-                "value": 2.5
+                "value": 600
               },
               {
-                "color": "yellow",
-                "value": 3.4
-              },
-              {
-                "color": "green",
-                "value": 4.6
+                "color": "red",
+                "value": 700
               }
             ]
-          }
+          },
+          "unit": "percent"
         },
         "overrides": []
       },
@@ -1112,9 +1111,9 @@
         "h": 3,
         "w": 3,
         "x": 12,
-        "y": 4
+        "y": 3
       },
-      "id": 6,
+      "id": 19,
       "options": {
         "colorMode": "value",
         "graphMode": "area",
@@ -1139,11 +1138,11 @@
             "type": "influxdb",
             "uid": "influxdb"
           },
-          "query": "temps = from(bucket: \"building_automation\")\n  |> range(start: -24h)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"temperature\")\n  |> filter(fn: (r) => r._field == \"supply_temp\" or r._field == \"return_temp\")\n  |> last()\n  |> keep(columns: [\"_time\", \"_field\", \"_value\"])\n  |> group()\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> filter(fn: (r) => exists r.supply_temp and exists r.return_temp)\n\nstatus = from(bucket: \"building_automation\")\n  |> range(start: -24h)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"status\")\n  |> filter(fn: (r) => r._field == \"compressor\" or r._field == \"aux_heater_3kw\" or r._field == \"aux_heater_6kw\")\n  |> last()\n  |> keep(columns: [\"_time\", \"_field\", \"_value\"])\n  |> group()\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> filter(fn: (r) => exists r.compressor and exists r.aux_heater_3kw and exists r.aux_heater_6kw)\n\njoin(tables: {temps: temps, status: status}, on: [\"_time\"])\n  |> map(fn: (r) => ({\n    _time: r._time,\n    _value: 1.965 * (r.supply_temp - r.return_temp) / (1.77 + (r.supply_temp - 35.0) * 0.5 / 15.0),\n    _field: \"COP\"\n  }))\n  |> filter(fn: (r) => r._value >= 0.0 and r._value <= 10.0)",
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: -6h)\n  |> filter(fn: (r) => r._measurement == \"rooms\")\n  |> filter(fn: (r) => r.room_type == \"pid\")\n  |> last()\n  |> group()\n  |> sum()\n  |> map(fn: (r) => ({r with _field: \"Lämmitystarve\"}))",
           "refId": "A"
         }
       ],
-      "title": "COP",
+      "title": "Lämmitystarve",
       "type": "stat"
     },
     {
@@ -1188,7 +1187,7 @@
         "h": 3,
         "w": 3,
         "x": 15,
-        "y": 4
+        "y": 3
       },
       "id": 5,
       "options": {
@@ -1243,15 +1242,15 @@
               },
               {
                 "color": "yellow",
-                "value": 700
+                "value": 15
               },
               {
                 "color": "red",
-                "value": 1000
+                "value": 35
               }
             ]
           },
-          "unit": "ppm"
+          "unit": "conμgm3"
         },
         "overrides": []
       },
@@ -1259,9 +1258,9 @@
         "h": 3,
         "w": 3,
         "x": 18,
-        "y": 4
+        "y": 3
       },
-      "id": 12,
+      "id": 13,
       "options": {
         "colorMode": "value",
         "graphMode": "area",
@@ -1286,11 +1285,11 @@
             "type": "influxdb",
             "uid": "influxdb"
           },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"ruuvi\" and r.sensor_name == \"Keittiö\")\n  |> filter(fn: (r) => r._field == \"co2\")\n  |> last()",
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"ruuvi\" and r.sensor_name == \"Keittiö\")\n  |> filter(fn: (r) => r._field == \"pm2_5\")\n  |> last()",
           "refId": "A"
         }
       ],
-      "title": "CO₂",
+      "title": "PM2.5",
       "type": "stat"
     },
     {
@@ -1303,32 +1302,33 @@
           "color": {
             "mode": "thresholds"
           },
-          "decimals": 0,
+          "decimals": 1,
           "mappings": [],
-          "max": 900,
-          "min": 0,
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "#c1c0c0",
                 "value": 0
               },
               {
-                "color": "yellow",
-                "value": 450
+                "color": "red",
+                "value": 0.01
               },
               {
                 "color": "orange",
-                "value": 600
+                "value": 2.5
               },
               {
-                "color": "red",
-                "value": 700
+                "color": "yellow",
+                "value": 3.4
+              },
+              {
+                "color": "green",
+                "value": 4.6
               }
             ]
-          },
-          "unit": "percent"
+          }
         },
         "overrides": []
       },
@@ -1336,9 +1336,9 @@
         "h": 3,
         "w": 3,
         "x": 21,
-        "y": 4
+        "y": 3
       },
-      "id": 19,
+      "id": 6,
       "options": {
         "colorMode": "value",
         "graphMode": "area",
@@ -1363,11 +1363,11 @@
             "type": "influxdb",
             "uid": "influxdb"
           },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: -6h)\n  |> filter(fn: (r) => r._measurement == \"rooms\")\n  |> filter(fn: (r) => r.room_type == \"pid\")\n  |> last()\n  |> group()\n  |> sum()\n  |> map(fn: (r) => ({r with _field: \"Lämmitystarve\"}))",
+          "query": "temps = from(bucket: \"building_automation\")\n  |> range(start: -24h)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"temperature\")\n  |> filter(fn: (r) => r._field == \"supply_temp\" or r._field == \"return_temp\")\n  |> last()\n  |> keep(columns: [\"_time\", \"_field\", \"_value\"])\n  |> group()\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> filter(fn: (r) => exists r.supply_temp and exists r.return_temp)\n\nstatus = from(bucket: \"building_automation\")\n  |> range(start: -24h)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"status\")\n  |> filter(fn: (r) => r._field == \"compressor\" or r._field == \"aux_heater_3kw\" or r._field == \"aux_heater_6kw\")\n  |> last()\n  |> keep(columns: [\"_time\", \"_field\", \"_value\"])\n  |> group()\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> filter(fn: (r) => exists r.compressor and exists r.aux_heater_3kw and exists r.aux_heater_6kw)\n\njoin(tables: {temps: temps, status: status}, on: [\"_time\"])\n  |> map(fn: (r) => ({\n    _time: r._time,\n    _value: 1.965 * (r.supply_temp - r.return_temp) / (1.77 + (r.supply_temp - 35.0) * 0.5 / 15.0),\n    _field: \"COP\"\n  }))\n  |> filter(fn: (r) => r._value >= 0.0 and r._value <= 10.0)",
           "refId": "A"
         }
       ],
-      "title": "Lämmitystarve",
+      "title": "COP",
       "type": "stat"
     },
     {
@@ -1430,7 +1430,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "Ruuvi ulko"
+              "options": "Ulkolämpötila"
             },
             "properties": [
               {
@@ -1450,7 +1450,7 @@
               },
               {
                 "id": "custom.lineWidth",
-                "value": 2
+                "value": 3
               }
             ]
           },
@@ -1501,7 +1501,7 @@
               {
                 "id": "color",
                 "value": {
-                  "fixedColor": "semi-dark-blue",
+                  "fixedColor": "purple",
                   "mode": "fixed"
                 }
               },
@@ -1514,10 +1514,10 @@
         ]
       },
       "gridPos": {
-        "h": 10,
-        "w": 8,
+        "h": 11,
+        "w": 12,
         "x": 0,
-        "y": 7
+        "y": 6
       },
       "id": 14,
       "options": {
@@ -1543,7 +1543,7 @@
             "type": "influxdb",
             "uid": "influxdb"
           },
-          "query": "windowPeriod = if int(v: v.windowPeriod) < 60000000000 then 1m else v.windowPeriod\n\nfrom(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"ruuvi\" and r.sensor_name == \"Ulkolämpötila\")\n  |> filter(fn: (r) => r._field == \"temperature\")\n  |> aggregateWindow(every: windowPeriod, fn: mean, createEmpty: false)\n  |> map(fn: (r) => ({r with _field: \"Ruuvi ulko\"}))\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])",
+          "query": "windowPeriod = if int(v: v.windowPeriod) < 60000000000 then 1m else v.windowPeriod\n\nfrom(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"ruuvi\" and r.sensor_name == \"Ulkolämpötila\")\n  |> filter(fn: (r) => r._field == \"temperature\")\n  |> aggregateWindow(every: windowPeriod, fn: mean, createEmpty: false)\n  |> map(fn: (r) => ({r with _field: \"Ulkolämpötila\"}))\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])",
           "refId": "A"
         },
         {
@@ -1556,149 +1556,6 @@
         }
       ],
       "title": "Ulko- ja huonelämpötilat",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "influxdb",
-        "uid": "influxdb"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "barWidthFactor": 0.6,
-            "drawStyle": "line",
-            "fillOpacity": 10,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "smooth",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "never",
-            "showValues": false,
-            "spanNulls": 3600000,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": 0
-              }
-            ]
-          }
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "voc"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "VOC"
-              },
-              {
-                "id": "unit",
-                "value": "none"
-              },
-              {
-                "id": "custom.axisPlacement",
-                "value": "left"
-              },
-              {
-                "id": "custom.axisLabel",
-                "value": "VOC (index)"
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "pm2_5"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "PM2.5"
-              },
-              {
-                "id": "unit",
-                "value": "conμgm3"
-              },
-              {
-                "id": "custom.axisPlacement",
-                "value": "right"
-              },
-              {
-                "id": "custom.axisLabel",
-                "value": "PM2.5 (µg/m³)"
-              }
-            ]
-          }
-        ]
-      },
-      "gridPos": {
-        "h": 10,
-        "w": 8,
-        "x": 8,
-        "y": 7
-      },
-      "id": 17,
-      "options": {
-        "legend": {
-          "calcs": [
-            "mean",
-            "last"
-          ],
-          "displayMode": "table",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "hideZeros": false,
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "pluginVersion": "12.3.2",
-      "targets": [
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "influxdb"
-          },
-          "query": "windowPeriod = if int(v: v.windowPeriod) < 300000000000 then 5m else v.windowPeriod\n\nfrom(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"ruuvi\" and r.sensor_name == \"Keittiö\")\n  |> filter(fn: (r) => r._field == \"voc\" or r._field == \"pm2_5\")\n  |> aggregateWindow(every: windowPeriod, fn: mean, createEmpty: false)",
-          "refId": "A"
-        }
-      ],
-      "title": "VOC & PM2.5",
       "type": "timeseries"
     },
     {
@@ -1775,10 +1632,10 @@
         ]
       },
       "gridPos": {
-        "h": 10,
-        "w": 8,
-        "x": 16,
-        "y": 7
+        "h": 11,
+        "w": 12,
+        "x": 12,
+        "y": 6
       },
       "id": 23,
       "options": {
@@ -1859,5 +1716,5 @@
   "timezone": "Europe/Helsinki",
   "title": "Yleiskuva",
   "uid": "wago-overview",
-  "version": 43
+  "version": 44
 }
