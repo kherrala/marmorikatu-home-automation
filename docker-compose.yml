@@ -154,6 +154,15 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  kiosk:
+    build:
+      context: .
+      dockerfile: Dockerfile.kiosk
+    container_name: wago-kiosk
+    ports:
+      - "80:80"
+    restart: unless-stopped
+
   electricity:
     build:
       context: .
