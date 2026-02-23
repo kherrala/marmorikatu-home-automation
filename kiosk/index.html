@@ -42,17 +42,18 @@
        The centre passes all events directly to the iframe. */
     .swipe-edge {
       position: fixed;
-      top: 0;
-      bottom: 0;
+      top: 20%;
+      height: 60%;
       width: 56px;
       z-index: 100;
       cursor: pointer;
       display: flex;
       align-items: center;
       justify-content: center;
+      border-radius: 0 6px 6px 0;
     }
-    #swipe-left  { left: 0; }
-    #swipe-right { right: 0; }
+    #swipe-left  { left: 0; border-radius: 0 6px 6px 0; }
+    #swipe-right { right: 0; border-radius: 6px 0 0 6px; }
 
     /* Arrow chevrons – visible on hover/focus, barely there otherwise */
     .swipe-edge::after {
@@ -127,7 +128,7 @@
     <div class="slide" id="slide-1">
       <iframe title="Nysse"></iframe>
     </div>
-    <!-- 2: Local weather – yr.no (no cookie consent wall) -->
+    <!-- 2: Local weather (Tampere) -->
     <div class="slide" id="slide-2">
       <iframe title="Sää Tampere"></iframe>
     </div>
@@ -280,7 +281,7 @@
     document.querySelector('#slide-0 iframe').src = `http://${host}:3000/?kiosk`;
     document.querySelector('#slide-1 iframe').src = `http://${host}:3002`;
     document.querySelector('#slide-2 iframe').src =
-      'https://www.yr.no/en/forecast/daily-table/2-634963/Finland/Pirkanmaa/Tampere';
+      'https://www.ilmatieteenlaitos.fi/saa/tampere';
 
     // ── Init ─────────────────────────────────────────────────────────────────
     const hour    = new Date().getHours();
