@@ -128,9 +128,9 @@
     <div class="slide" id="slide-1">
       <iframe title="Nysse"></iframe>
     </div>
-    <!-- 2: Local weather (Tampere) -->
+    <!-- 2: WAGO PLC web visualisation -->
     <div class="slide" id="slide-2">
-      <iframe title="Sää Tampere"></iframe>
+      <iframe title="WebVisu"></iframe>
     </div>
   </div>
 
@@ -281,7 +281,7 @@
     document.querySelector('#slide-0 iframe').src = `http://${host}:3000/?kiosk`;
     document.querySelector('#slide-1 iframe').src = `http://${host}:3002`;
     document.querySelector('#slide-2 iframe').src =
-      'https://www.ilmatieteenlaitos.fi/saa/tampere';
+      'https://192.168.1.10/webvisu/webvisu.htm';
 
     // ── Init ─────────────────────────────────────────────────────────────────
     const hour    = new Date().getHours();
