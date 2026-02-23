@@ -22,9 +22,13 @@
       position: absolute;
       inset: 0;
       opacity: 0;
+      pointer-events: none;
       transition: opacity 0.45s ease;
     }
-    .slide.active { opacity: 1; }
+    .slide.active {
+      opacity: 1;
+      pointer-events: auto;
+    }
 
     .slide iframe {
       width: 100%;
