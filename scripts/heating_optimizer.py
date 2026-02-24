@@ -46,9 +46,13 @@ REDUCTION_T = int(os.environ.get("REDUCTION_T", "2"))
 
 PRICE_PERCENTILE_CHEAP = float(os.environ.get("PRICE_PERCENTILE_CHEAP", "25"))
 PRICE_PERCENTILE_EXPENSIVE = float(os.environ.get("PRICE_PERCENTILE_EXPENSIVE", "75"))
+HISTORY_DAYS = int(os.environ.get("HISTORY_DAYS", "30"))
 
 PRE_HEAT_HOURS = int(os.environ.get("PRE_HEAT_HOURS", "2"))
 PRE_HEAT_SLOTS = PRE_HEAT_HOURS * 4  # quarter-hour slots
+
+MAX_EVU_HOURS = int(os.environ.get("MAX_EVU_HOURS", "3"))
+MAX_EVU_SLOTS = MAX_EVU_HOURS * 4  # quarter-hour slots
 
 CHECK_INTERVAL = int(os.environ.get("CHECK_INTERVAL", "300"))
 MIN_HOLD_MINUTES = int(os.environ.get("MIN_HOLD_MINUTES", "15"))
@@ -150,6 +154,29 @@ from(bucket: "{INFLUXDB_BUCKET}")
         return []
 
 
+def fetch_historical_prices(query_api):
+    """
+    Fetch electricity prices for the last HISTORY_DAYS days.
+    Returns sorted list of price values (c/kWh) for percentile calculation.
+    """
+    flux = f"""
+from(bucket: "{INFLUXDB_BUCKET}")
+  |> range(start: -{HISTORY_DAYS}d)
+  |> filter(fn: (r) => r._measurement == "electricity" and r._field == "price_with_tax")
+"""
+    try:
+        tables = query_api.query(flux, org=INFLUXDB_ORG)
+        values = []
+        for table in tables:
+            for record in table.records:
+                values.append(record.get_value())
+        values.sort()
+        return values
+    except Exception as e:
+        log.error(f"Failed to fetch historical prices: {e}")
+        return []
+
+
 def fetch_outdoor_temperature(query_api):
     """Fetch latest outdoor temperature from Ruuvi sensor."""
     flux = f"""
@@ -188,19 +215,13 @@ def percentile(values, pct):
     return values[f] + (k - f) * (values[c] - values[f])
 
 
-def classify_prices(prices):
+def classify_prices(prices, p_cheap, p_expensive):
     """
-    Classify price entries into quarter-hour slots.
+    Classify price entries into quarter-hour slots using the given thresholds.
     Returns list of (slot_start_utc, tier, price) tuples.
     """
     if not prices:
         return []
-
-    sorted_values = sorted(p for _, p in prices)
-    p_cheap = percentile(sorted_values, PRICE_PERCENTILE_CHEAP)
-    p_expensive = percentile(sorted_values, PRICE_PERCENTILE_EXPENSIVE)
-
-    log.info(f"Price thresholds: cheap ≤ {p_cheap:.2f}, expensive ≥ {p_expensive:.2f} c/kWh")
 
     classified = []
     for ts, price in prices:
@@ -215,18 +236,35 @@ def classify_prices(prices):
     return classified
 
 
-def apply_pre_heat(classified):
+def apply_pre_heat_and_evu_cap(classified):
     """
-    Apply pre-heat look-ahead: boost slots before EXPENSIVE blocks to CHEAP
-    (which maps to COMFORT_MAX). Returns a new list with modified tiers.
+    Apply two schedule adjustments:
+    1. Pre-heat look-ahead: boost slots before EXPENSIVE blocks to CHEAP
+    2. EVU cap: limit consecutive EXPENSIVE slots to MAX_EVU_SLOTS,
+       then force NORMAL for a recovery period before the next EXPENSIVE run
     """
     result = list(classified)
-    for i, (ts, tier, price) in enumerate(classified):
+
+    # 1. Cap consecutive EXPENSIVE runs
+    if MAX_EVU_SLOTS > 0:
+        consecutive = 0
+        for i, (ts, tier, price) in enumerate(result):
+            if tier == EXPENSIVE:
+                consecutive += 1
+                if consecutive > MAX_EVU_SLOTS:
+                    result[i] = (ts, NORMAL, price)
+            else:
+                consecutive = 0
+
+    # 2. Pre-heat look-ahead (applied after EVU cap so pre-heat targets
+    #    the actual EXPENSIVE blocks, not the capped ones)
+    for i, (ts, tier, price) in enumerate(result):
         if tier == EXPENSIVE:
             for j in range(max(0, i - PRE_HEAT_SLOTS), i):
                 _, orig_tier, _ = result[j]
                 if orig_tier != EXPENSIVE:
                     result[j] = (result[j][0], CHEAP, result[j][2])
+
     return result
 
 
@@ -315,20 +353,31 @@ def check_and_control(query_api, write_api):
         set_evu(False)
         return
 
-    log.info(f"Fetched {len(prices)} price points")
+    log.info(f"Fetched {len(prices)} forecast price points")
 
-    # 2. Fetch outdoor temperature
+    # 2. Fetch historical prices for threshold calculation
+    historical = fetch_historical_prices(query_api)
+    if len(historical) < 96:  # less than 1 day of history
+        log.warning(f"Insufficient historical data ({len(historical)} points) — using forecast percentiles as fallback")
+        historical = sorted(p for _, p in prices)
+
+    p_cheap = percentile(historical, PRICE_PERCENTILE_CHEAP)
+    p_expensive = percentile(historical, PRICE_PERCENTILE_EXPENSIVE)
+    log.info(f"Price thresholds (from {len(historical)} historical points): "
+             f"cheap ≤ {p_cheap:.2f}, expensive ≥ {p_expensive:.2f} c/kWh")
+
+    # 3. Fetch outdoor temperature
     outdoor_temp = fetch_outdoor_temperature(query_api)
     if outdoor_temp is not None:
         log.info(f"Outdoor temperature: {outdoor_temp:.1f}°C")
     else:
         log.warning("Outdoor temperature unavailable")
 
-    # 3. Classify prices
-    classified = classify_prices(prices)
+    # 4. Classify prices using historical thresholds
+    classified = classify_prices(prices, p_cheap, p_expensive)
 
-    # 4. Apply pre-heat look-ahead
-    schedule = apply_pre_heat(classified)
+    # 5. Apply pre-heat look-ahead and EVU cap
+    schedule = apply_pre_heat_and_evu_cap(classified)
 
     # Count tiers for logging
     tier_counts = {CHEAP: 0, NORMAL: 0, EXPENSIVE: 0}
@@ -336,10 +385,10 @@ def check_and_control(query_api, write_api):
         tier_counts[tier] += 1
     log.info(f"Schedule: {tier_counts[CHEAP]} cheap, {tier_counts[NORMAL]} normal, {tier_counts[EXPENSIVE]} expensive slots")
 
-    # 5. Get current action
+    # 6. Get current action
     setpoint, evu = get_current_action(schedule, outdoor_temp)
 
-    # 6. Rate limit
+    # 7. Rate limit
     elapsed = time.monotonic() - last_change_time
     if elapsed < MIN_HOLD_MINUTES * 60 and (current_setpoint is not None or current_evu is not None):
         remaining = MIN_HOLD_MINUTES * 60 - elapsed
@@ -359,14 +408,14 @@ def check_and_control(query_api, write_api):
                          current_evu or False, current_tier, current_price, outdoor_temp)
             return
 
-    # 7. Apply changes
+    # 8. Apply changes
     effective = setpoint - REDUCTION_T if evu else setpoint
     log.info(f"Action: setpoint={setpoint}°C, EVU={'ON' if evu else 'OFF'}, effective={effective}°C")
 
     set_setpoint(setpoint)
     set_evu(evu)
 
-    # 8. Log decision
+    # 9. Log decision
     now_utc = datetime.now(timezone.utc)
     current_price = None
     current_tier = NORMAL
@@ -397,6 +446,8 @@ def main():
     log.info(f"Reduction:  {REDUCTION_T}°C (effective min = {COMFORT_DEFAULT - REDUCTION_T}°C)")
     log.info(f"Percentiles: cheap ≤ P{PRICE_PERCENTILE_CHEAP:.0f}, expensive ≥ P{PRICE_PERCENTILE_EXPENSIVE:.0f}")
     log.info(f"Pre-heat:   {PRE_HEAT_HOURS}h ({PRE_HEAT_SLOTS} slots)")
+    log.info(f"Max EVU:    {MAX_EVU_HOURS}h ({MAX_EVU_SLOTS} slots) consecutive")
+    log.info(f"History:    {HISTORY_DAYS} days for percentile thresholds")
     log.info(f"Interval:   {CHECK_INTERVAL}s, hold: {MIN_HOLD_MINUTES}min")
     if DRY_RUN:
         log.info("*** DRY RUN MODE — no MQTT commands will be sent ***")
