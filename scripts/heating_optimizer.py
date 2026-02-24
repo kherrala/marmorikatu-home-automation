@@ -256,14 +256,13 @@ def apply_pre_heat_and_evu_cap(classified):
             else:
                 consecutive = 0
 
-    # 2. Pre-heat look-ahead (applied after EVU cap so pre-heat targets
-    #    the actual EXPENSIVE blocks, not the capped ones)
+    # 2. Pre-heat look-ahead: only promote CHEAP slots before EXPENSIVE blocks.
+    #    NORMAL-priced slots are not cheap enough to justify extra heating.
     for i, (ts, tier, price) in enumerate(result):
         if tier == EXPENSIVE:
             for j in range(max(0, i - PRE_HEAT_SLOTS), i):
-                _, orig_tier, _ = result[j]
-                if orig_tier != EXPENSIVE:
-                    result[j] = (result[j][0], CHEAP, result[j][2])
+                if result[j][1] == CHEAP:
+                    result[j] = (result[j][0], "PRE_HEAT", result[j][2])
 
     return result
 
@@ -291,13 +290,13 @@ def get_current_action(schedule, outdoor_temp):
     log.info(f"Current slot: tier={current_tier}, price={current_price:.2f} c/kWh" if current_price else f"Current slot: tier={current_tier}")
 
     # Base action from tier
-    if current_tier == CHEAP:
+    if current_tier == "PRE_HEAT":
         setpoint = COMFORT_MAX
         evu = False
     elif current_tier == EXPENSIVE:
         setpoint = COMFORT_DEFAULT
         evu = True
-    else:
+    else:  # CHEAP or NORMAL
         setpoint = COMFORT_DEFAULT
         evu = False
 
@@ -380,10 +379,11 @@ def check_and_control(query_api, write_api):
     schedule = apply_pre_heat_and_evu_cap(classified)
 
     # Count tiers for logging
-    tier_counts = {CHEAP: 0, NORMAL: 0, EXPENSIVE: 0}
+    tier_counts = {CHEAP: 0, NORMAL: 0, EXPENSIVE: 0, "PRE_HEAT": 0}
     for _, tier, _ in schedule:
-        tier_counts[tier] += 1
-    log.info(f"Schedule: {tier_counts[CHEAP]} cheap, {tier_counts[NORMAL]} normal, {tier_counts[EXPENSIVE]} expensive slots")
+        tier_counts[tier] = tier_counts.get(tier, 0) + 1
+    log.info(f"Schedule: {tier_counts[CHEAP]} cheap, {tier_counts[NORMAL]} normal, "
+             f"{tier_counts[EXPENSIVE]} expensive, {tier_counts['PRE_HEAT']} pre-heat slots")
 
     # 6. Get current action
     setpoint, evu = get_current_action(schedule, outdoor_temp)
