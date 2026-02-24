@@ -182,23 +182,29 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-  evu:
+  heating:
     build:
       context: .
-      dockerfile: Dockerfile.evu
-    container_name: wago-evu
+      dockerfile: Dockerfile.heating
+    container_name: wago-heating
     environment:
       - MQTT_BROKER=freenas.kherrala.fi
       - MQTT_PORT=1883
+      - MQTT_WRITE_TOPIC=ThermIQ/marmorikatu/write
       - MQTT_SET_TOPIC=ThermIQ/marmorikatu/set
       - INFLUXDB_URL=http://influxdb:8086
       - INFLUXDB_TOKEN=wago-secret-token
       - INFLUXDB_ORG=wago
       - INFLUXDB_BUCKET=building_automation
-      - PRICE_THRESHOLD=15.0
-      - PEAK_HOURS=6
-      - DROP_HOURS=3
-      - CHECK_INTERVAL=120
+      - COMFORT_MIN=20
+      - COMFORT_DEFAULT=22
+      - COMFORT_MAX=23
+      - REDUCTION_T=2
+      - PRICE_PERCENTILE_CHEAP=25
+      - PRICE_PERCENTILE_EXPENSIVE=75
+      - PRE_HEAT_HOURS=2
+      - CHECK_INTERVAL=300
+      - MIN_HOLD_MINUTES=15
     depends_on:
       influxdb:
         condition: service_healthy

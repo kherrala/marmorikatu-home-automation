@@ -1693,7 +1693,7 @@
             "type": "influxdb",
             "uid": "influxdb"
           },
-          "query": "import \"array\"\nimport \"experimental\"\nimport \"date\"\n\ncurHour = date.truncate(t: now(), unit: 1h)\npeakEnd = experimental.addDuration(d: 7h, to: curHour)\ndropEnd = experimental.addDuration(d: 10h, to: curHour)\n\npeak = from(bucket: \"building_automation\")\n  |> range(start: curHour, stop: peakEnd)\n  |> filter(fn: (r) => r._measurement == \"electricity\" and r._field == \"price_with_tax\")\n  |> filter(fn: (r) => r._time > curHour)\n  |> reduce(\n      fn: (r, accumulator) => ({sum: accumulator.sum + r._value, count: accumulator.count + 1.0}),\n      identity: {sum: 0.0, count: 0.0}\n  )\n  |> findRecord(fn: (key) => true, idx: 0)\n\ndrop = from(bucket: \"building_automation\")\n  |> range(start: peakEnd, stop: dropEnd)\n  |> filter(fn: (r) => r._measurement == \"electricity\" and r._field == \"price_with_tax\")\n  |> reduce(\n      fn: (r, accumulator) => ({sum: accumulator.sum + r._value, count: accumulator.count + 1.0}),\n      identity: {sum: 0.0, count: 0.0}\n  )\n  |> findRecord(fn: (key) => true, idx: 0)\n\nevuOn = peak.count >= 6.0 and (peak.sum / peak.count) > 15.0 and drop.count >= 3.0 and (drop.sum / drop.count) < 15.0\n\narray.from(rows: [{_time: now(), _value: if evuOn then 1 else 0, _field: \"evu\"}])",
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: -15m)\n  |> filter(fn: (r) => r._measurement == \"heating_optimizer\" and r._field == \"evu_active\")\n  |> last()",
           "refId": "A"
         }
       ],
