@@ -182,6 +182,30 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  indoor:
+    build:
+      context: .
+      dockerfile: Dockerfile.indoor
+    container_name: wago-indoor
+    environment:
+      - MQTT_BROKER=freenas.kherrala.fi
+      - MQTT_PORT=1883
+      - MQTT_SET_TOPIC=ThermIQ/marmorikatu/set
+      - INFLUXDB_URL=http://influxdb:8086
+      - INFLUXDB_TOKEN=wago-secret-token
+      - INFLUXDB_ORG=wago
+      - INFLUXDB_BUCKET=building_automation
+      - INDOOR_SENSOR=Olohuone
+      - AVERAGE_MINUTES=15
+      - CHECK_INTERVAL=300
+      - MIN_CHANGE=0.1
+      - INDOOR_MIN=19.0
+      - INDOOR_MAX=25.0
+    depends_on:
+      influxdb:
+        condition: service_healthy
+    restart: unless-stopped
+
   heating:
     build:
       context: .
