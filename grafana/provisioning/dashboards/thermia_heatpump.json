@@ -2140,6 +2140,18 @@
                 "value": "LKV-anturi"
               }
             ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "alarm_indoor_sensor"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Sisäanturi"
+              }
+            ]
           }
         ]
       },
@@ -2174,7 +2186,7 @@
             "type": "influxdb",
             "uid": "influxdb"
           },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"alarm\")\n  |> filter(fn: (r) => r._field == \"alarm_outdoor_sensor\" or r._field == \"alarm_supply_sensor\" or r._field == \"alarm_return_sensor\" or r._field == \"alarm_hotwater_sensor\")\n  |> last()",
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"alarm\")\n  |> filter(fn: (r) => r._field == \"alarm_outdoor_sensor\" or r._field == \"alarm_supply_sensor\" or r._field == \"alarm_return_sensor\" or r._field == \"alarm_hotwater_sensor\" or r._field == \"alarm_indoor_sensor\")\n  |> last()",
           "refId": "A"
         }
       ],

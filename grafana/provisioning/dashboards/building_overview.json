@@ -804,6 +804,11 @@
                   "color": "blue",
                   "index": 2,
                   "text": "VESI"
+                },
+                "3": {
+                  "color": "red",
+                  "index": 3,
+                  "text": "HÄLYTYS"
                 }
               },
               "type": "value"
@@ -823,6 +828,10 @@
               {
                 "color": "blue",
                 "value": 2
+              },
+              {
+                "color": "red",
+                "value": 3
               }
             ]
           }
@@ -860,7 +869,7 @@
             "type": "influxdb",
             "uid": "influxdb"
           },
-          "query": "import \"array\"\n\ncomp = from(bucket: \"building_automation\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"status\")\n  |> filter(fn: (r) => r._field == \"compressor\")\n  |> last()\n  |> findRecord(fn: (key) => true, idx: 0)\n\nhw = from(bucket: \"building_automation\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"status\")\n  |> filter(fn: (r) => r._field == \"hotwater_production\")\n  |> last()\n  |> findRecord(fn: (key) => true, idx: 0)\n\nstatus = if comp._value == 1 and hw._value == 1 then 2\n  else if comp._value == 1 then 1\n  else 0\n\narray.from(rows: [{_time: now(), _value: status, _field: \"compressor\"}])",
+          "query": "import \"array\"\n\ncomp = from(bucket: \"building_automation\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"status\")\n  |> filter(fn: (r) => r._field == \"compressor\")\n  |> last()\n  |> findRecord(fn: (key) => true, idx: 0)\n\nhw = from(bucket: \"building_automation\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"status\")\n  |> filter(fn: (r) => r._field == \"hotwater_production\")\n  |> last()\n  |> findRecord(fn: (key) => true, idx: 0)\n\nalarmMax = from(bucket: \"building_automation\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"alarm\")\n  |> filter(fn: (r) => r._field != \"alarm_indoor_sensor\")\n  |> last()\n  |> group()\n  |> max()\n  |> findRecord(fn: (key) => true, idx: 0)\n\nstatus = if alarmMax._value > 0.5 then 3\n  else if comp._value == 1 and hw._value == 1 then 2\n  else if comp._value == 1 then 1\n  else 0\n\narray.from(rows: [{_time: now(), _value: status, _field: \"compressor\"}])",
           "refId": "A"
         }
       ],
