@@ -156,7 +156,7 @@ def fetch_outdoor_temperature(query_api):
 from(bucket: "{INFLUXDB_BUCKET}")
   |> range(start: -1h)
   |> filter(fn: (r) => r._measurement == "ruuvi" and r._field == "temperature")
-  |> filter(fn: (r) => r.name == "Ulkolämpötila" or r.name == "Ulkolampotila")
+  |> filter(fn: (r) => r.sensor_name == "Ulkolämpötila" or r.sensor_name == "Ulkolampotila")
   |> last()
 """
     try:
