@@ -809,6 +809,11 @@
                   "color": "red",
                   "index": 3,
                   "text": "HÄLYTYS"
+                },
+                "4": {
+                  "color": "yellow",
+                  "index": 4,
+                  "text": "EVU"
                 }
               },
               "type": "value"
@@ -832,6 +837,10 @@
               {
                 "color": "red",
                 "value": 3
+              },
+              {
+                "color": "yellow",
+                "value": 4
               }
             ]
           }
@@ -869,7 +878,7 @@
             "type": "influxdb",
             "uid": "influxdb"
           },
-          "query": "import \"array\"\n\ncomp = from(bucket: \"building_automation\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"status\")\n  |> filter(fn: (r) => r._field == \"compressor\")\n  |> last()\n  |> findRecord(fn: (key) => true, idx: 0)\n\nhw = from(bucket: \"building_automation\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"status\")\n  |> filter(fn: (r) => r._field == \"hotwater_production\")\n  |> last()\n  |> findRecord(fn: (key) => true, idx: 0)\n\nalarmMax = from(bucket: \"building_automation\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"alarm\")\n  |> filter(fn: (r) => r._field != \"alarm_indoor_sensor\")\n  |> last()\n  |> group()\n  |> max()\n  |> findRecord(fn: (key) => true, idx: 0)\n\nstatus = if alarmMax._value > 0.5 then 3\n  else if comp._value == 1 and hw._value == 1 then 2\n  else if comp._value == 1 then 1\n  else 0\n\narray.from(rows: [{_time: now(), _value: status, _field: \"compressor\"}])",
+          "query": "import \"array\"\nimport \"experimental\"\nimport \"date\"\n\ncomp = from(bucket: \"building_automation\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"status\" and r._field == \"compressor\")\n  |> last()\n  |> findRecord(fn: (key) => true, idx: 0)\n\nhw = from(bucket: \"building_automation\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"status\" and r._field == \"hotwater_production\")\n  |> last()\n  |> findRecord(fn: (key) => true, idx: 0)\n\nalarmMax = from(bucket: \"building_automation\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"alarm\" and r._field != \"alarm_indoor_sensor\")\n  |> last()\n  |> group()\n  |> max()\n  |> findRecord(fn: (key) => true, idx: 0)\n\ncurHour = date.truncate(t: now(), unit: 1h)\npeakEnd = experimental.addDuration(d: 7h, to: curHour)\ndropEnd = experimental.addDuration(d: 10h, to: curHour)\n\npeak = from(bucket: \"building_automation\")\n  |> range(start: curHour, stop: peakEnd)\n  |> filter(fn: (r) => r._measurement == \"electricity\" and r._field == \"price_with_tax\")\n  |> filter(fn: (r) => r._time > curHour)\n  |> reduce(fn: (r, acc) => ({sum: acc.sum + r._value, count: acc.count + 1.0}), identity: {sum: 0.0, count: 0.0})\n  |> findRecord(fn: (key) => true, idx: 0)\n\ndrop = from(bucket: \"building_automation\")\n  |> range(start: peakEnd, stop: dropEnd)\n  |> filter(fn: (r) => r._measurement == \"electricity\" and r._field == \"price_with_tax\")\n  |> reduce(fn: (r, acc) => ({sum: acc.sum + r._value, count: acc.count + 1.0}), identity: {sum: 0.0, count: 0.0})\n  |> findRecord(fn: (key) => true, idx: 0)\n\nevuOn = peak.count >= 6.0 and (peak.sum / peak.count) > 15.0 and drop.count >= 3.0 and (drop.sum / drop.count) < 15.0\n\nstatus = if alarmMax._value > 0.5 then 3\n  else if hw._value == 1 then 2\n  else if evuOn then 4\n  else if comp._value == 1 then 1\n  else 0\n\narray.from(rows: [{_time: now(), _value: status, _field: \"compressor\"}])",
           "refId": "A"
         }
       ],
@@ -1164,82 +1173,6 @@
           "color": {
             "mode": "thresholds"
           },
-          "mappings": [],
-          "max": 100,
-          "min": 0,
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": 0
-              },
-              {
-                "color": "yellow",
-                "value": 30
-              },
-              {
-                "color": "orange",
-                "value": 50
-              },
-              {
-                "color": "red",
-                "value": 60
-              }
-            ]
-          },
-          "unit": "percent"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 3,
-        "w": 3,
-        "x": 15,
-        "y": 3
-      },
-      "id": 5,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "percentChangeColorMode": "standard",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "showPercentChange": false,
-        "textMode": "auto",
-        "wideLayout": true
-      },
-      "pluginVersion": "12.3.2",
-      "targets": [
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "influxdb"
-          },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: -6h)\n  |> filter(fn: (r) => r._measurement == \"hvac\")\n  |> filter(fn: (r) => r._field == \"Ulkolampotila\" or r._field == \"Kastepiste\" or r._field == \"Jateilma\")\n  |> last()\n  |> map(fn: (r) => ({r with _time: now()}))\n  |> group()\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> filter(fn: (r) => exists r.Ulkolampotila and exists r.Kastepiste and exists r.Jateilma)\n  |> map(fn: (r) => {\n      margin = r.Jateilma - r.Kastepiste\n\n      dew_raw = (5.0 - margin) / 5.0\n      dew_risk = if dew_raw < 0.0 then 0.0 else if dew_raw > 1.0 then 1.0 else dew_raw\n      dew_score = dew_risk * 60.0\n\n      temp_raw = (-5.0 - r.Ulkolampotila) / 20.0\n      temp_risk = if temp_raw < 0.0 then 0.0 else if temp_raw > 1.0 then 1.0 else temp_raw\n      temp_score = temp_risk * 25.0\n\n      exh_raw = (5.0 - r.Jateilma) / 5.0\n      exh_risk = if exh_raw < 0.0 then 0.0 else if exh_raw > 1.0 then 1.0 else exh_raw\n      exh_score = exh_risk * 15.0\n\n      total = dew_score + temp_score + exh_score\n      prob = if r.Jateilma < 0.0 then 60.0\n             else if margin < 0.0 then (if total > 95.0 then 95.0 else if total < 80.0 then 80.0 else total)\n             else if total > 95.0 then 95.0\n             else total\n\n      return {_time: r._time, _value: prob, _field: \"Jäätymisriski\"}\n  })",
-          "refId": "A"
-        }
-      ],
-      "title": "LTO jäätymisriski",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "influxdb",
-        "uid": "influxdb"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
           "decimals": 0,
           "mappings": [],
           "thresholds": {
@@ -1266,7 +1199,7 @@
       "gridPos": {
         "h": 3,
         "w": 3,
-        "x": 18,
+        "x": 15,
         "y": 3
       },
       "id": 13,
@@ -1344,7 +1277,7 @@
       "gridPos": {
         "h": 3,
         "w": 3,
-        "x": 21,
+        "x": 18,
         "y": 3
       },
       "id": 6,

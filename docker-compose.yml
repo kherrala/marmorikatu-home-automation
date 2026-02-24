@@ -182,6 +182,28 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  evu:
+    build:
+      context: .
+      dockerfile: Dockerfile.evu
+    container_name: wago-evu
+    environment:
+      - MQTT_BROKER=freenas.kherrala.fi
+      - MQTT_PORT=1883
+      - MQTT_SET_TOPIC=ThermIQ/marmorikatu/set
+      - INFLUXDB_URL=http://influxdb:8086
+      - INFLUXDB_TOKEN=wago-secret-token
+      - INFLUXDB_ORG=wago
+      - INFLUXDB_BUCKET=building_automation
+      - PRICE_THRESHOLD=15.0
+      - PEAK_HOURS=6
+      - DROP_HOURS=3
+      - CHECK_INTERVAL=120
+    depends_on:
+      influxdb:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   influxdb-data:
   influxdb-config:
