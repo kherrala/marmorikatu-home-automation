@@ -140,6 +140,7 @@ def fetch_price_forecast(query_api):
 from(bucket: "{INFLUXDB_BUCKET}")
   |> range(start: -1h, stop: 36h)
   |> filter(fn: (r) => r._measurement == "electricity" and r._field == "price_with_tax")
+  |> group()
   |> sort(columns: ["_time"])
 """
     try:
@@ -163,6 +164,7 @@ def fetch_historical_prices(query_api):
 from(bucket: "{INFLUXDB_BUCKET}")
   |> range(start: -{HISTORY_DAYS}d)
   |> filter(fn: (r) => r._measurement == "electricity" and r._field == "price_with_tax")
+  |> group()
 """
     try:
         tables = query_api.query(flux, org=INFLUXDB_ORG)

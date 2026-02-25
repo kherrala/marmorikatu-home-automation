@@ -689,7 +689,7 @@
             "type": "influxdb",
             "uid": "influxdb"
           },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"electricity\")\n  |> filter(fn: (r) => r._field == \"price_with_tax\")\n  |> last()",
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"electricity\")\n  |> filter(fn: (r) => r._field == \"price_with_tax\")\n  |> group()\n  |> last()",
           "refId": "A"
         }
       ],
@@ -1604,7 +1604,7 @@
             "type": "influxdb",
             "uid": "influxdb"
           },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: -6h, stop: now())\n  |> filter(fn: (r) => r._measurement == \"electricity\")\n  |> filter(fn: (r) => r._field == \"price_with_tax\")\n  |> map(fn: (r) => ({r with _field: \"Mennyt\"}))\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])",
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: -6h, stop: now())\n  |> filter(fn: (r) => r._measurement == \"electricity\")\n  |> filter(fn: (r) => r._field == \"price_with_tax\")\n  |> group()\n  |> map(fn: (r) => ({r with _field: \"Mennyt\"}))\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])",
           "refId": "A"
         },
         {
@@ -1612,7 +1612,7 @@
             "type": "influxdb",
             "uid": "influxdb"
           },
-          "query": "import \"experimental\"\n\nstop = experimental.addDuration(d: 12h, to: now())\n\nfrom(bucket: \"building_automation\")\n  |> range(start: -1h, stop: stop)\n  |> filter(fn: (r) => r._measurement == \"electricity\")\n  |> filter(fn: (r) => r._field == \"price_with_tax\")\n  |> filter(fn: (r) => r._time >= now())\n  |> map(fn: (r) => ({r with _field: \"Tuleva\"}))\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])",
+          "query": "import \"experimental\"\n\nstop = experimental.addDuration(d: 12h, to: now())\n\nfrom(bucket: \"building_automation\")\n  |> range(start: -1h, stop: stop)\n  |> filter(fn: (r) => r._measurement == \"electricity\")\n  |> filter(fn: (r) => r._field == \"price_with_tax\")\n  |> group()\n  |> filter(fn: (r) => r._time >= now())\n  |> map(fn: (r) => ({r with _field: \"Tuleva\"}))\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])",
           "refId": "B"
         }
       ],
