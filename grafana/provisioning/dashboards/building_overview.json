@@ -1548,18 +1548,16 @@
         },
         "overrides": [
           {
-            "matcher": {
-              "id": "byName",
-              "options": "Mennyt"
-            },
+            "matcher": {"id": "byFrameRefID", "options": "A"},
             "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "light-blue",
-                  "mode": "fixed"
-                }
-              }
+              {"id": "displayName", "value": "Mennyt"},
+              {"id": "color", "value": {"fixedColor": "light-blue", "mode": "fixed"}}
+            ]
+          },
+          {
+            "matcher": {"id": "byFrameRefID", "options": "B"},
+            "properties": [
+              {"id": "displayName", "value": "Tuleva"}
             ]
           }
         ]

@@ -419,7 +419,16 @@
           "mappings": [],
           "unit": "c/kWh"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {"id": "byFrameRefID", "options": "A"},
+            "properties": [{"id": "displayName", "value": "Kokonaishinta"}]
+          },
+          {
+            "matcher": {"id": "byFrameRefID", "options": "B"},
+            "properties": [{"id": "displayName", "value": "Spot + ALV"}]
+          }
+        ]
       },
       "gridPos": {"h": 8, "w": 12, "x": 0, "y": 15},
       "id": 7,
