@@ -54,6 +54,10 @@ PRE_HEAT_SLOTS = PRE_HEAT_HOURS * 4  # quarter-hour slots
 MAX_EVU_HOURS = int(os.environ.get("MAX_EVU_HOURS", "3"))
 MAX_EVU_SLOTS = MAX_EVU_HOURS * 4  # quarter-hour slots
 
+# Minimum price spread (max - min in forecast window) required to activate the
+# relative pre-heat fallback when no historically-expensive slots exist.
+MIN_RELATIVE_SPREAD = float(os.environ.get("MIN_RELATIVE_SPREAD", "2.0"))
+
 CHECK_INTERVAL = int(os.environ.get("CHECK_INTERVAL", "300"))
 MIN_HOLD_MINUTES = int(os.environ.get("MIN_HOLD_MINUTES", "15"))
 
@@ -241,7 +245,7 @@ def classify_prices(prices, p_cheap, p_expensive):
 def apply_pre_heat_and_evu_cap(classified):
     """
     Apply two schedule adjustments:
-    1. Pre-heat look-ahead: boost slots before EXPENSIVE blocks to CHEAP
+    1. Pre-heat look-ahead: boost slots before EXPENSIVE blocks to PRE_HEAT
     2. EVU cap: limit consecutive EXPENSIVE slots to MAX_EVU_SLOTS,
        then force NORMAL for a recovery period before the next EXPENSIVE run
     """
@@ -266,6 +270,40 @@ def apply_pre_heat_and_evu_cap(classified):
                 if result[j][1] == CHEAP:
                     result[j] = (result[j][0], "PRE_HEAT", result[j][2])
 
+    return result
+
+
+def apply_relative_fallback(classified):
+    """
+    Fallback for low-price periods: when the forecast has no historically-
+    expensive slots but prices still vary meaningfully, mark the relatively
+    cheapest slots (within-window P25) as PRE_HEAT so the heat pump
+    opportunistically loads the thermal mass during the cheapest hours.
+
+    Only activates when:
+      - No EXPENSIVE slots in the forecast (absolute approach is dormant)
+      - Max-min price spread >= MIN_RELATIVE_SPREAD c/kWh
+    """
+    if any(tier == EXPENSIVE for _, tier, _ in classified):
+        return classified  # Absolute classification is already active
+
+    prices_only = sorted(price for _, _, price in classified)
+    spread = prices_only[-1] - prices_only[0]
+
+    if spread < MIN_RELATIVE_SPREAD:
+        log.info(f"Relative fallback: price spread {spread:.2f} c/kWh < {MIN_RELATIVE_SPREAD} c/kWh — no action")
+        return classified
+
+    p25 = percentile(prices_only, 25)
+    log.info(f"Relative fallback active: spread {spread:.2f} c/kWh, "
+             f"within-window P25 = {p25:.2f} c/kWh → pre-heat below this")
+
+    result = []
+    for ts, tier, price in classified:
+        if price <= p25:
+            result.append((ts, "PRE_HEAT", price))
+        else:
+            result.append((ts, tier, price))
     return result
 
 
@@ -377,8 +415,9 @@ def check_and_control(query_api, write_api):
     # 4. Classify prices using historical thresholds
     classified = classify_prices(prices, p_cheap, p_expensive)
 
-    # 5. Apply pre-heat look-ahead and EVU cap
+    # 5. Apply pre-heat look-ahead and EVU cap, then relative fallback
     schedule = apply_pre_heat_and_evu_cap(classified)
+    schedule = apply_relative_fallback(schedule)
 
     # Count tiers for logging
     tier_counts = {CHEAP: 0, NORMAL: 0, EXPENSIVE: 0, "PRE_HEAT": 0}
@@ -449,6 +488,7 @@ def main():
     log.info(f"Percentiles: cheap ≤ P{PRICE_PERCENTILE_CHEAP:.0f}, expensive ≥ P{PRICE_PERCENTILE_EXPENSIVE:.0f}")
     log.info(f"Pre-heat:   {PRE_HEAT_HOURS}h ({PRE_HEAT_SLOTS} slots)")
     log.info(f"Max EVU:    {MAX_EVU_HOURS}h ({MAX_EVU_SLOTS} slots) consecutive")
+    log.info(f"Rel spread: {MIN_RELATIVE_SPREAD} c/kWh min for relative fallback")
     log.info(f"History:    {HISTORY_DAYS} days for percentile thresholds")
     log.info(f"Interval:   {CHECK_INTERVAL}s, hold: {MIN_HOLD_MINUTES}min")
     if DRY_RUN:
