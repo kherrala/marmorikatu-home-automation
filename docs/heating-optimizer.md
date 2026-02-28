@@ -36,10 +36,10 @@ Each 15-minute slot in the 36-hour forecast is classified:
 When the entire forecast has **no EXPENSIVE slots** (all prices below the historical P75, e.g., during mild weather with abundant wind power), a relative fallback activates:
 
 1. Compute the max–min price spread within the forecast window
-2. If spread ≥ `MIN_RELATIVE_SPREAD` (default: 2 c/kWh), compute within-window P25
-3. Mark slots below within-window P25 as **PRE_HEAT** — the relatively cheapest hours for opportunistic thermal mass loading
+2. If spread ≥ `MIN_RELATIVE_SPREAD` (default: 2 c/kWh), compute within-window P75
+3. Mark slots above within-window P75 as **EXPENSIVE** — the relatively most expensive hours for EVU reduction and aux heater disabling
 
-This ensures the optimizer responds to price variation even during extended low-price periods.
+The normal pre-heat look-ahead then applies before these relatively-expensive blocks, creating a balanced approach: pre-heat during cheap hours before the reduction, then save during the relatively expensive hours. The relative fallback runs before the pre-heat and EVU cap steps so that all schedule adjustments apply correctly.
 
 ### EVU Cap
 
@@ -56,7 +56,7 @@ Before each EXPENSIVE block, the preceding `PRE_HEAT_HOURS` (default: 2 hours = 
 | PRE_HEAT | COMFORT_MAX (23°C) | OFF | Default (2) | 23°C |
 | CHEAP | COMFORT_DEFAULT (22°C) | OFF | Default (2) | 22°C |
 | NORMAL | COMFORT_DEFAULT (22°C) | OFF | Default (2) | 22°C |
-| EXPENSIVE | COMFORT_DEFAULT (22°C) | ON | **0 (disabled)** | 20°C |
+| EXPENSIVE | COMFORT_DEFAULT (22°C) | ON | **0 (disabled)** | 19°C |
 
 ## Safety Protections
 
@@ -144,7 +144,7 @@ All via environment variables (with defaults):
 | `COMFORT_MIN` | 20 | Hard floor temperature (°C) |
 | `COMFORT_DEFAULT` | 22 | Normal setpoint (°C) |
 | `COMFORT_MAX` | 23 | Pre-heat ceiling (°C) |
-| `REDUCTION_T` | 2 | EVU reduction degrees, written to d59 at startup |
+| `REDUCTION_T` | 3 | EVU reduction degrees, written to d59 at startup |
 | `BOILER_STEPS_DEFAULT` | 2 | Normal aux heater steps (2 = 3+6 kW) |
 | `BOILER_COLD_LIMIT` | −15 | Below this outdoor temp (°C), never disable aux heaters |
 | `PRICE_PERCENTILE_CHEAP` | 25 | Historical percentile threshold for cheap tier |

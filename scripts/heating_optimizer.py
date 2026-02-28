@@ -45,7 +45,7 @@ INFLUXDB_BUCKET = os.environ.get("INFLUXDB_BUCKET", "building_automation")
 COMFORT_MIN = int(os.environ.get("COMFORT_MIN", "20"))
 COMFORT_DEFAULT = int(os.environ.get("COMFORT_DEFAULT", "22"))
 COMFORT_MAX = int(os.environ.get("COMFORT_MAX", "23"))
-REDUCTION_T = int(os.environ.get("REDUCTION_T", "2"))
+REDUCTION_T = int(os.environ.get("REDUCTION_T", "3"))
 
 # Aux heater (electric boiler) control
 BOILER_STEPS_DEFAULT = int(os.environ.get("BOILER_STEPS_DEFAULT", "2"))  # normal: both 3+6 kW
@@ -298,8 +298,9 @@ def apply_relative_fallback(classified):
     """
     Fallback for low-price periods: when the forecast has no historically-
     expensive slots but prices still vary meaningfully, mark the relatively
-    cheapest slots (within-window P25) as PRE_HEAT so the heat pump
-    opportunistically loads the thermal mass during the cheapest hours.
+    most expensive slots (within-window P75) as EXPENSIVE so the optimizer
+    activates EVU + boiler reduction during those periods. Normal pre-heat
+    look-ahead then applies before those relatively-expensive blocks.
 
     Only activates when:
       - No EXPENSIVE slots in the forecast (absolute approach is dormant)
@@ -315,14 +316,14 @@ def apply_relative_fallback(classified):
         log.info(f"Relative fallback: price spread {spread:.2f} c/kWh < {MIN_RELATIVE_SPREAD} c/kWh — no action")
         return classified
 
-    p25 = percentile(prices_only, 25)
+    p75 = percentile(prices_only, 75)
     log.info(f"Relative fallback active: spread {spread:.2f} c/kWh, "
-             f"within-window P25 = {p25:.2f} c/kWh → pre-heat below this")
+             f"within-window P75 = {p75:.2f} c/kWh → expensive above this")
 
     result = []
     for ts, tier, price in classified:
-        if price <= p25:
-            result.append((ts, "PRE_HEAT", price))
+        if price >= p75:
+            result.append((ts, EXPENSIVE, price))
         else:
             result.append((ts, tier, price))
     return result
@@ -450,9 +451,9 @@ def check_and_control(query_api, write_api):
     # 4. Classify prices using historical thresholds
     classified = classify_prices(prices, p_cheap, p_expensive)
 
-    # 5. Apply pre-heat look-ahead and EVU cap, then relative fallback
-    schedule = apply_pre_heat_and_evu_cap(classified)
-    schedule = apply_relative_fallback(schedule)
+    # 5. Apply relative fallback (may add EXPENSIVE slots), then pre-heat + EVU cap
+    schedule = apply_relative_fallback(classified)
+    schedule = apply_pre_heat_and_evu_cap(schedule)
 
     # Count tiers for logging
     tier_counts = {CHEAP: 0, NORMAL: 0, EXPENSIVE: 0, "PRE_HEAT": 0}
