@@ -238,5 +238,8 @@ services:
 
 volumes:
   influxdb-data:
+    external: true
   influxdb-config:
+    external: true
   grafana-data:
+    external: true
