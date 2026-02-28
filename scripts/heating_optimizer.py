@@ -5,6 +5,8 @@ Floor heating temperature optimizer.
 Optimizes heating costs by adjusting the Thermia heat pump setpoint based on
 electricity spot prices. Pre-heats during cheap hours (raising d50) and reduces
 demand during expensive hours (via EVU mode which lowers target by reduction_t).
+During expensive hours, aux heaters are also disabled to avoid costly resistance
+heating, with cold-weather safety protection.
 
 Price data is read from InfluxDB (written by the electricity price poller).
 Outdoor temperature is read from InfluxDB (Ruuvi sensor).
@@ -13,6 +15,7 @@ Controls:
   - d50 (indoor_requested_t, hex r32): setpoint via MQTT write topic
   - EVU on/off: via MQTT set topic
   - d59 (reduction_t, hex r3b): configured at startup via MQTT write topic
+  - d81 (elect_boiler_steps_max, hex r51): aux heater limit via MQTT write topic
 
 Replaces the simpler evu_controller.py service.
 """
@@ -44,6 +47,11 @@ COMFORT_DEFAULT = int(os.environ.get("COMFORT_DEFAULT", "22"))
 COMFORT_MAX = int(os.environ.get("COMFORT_MAX", "23"))
 REDUCTION_T = int(os.environ.get("REDUCTION_T", "2"))
 
+# Aux heater (electric boiler) control
+BOILER_STEPS_DEFAULT = int(os.environ.get("BOILER_STEPS_DEFAULT", "2"))  # normal: both 3+6 kW
+# Below this outdoor temp, aux heaters are never disabled (compressor may need help)
+BOILER_COLD_LIMIT = float(os.environ.get("BOILER_COLD_LIMIT", "-15"))
+
 PRICE_PERCENTILE_CHEAP = float(os.environ.get("PRICE_PERCENTILE_CHEAP", "25"))
 PRICE_PERCENTILE_EXPENSIVE = float(os.environ.get("PRICE_PERCENTILE_EXPENSIVE", "75"))
 HISTORY_DAYS = int(os.environ.get("HISTORY_DAYS", "30"))
@@ -73,9 +81,10 @@ log = logging.getLogger(__name__)
 
 # ── State ─────────────────────────────────────────────────────────────────────
 running = True
-current_setpoint = None   # last published setpoint
-current_evu = None        # last published EVU state (True/False)
-last_change_time = 0.0    # monotonic time of last MQTT change
+current_setpoint = None       # last published setpoint
+current_evu = None            # last published EVU state (True/False)
+current_boiler_steps = None   # last published elect_boiler_steps_max
+last_change_time = 0.0        # monotonic time of last MQTT change
 
 
 def signal_handler(sig, frame):
@@ -131,6 +140,18 @@ def set_reduction_t(value):
     """Set reduction_t register (d59 / r3b) at startup."""
     mqtt_publish(MQTT_WRITE_TOPIC, {"r3b": value})
     log.info(f"reduction_t (d59) → {value}°C")
+
+
+def set_boiler_steps(value):
+    """Set elect_boiler_steps_max (d81 / r51). 0=disabled, 1=3kW, 2=3+6kW."""
+    global current_boiler_steps, last_change_time
+    if current_boiler_steps == value:
+        return
+    if mqtt_publish(MQTT_WRITE_TOPIC, {"r51": value}):
+        current_boiler_steps = value
+        last_change_time = time.monotonic()
+        label = {0: "OFF", 1: "3kW", 2: "3+6kW"}.get(value, str(value))
+        log.info(f"Boiler steps → {value} ({label})")
 
 
 # ── InfluxDB queries ─────────────────────────────────────────────────────────
@@ -309,8 +330,8 @@ def apply_relative_fallback(classified):
 
 def get_current_action(schedule, outdoor_temp):
     """
-    Look up the current quarter-hour slot and return (setpoint, evu_enabled).
-    Applies cold-weather constraints.
+    Look up the current quarter-hour slot and return (setpoint, evu_enabled, boiler_steps).
+    Applies cold-weather constraints and aux heater safety logic.
     """
     now_utc = datetime.now(timezone.utc)
 
@@ -333,12 +354,15 @@ def get_current_action(schedule, outdoor_temp):
     if current_tier == "PRE_HEAT":
         setpoint = COMFORT_MAX
         evu = False
+        boiler_steps = BOILER_STEPS_DEFAULT
     elif current_tier == EXPENSIVE:
         setpoint = COMFORT_DEFAULT
         evu = True
+        boiler_steps = 0  # disable aux heaters during expensive periods
     else:  # CHEAP or NORMAL
         setpoint = COMFORT_DEFAULT
         evu = False
+        boiler_steps = BOILER_STEPS_DEFAULT
 
     # Cold-weather constraints on pre-heating
     if outdoor_temp is not None and setpoint > COMFORT_DEFAULT:
@@ -351,19 +375,29 @@ def get_current_action(schedule, outdoor_temp):
                 log.info(f"Outdoor {outdoor_temp:.1f}°C < -10°C: cap pre-heat to {cap}°C")
                 setpoint = cap
 
+    # Aux heater safety: never disable when cold or when outdoor temp unknown
+    if boiler_steps < BOILER_STEPS_DEFAULT:
+        if outdoor_temp is None:
+            log.info("Outdoor temp unavailable — keeping aux heaters enabled (fail-safe)")
+            boiler_steps = BOILER_STEPS_DEFAULT
+        elif outdoor_temp < BOILER_COLD_LIMIT:
+            log.info(f"Outdoor {outdoor_temp:.1f}°C < {BOILER_COLD_LIMIT}°C — keeping aux heaters enabled")
+            boiler_steps = BOILER_STEPS_DEFAULT
+
     # Enforce hard floor
     setpoint = max(setpoint, COMFORT_MIN)
 
-    return setpoint, evu
+    return setpoint, evu, boiler_steps
 
 
 # ── Decision logging ─────────────────────────────────────────────────────────
 
-def log_decision(write_api, setpoint, evu, tier, price, outdoor_temp):
+def log_decision(write_api, setpoint, evu, boiler_steps, tier, price, outdoor_temp):
     """Write optimizer decision to InfluxDB for dashboard visualization."""
     point = Point("heating_optimizer") \
         .field("setpoint", setpoint) \
         .field("evu_active", 1 if evu else 0) \
+        .field("boiler_steps", boiler_steps) \
         .field("tier", tier) \
         .field("effective_target", setpoint - REDUCTION_T if evu else setpoint)
 
@@ -390,6 +424,7 @@ def check_and_control(query_api, write_api):
         log.warning(f"Insufficient price data ({len(prices)} points, need ≥12) — using defaults")
         set_setpoint(COMFORT_DEFAULT)
         set_evu(False)
+        set_boiler_steps(BOILER_STEPS_DEFAULT)
         return
 
     log.info(f"Fetched {len(prices)} forecast price points")
@@ -427,16 +462,14 @@ def check_and_control(query_api, write_api):
              f"{tier_counts[EXPENSIVE]} expensive, {tier_counts['PRE_HEAT']} pre-heat slots")
 
     # 6. Get current action
-    setpoint, evu = get_current_action(schedule, outdoor_temp)
+    setpoint, evu, boiler_steps = get_current_action(schedule, outdoor_temp)
 
     # 7. Rate limit
     elapsed = time.monotonic() - last_change_time
     if elapsed < MIN_HOLD_MINUTES * 60 and (current_setpoint is not None or current_evu is not None):
         remaining = MIN_HOLD_MINUTES * 60 - elapsed
-        if setpoint != current_setpoint or evu != current_evu:
+        if setpoint != current_setpoint or evu != current_evu or boiler_steps != current_boiler_steps:
             log.info(f"Rate limited: {remaining:.0f}s remaining before next change")
-            # Still log the decision even if rate-limited
-            # Find current price for logging
             now_utc = datetime.now(timezone.utc)
             current_price = None
             current_tier = NORMAL
@@ -446,15 +479,20 @@ def check_and_control(query_api, write_api):
                     current_price = price
                     current_tier = tier
             log_decision(write_api, current_setpoint or COMFORT_DEFAULT,
-                         current_evu or False, current_tier, current_price, outdoor_temp)
+                         current_evu or False,
+                         current_boiler_steps if current_boiler_steps is not None else BOILER_STEPS_DEFAULT,
+                         current_tier, current_price, outdoor_temp)
             return
 
     # 8. Apply changes
     effective = setpoint - REDUCTION_T if evu else setpoint
-    log.info(f"Action: setpoint={setpoint}°C, EVU={'ON' if evu else 'OFF'}, effective={effective}°C")
+    boiler_label = {0: "OFF", 1: "3kW", 2: "3+6kW"}.get(boiler_steps, str(boiler_steps))
+    log.info(f"Action: setpoint={setpoint}°C, EVU={'ON' if evu else 'OFF'}, "
+             f"boiler={boiler_label}, effective={effective}°C")
 
     set_setpoint(setpoint)
     set_evu(evu)
+    set_boiler_steps(boiler_steps)
 
     # 9. Log decision
     now_utc = datetime.now(timezone.utc)
@@ -465,7 +503,7 @@ def check_and_control(query_api, write_api):
         if slot_time <= now_utc:
             current_price = price
             current_tier = tier
-    log_decision(write_api, setpoint, evu, current_tier, current_price, outdoor_temp)
+    log_decision(write_api, setpoint, evu, boiler_steps, current_tier, current_price, outdoor_temp)
 
 
 # ── Main ─────────────────────────────────────────────────────────────────────
@@ -485,6 +523,7 @@ def main():
     log.info(f"  set:      {MQTT_SET_TOPIC}")
     log.info(f"Setpoints:  min={COMFORT_MIN}, default={COMFORT_DEFAULT}, max={COMFORT_MAX}")
     log.info(f"Reduction:  {REDUCTION_T}°C (effective min = {COMFORT_DEFAULT - REDUCTION_T}°C)")
+    log.info(f"Boiler:     default={BOILER_STEPS_DEFAULT} steps, disabled during expensive (outdoor > {BOILER_COLD_LIMIT}°C)")
     log.info(f"Percentiles: cheap ≤ P{PRICE_PERCENTILE_CHEAP:.0f}, expensive ≥ P{PRICE_PERCENTILE_EXPENSIVE:.0f}")
     log.info(f"Pre-heat:   {PRE_HEAT_HOURS}h ({PRE_HEAT_SLOTS} slots)")
     log.info(f"Max EVU:    {MAX_EVU_HOURS}h ({MAX_EVU_SLOTS} slots) consecutive")
@@ -524,6 +563,7 @@ def main():
     log.info("Restoring defaults before exit...")
     set_setpoint(COMFORT_DEFAULT)
     set_evu(False)
+    set_boiler_steps(BOILER_STEPS_DEFAULT)
 
     influx_client.close()
     log.info("Shutdown complete")
