@@ -30,18 +30,6 @@
     },
     {
       "asDropdown": false,
-      "icon": "dashboard",
-      "includeVars": true,
-      "keepTime": true,
-      "tags": [],
-      "targetBlank": false,
-      "title": "Valot",
-      "tooltip": "View light switch status by floor",
-      "type": "link",
-      "url": "/d/wago-lights/light-switch-status"
-    },
-    {
-      "asDropdown": false,
       "icon": "bolt",
       "includeVars": true,
       "keepTime": true,
