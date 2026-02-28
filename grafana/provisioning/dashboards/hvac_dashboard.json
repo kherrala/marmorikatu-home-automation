@@ -78,6 +78,18 @@
       "tooltip": "Energy cost analysis",
       "type": "link",
       "url": "/d/energy-cost/energiakustannukset"
+    },
+    {
+      "asDropdown": false,
+      "icon": "bolt",
+      "includeVars": true,
+      "keepTime": true,
+      "tags": [],
+      "targetBlank": false,
+      "title": "Lämmitys",
+      "tooltip": "Heating control and optimization",
+      "type": "link",
+      "url": "/d/heating-control/lammityksen-ohjaus"
     }
   ],
   "panels": [
