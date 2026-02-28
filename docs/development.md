@@ -204,7 +204,7 @@ docker compose down -v
 ## File Structure
 
 ```
-wago-csv-explorer/
+marmorikatu-home-automation/
 ├── docker-compose.yml          # Container orchestration
 ├── Dockerfile.sync             # Sync container image
 ├── Dockerfile.ruuvi            # Ruuvi MQTT subscriber image
