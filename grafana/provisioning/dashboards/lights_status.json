@@ -25,6 +25,18 @@
       "keepTime": true,
       "tags": [],
       "targetBlank": false,
+      "title": "IVK",
+      "tooltip": "HVAC dashboard",
+      "type": "link",
+      "url": "/d/wago-hvac/ilmanvaihto"
+    },
+    {
+      "asDropdown": false,
+      "icon": "bolt",
+      "includeVars": true,
+      "keepTime": true,
+      "tags": [],
+      "targetBlank": false,
       "title": "MLP",
       "tooltip": "Thermia heat pump details",
       "type": "link",
