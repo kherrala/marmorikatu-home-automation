@@ -172,8 +172,8 @@
           "color": {"mode": "thresholds"},
           "mappings": [
             {"options": {"0": {"color": "green", "text": "OFF"}}, "type": "value"},
-            {"options": {"1": {"color": "yellow", "text": "3kW"}}, "type": "value"},
-            {"options": {"2": {"color": "orange", "text": "3+6kW"}}, "type": "value"}
+            {"options": {"1": {"color": "yellow", "text": "Taso 1"}}, "type": "value"},
+            {"options": {"2": {"color": "orange", "text": "Taso 2"}}, "type": "value"}
           ],
           "thresholds": {
             "mode": "absolute",
@@ -574,7 +574,7 @@
               {"id": "custom.lineInterpolation", "value": "stepAfter"},
               {"id": "custom.fillOpacity", "value": 10},
               {"id": "custom.lineWidth", "value": 0},
-              {"id": "color", "value": {"fixedColor": "light-gray", "mode": "fixed"}},
+              {"id": "color", "value": {"fixedColor": "#cccccc", "mode": "fixed"}},
               {"id": "unit", "value": "none"},
               {"id": "max", "value": 1},
               {"id": "custom.axisPlacement", "value": "hidden"},
@@ -800,21 +800,50 @@
       "datasource": {"type": "influxdb", "uid": "influxdb"},
       "fieldConfig": {
         "defaults": {
-          "color": {"mode": "palette-classic"},
+          "color": {"mode": "thresholds"},
           "custom": {
+            "axisPlacement": "auto",
             "fillOpacity": 80,
             "hideFrom": {"legend": false, "tooltip": false, "viz": false},
             "insertNulls": false,
             "lineWidth": 0,
             "spanNulls": false
           },
-          "mappings": [],
+          "mappings": [
+            {
+              "options": {
+                "0": {"color": "dark-blue", "index": 0, "text": "Pois"},
+                "1": {"color": "yellow", "index": 1, "text": "Päällä"}
+              },
+              "type": "value"
+            }
+          ],
           "thresholds": {
             "mode": "absolute",
-            "steps": [{"color": "green", "value": null}]
+            "steps": [
+              {"color": "dark-blue", "value": 0},
+              {"color": "yellow", "value": 1}
+            ]
           }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {"id": "byName", "options": "compressor"},
+            "properties": [{"id": "displayName", "value": "Kompressori"}]
+          },
+          {
+            "matcher": {"id": "byName", "options": "aux_heater_3kw"},
+            "properties": [{"id": "displayName", "value": "Lisävastus 3kW"}]
+          },
+          {
+            "matcher": {"id": "byName", "options": "aux_heater_6kw"},
+            "properties": [{"id": "displayName", "value": "Lisävastus 6kW"}]
+          },
+          {
+            "matcher": {"id": "byName", "options": "hotwater_production"},
+            "properties": [{"id": "displayName", "value": "LKV tuotanto"}]
+          }
+        ]
       },
       "gridPos": {"h": 5, "w": 24, "x": 0, "y": 27},
       "id": 14,
