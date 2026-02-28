@@ -640,33 +640,21 @@
       },
       "fieldConfig": {
         "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "decimals": 1,
-          "mappings": [],
+          "color": {"mode": "thresholds"},
+          "mappings": [
+            {"options": {"0": {"color": "green", "index": 0, "text": "Halpa"}}, "type": "value"},
+            {"options": {"1": {"color": "yellow", "index": 1, "text": "Normaali"}}, "type": "value"},
+            {"options": {"2": {"color": "red", "index": 2, "text": "Kallis"}}, "type": "value"}
+          ],
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              {
-                "color": "green",
-                "value": 0
-              },
-              {
-                "color": "yellow",
-                "value": 5
-              },
-              {
-                "color": "orange",
-                "value": 10
-              },
-              {
-                "color": "red",
-                "value": 25
-              }
+              {"color": "green", "value": null},
+              {"color": "yellow", "value": 1},
+              {"color": "red", "value": 2}
             ]
           },
-          "unit": "suffix: c/kWh"
+          "unit": "none"
         },
         "overrides": []
       },
@@ -674,12 +662,12 @@
         "h": 3,
         "w": 3,
         "x": 21,
-        "y": 0
+        "y": 3
       },
       "id": 24,
       "options": {
-        "colorMode": "value",
-        "graphMode": "area",
+        "colorMode": "background",
+        "graphMode": "none",
         "justifyMode": "auto",
         "orientation": "auto",
         "percentChangeColorMode": "standard",
@@ -701,11 +689,11 @@
             "type": "influxdb",
             "uid": "influxdb"
           },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"electricity\")\n  |> filter(fn: (r) => r._field == \"price_with_tax\")\n  |> group()\n  |> last()",
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"heating_optimizer\" and r._field == \"tier\")\n  |> last()\n  |> keep(columns: [\"_time\", \"_value\"])\n  |> map(fn: (r) => ({_time: r._time, _value: if r._value == \"CHEAP\" then \"0\" else if r._value == \"NORMAL\" then \"1\" else \"2\"}))\n  |> toFloat()",
           "refId": "A"
         }
       ],
-      "title": "Sähkön hinta",
+      "title": "Hintataso",
       "type": "stat"
     },
     {
@@ -1203,7 +1191,7 @@
         "h": 3,
         "w": 3,
         "x": 21,
-        "y": 3
+        "y": 0
       },
       "id": 13,
       "options": {

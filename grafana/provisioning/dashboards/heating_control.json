@@ -672,9 +672,7 @@
             "matcher": {"id": "byFrameRefID", "options": "B"},
             "properties": [
               {"id": "custom.lineStyle", "value": {"dash": [10, 10], "fill": "dash"}},
-              {"id": "custom.fillOpacity", "value": 0},
-              {"id": "custom.axisPlacement", "value": "right"},
-              {"id": "custom.axisLabel", "value": "Rajat"}
+              {"id": "custom.fillOpacity", "value": 0}
             ]
           },
           {
