@@ -91,13 +91,17 @@
         "defaults": {
           "color": {"mode": "thresholds"},
           "mappings": [
-            {"options": {"CHEAP": {"color": "green", "index": 0, "text": "Halpa"}}, "type": "value"},
-            {"options": {"NORMAL": {"color": "yellow", "index": 1, "text": "Normaali"}}, "type": "value"},
-            {"options": {"EXPENSIVE": {"color": "red", "index": 2, "text": "Kallis"}}, "type": "value"}
+            {"options": {"0": {"color": "green", "index": 0, "text": "Halpa"}}, "type": "value"},
+            {"options": {"1": {"color": "yellow", "index": 1, "text": "Normaali"}}, "type": "value"},
+            {"options": {"2": {"color": "red", "index": 2, "text": "Kallis"}}, "type": "value"}
           ],
           "thresholds": {
             "mode": "absolute",
-            "steps": [{"color": "green", "value": null}]
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "yellow", "value": 1},
+              {"color": "red", "value": 2}
+            ]
           },
           "unit": "none"
         },
@@ -119,7 +123,7 @@
       "targets": [
         {
           "datasource": {"type": "influxdb", "uid": "influxdb"},
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"heating_optimizer\" and r._field == \"tier\")\n  |> last()\n  |> keep(columns: [\"_time\", \"_value\"])",
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"heating_optimizer\" and r._field == \"tier\")\n  |> last()\n  |> keep(columns: [\"_time\", \"_value\"])\n  |> map(fn: (r) => ({_time: r._time, _value: if r._value == \"CHEAP\" then 0 else if r._value == \"NORMAL\" then 1 else 2}))",
           "refId": "A"
         }
       ],
