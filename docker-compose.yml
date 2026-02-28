@@ -3,7 +3,7 @@ name: marmorikatu-home-automation
 services:
   influxdb:
     image: influxdb:2.7
-    container_name: wago-influxdb
+    container_name: marmorikatu-influxdb
     ports:
       - "8086:8086"
     volumes:
@@ -24,7 +24,7 @@ services:
 
   grafana:
     image: grafana/grafana:12.3.2
-    container_name: wago-grafana
+    container_name: marmorikatu-grafana
     ports:
       - "3000:3000"
     volumes:
@@ -56,7 +56,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.sync
-    container_name: wago-sync
+    container_name: marmorikatu-sync
     volumes:
       - ./data:/data
       - ./scripts:/scripts:ro
@@ -83,7 +83,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.ruuvi
-    container_name: wago-ruuvi
+    container_name: marmorikatu-ruuvi
     environment:
       - MQTT_BROKER=freenas.kherrala.fi
       - MQTT_PORT=1883
@@ -103,7 +103,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.thermia
-    container_name: wago-thermia
+    container_name: marmorikatu-thermia
     environment:
       - MQTT_BROKER=freenas.kherrala.fi
       - MQTT_PORT=1883
@@ -123,7 +123,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.mcp
-    container_name: wago-mcp
+    container_name: marmorikatu-mcp
     ports:
       - "3001:3001"
     environment:
@@ -141,7 +141,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.lights
-    container_name: wago-lights
+    container_name: marmorikatu-lights
     environment:
       - LIGHTS_API_URL=http://host.docker.internal:8080/api/lights
       - POLL_INTERVAL=300
@@ -160,7 +160,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.kiosk
-    container_name: wago-kiosk
+    container_name: marmorikatu-kiosk
     ports:
       - "80:80"
     restart: unless-stopped
@@ -169,7 +169,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.electricity
-    container_name: wago-electricity
+    container_name: marmorikatu-electricity
     environment:
       - SPOT_HINTA_API_URL=https://api.spot-hinta.fi/TodayAndDayForward
       - RETRY_INTERVAL=600
@@ -186,7 +186,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.indoor
-    container_name: wago-indoor
+    container_name: marmorikatu-indoor
     environment:
       - MQTT_BROKER=freenas.kherrala.fi
       - MQTT_PORT=1883
@@ -210,7 +210,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.heating
-    container_name: wago-heating
+    container_name: marmorikatu-heating
     environment:
       - MQTT_BROKER=freenas.kherrala.fi
       - MQTT_PORT=1883
