@@ -57,16 +57,30 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              {"color": "green", "value": null},
-              {"color": "orange", "value": 50},
-              {"color": "red", "value": 100}
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 50
+              },
+              {
+                "color": "red",
+                "value": 100
+              }
             ]
           },
           "unit": "kwatth"
         },
         "overrides": []
       },
-      "gridPos": {"h": 6, "w": 6, "x": 0, "y": 0},
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 0,
+        "y": 0
+      },
       "id": 1,
       "options": {
         "colorMode": "value",
@@ -75,7 +89,9 @@
         "orientation": "auto",
         "percentChangeColorMode": "standard",
         "reduceOptions": {
-          "calcs": ["sum"],
+          "calcs": [
+            "sum"
+          ],
           "fields": "",
           "values": false
         },
@@ -86,7 +102,10 @@
       "pluginVersion": "12.3.2",
       "targets": [
         {
-          "datasource": {"type": "influxdb", "uid": "influxdb"},
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
           "query": "import \"join\"\n\ntemps = from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"temperature\")\n  |> filter(fn: (r) => r._field == \"supply_temp\")\n  |> aggregateWindow(every: 1h, fn: mean, createEmpty: false)\n  |> keep(columns: [\"_time\", \"_value\"])\n\nstatus = from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"status\")\n  |> filter(fn: (r) => r._field == \"compressor\" or r._field == \"aux_heater_3kw\" or r._field == \"aux_heater_6kw\")\n  |> toFloat()\n  |> aggregateWindow(every: 1h, fn: mean, createEmpty: false)\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])\n  |> group()\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n\nheatpump = join.inner(\n  left: temps,\n  right: status,\n  on: (l, r) => l._time == r._time,\n  as: (l, r) => ({\n    _time: l._time,\n    _value: r.compressor * (1.77 + (l._value - 35.0) * 0.5 / 15.0)\n             + 3.0 * r.aux_heater_3kw + 6.0 * r.aux_heater_6kw,\n  }),\n)\n\nlights = from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"lights\" and r._field == \"is_on\")\n  |> toFloat()\n  |> aggregateWindow(every: 1h, fn: mean, createEmpty: false)\n  |> group(columns: [\"_time\"])\n  |> sum()\n  |> map(fn: (r) => ({_time: r._time, _value: r._value * float(v: ${watt_per_light}) / 1000.0}))\n  |> group()\n\nsauna = from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"ruuvi\" and r.sensor_name == \"Sauna\")\n  |> filter(fn: (r) => r._field == \"temperature\")\n  |> aggregateWindow(every: 1m, fn: mean, createEmpty: false)\n  |> derivative(unit: 1m, nonNegative: false)\n  |> map(fn: (r) => ({r with _value: if r._value > 0.05 then 1.0 else 0.0}))\n  |> aggregateWindow(every: 1h, fn: mean, createEmpty: false)\n  |> map(fn: (r) => ({_time: r._time, _value: r._value * 6.0}))\n  |> group()\n\nhvac = from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"ruuvi\" and (r.sensor_name == \"Keittio\" or r.sensor_name == \"Keittiö\"))\n  |> filter(fn: (r) => r._field == \"pressure\")\n  |> aggregateWindow(every: 1h, fn: mean, createEmpty: false)\n  |> map(fn: (r) => ({_time: r._time, _value: float(v: ${watt_fan}) / 1000.0}))\n  |> group()\n\nunion(tables: [heatpump, lights, sauna, hvac])\n  |> group()\n  |> sum(column: \"_value\")\n  |> map(fn: (r) => ({r with _field: \"total\"}))",
           "refId": "A"
         }
@@ -109,16 +128,30 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              {"color": "green", "value": null},
-              {"color": "orange", "value": 10},
-              {"color": "red", "value": 50}
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 10
+              },
+              {
+                "color": "red",
+                "value": 50
+              }
             ]
           },
           "unit": "currencyEUR"
         },
         "overrides": []
       },
-      "gridPos": {"h": 6, "w": 6, "x": 6, "y": 0},
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 6,
+        "y": 0
+      },
       "id": 2,
       "options": {
         "colorMode": "value",
@@ -127,7 +160,9 @@
         "orientation": "auto",
         "percentChangeColorMode": "standard",
         "reduceOptions": {
-          "calcs": ["sum"],
+          "calcs": [
+            "sum"
+          ],
           "fields": "",
           "values": false
         },
@@ -138,7 +173,10 @@
       "pluginVersion": "12.3.2",
       "targets": [
         {
-          "datasource": {"type": "influxdb", "uid": "influxdb"},
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
           "query": "import \"join\"\n\ntemps = from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"temperature\")\n  |> filter(fn: (r) => r._field == \"supply_temp\")\n  |> aggregateWindow(every: 1h, fn: mean, createEmpty: false)\n  |> keep(columns: [\"_time\", \"_value\"])\n\nstatus = from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"status\")\n  |> filter(fn: (r) => r._field == \"compressor\" or r._field == \"aux_heater_3kw\" or r._field == \"aux_heater_6kw\")\n  |> toFloat()\n  |> aggregateWindow(every: 1h, fn: mean, createEmpty: false)\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])\n  |> group()\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n\nheatpump = join.inner(\n  left: temps,\n  right: status,\n  on: (l, r) => l._time == r._time,\n  as: (l, r) => ({\n    _time: l._time,\n    _value: r.compressor * (1.77 + (l._value - 35.0) * 0.5 / 15.0)\n             + 3.0 * r.aux_heater_3kw + 6.0 * r.aux_heater_6kw,\n  }),\n)\n\nlights = from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"lights\" and r._field == \"is_on\")\n  |> toFloat()\n  |> aggregateWindow(every: 1h, fn: mean, createEmpty: false)\n  |> group(columns: [\"_time\"])\n  |> sum()\n  |> map(fn: (r) => ({_time: r._time, _value: r._value * float(v: ${watt_per_light}) / 1000.0}))\n  |> group()\n\nsauna = from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"ruuvi\" and r.sensor_name == \"Sauna\")\n  |> filter(fn: (r) => r._field == \"temperature\")\n  |> aggregateWindow(every: 1m, fn: mean, createEmpty: false)\n  |> derivative(unit: 1m, nonNegative: false)\n  |> map(fn: (r) => ({r with _value: if r._value > 0.05 then 1.0 else 0.0}))\n  |> aggregateWindow(every: 1h, fn: mean, createEmpty: false)\n  |> map(fn: (r) => ({_time: r._time, _value: r._value * 6.0}))\n  |> group()\n\nhvac = from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"ruuvi\" and (r.sensor_name == \"Keittio\" or r.sensor_name == \"Keittiö\"))\n  |> filter(fn: (r) => r._field == \"pressure\")\n  |> aggregateWindow(every: 1h, fn: mean, createEmpty: false)\n  |> map(fn: (r) => ({_time: r._time, _value: float(v: ${watt_fan}) / 1000.0}))\n  |> group()\n\nenergy = union(tables: [heatpump, lights, sauna, hvac])\n  |> group(columns: [\"_time\"])\n  |> sum(column: \"_value\")\n  |> group()\n\nprice = from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"electricity\" and r._field == \"price_with_tax\")\n  |> group()\n  |> aggregateWindow(every: 1h, fn: mean, createEmpty: false)\n  |> map(fn: (r) => ({_time: r._time, _value: r._value + 0.49 + 6.09}))\n  |> keep(columns: [\"_time\", \"_value\"])\n\njoin.inner(\n  left: energy,\n  right: price,\n  on: (l, r) => l._time == r._time,\n  as: (l, r) => ({_time: l._time, _value: l._value * r._value / 100.0}),\n)\n  |> group()\n  |> sum(column: \"_value\")\n  |> map(fn: (r) => ({r with _field: \"total_cost\"}))",
           "refId": "A"
         }
@@ -161,17 +199,34 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              {"color": "green", "value": null},
-              {"color": "yellow", "value": 10},
-              {"color": "orange", "value": 15},
-              {"color": "red", "value": 20}
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 10
+              },
+              {
+                "color": "orange",
+                "value": 15
+              },
+              {
+                "color": "red",
+                "value": 20
+              }
             ]
           },
           "unit": "c/kWh"
         },
         "overrides": []
       },
-      "gridPos": {"h": 6, "w": 6, "x": 12, "y": 0},
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 12,
+        "y": 0
+      },
       "id": 3,
       "options": {
         "colorMode": "value",
@@ -180,7 +235,9 @@
         "orientation": "auto",
         "percentChangeColorMode": "standard",
         "reduceOptions": {
-          "calcs": ["mean"],
+          "calcs": [
+            "mean"
+          ],
           "fields": "",
           "values": false
         },
@@ -191,7 +248,10 @@
       "pluginVersion": "12.3.2",
       "targets": [
         {
-          "datasource": {"type": "influxdb", "uid": "influxdb"},
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
           "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"electricity\" and r._field == \"price_with_tax\")\n  |> group()\n  |> aggregateWindow(every: 1h, fn: mean, createEmpty: false)\n  |> map(fn: (r) => ({r with _value: r._value + 0.49 + 6.09}))",
           "refId": "A"
         }
@@ -214,18 +274,29 @@
         },
         "overrides": []
       },
-      "gridPos": {"h": 6, "w": 6, "x": 18, "y": 0},
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 18,
+        "y": 0
+      },
       "id": 4,
       "options": {
-        "displayLabels": ["percent"],
+        "displayLabels": [
+          "percent"
+        ],
         "legend": {
           "displayMode": "list",
           "placement": "right",
-          "values": ["value"]
+          "values": [
+            "value"
+          ]
         },
         "pieType": "pie",
         "reduceOptions": {
-          "calcs": ["sum"],
+          "calcs": [
+            "sum"
+          ],
           "fields": "",
           "values": false
         },
@@ -237,7 +308,10 @@
       "pluginVersion": "12.3.2",
       "targets": [
         {
-          "datasource": {"type": "influxdb", "uid": "influxdb"},
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
           "query": "import \"join\"\n\ntemps = from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"temperature\")\n  |> filter(fn: (r) => r._field == \"supply_temp\")\n  |> aggregateWindow(every: 1h, fn: mean, createEmpty: false)\n  |> keep(columns: [\"_time\", \"_value\"])\n\nstatus = from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"status\")\n  |> filter(fn: (r) => r._field == \"compressor\" or r._field == \"aux_heater_3kw\" or r._field == \"aux_heater_6kw\")\n  |> toFloat()\n  |> aggregateWindow(every: 1h, fn: mean, createEmpty: false)\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])\n  |> group()\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n\nheatpump = join.inner(\n  left: temps,\n  right: status,\n  on: (l, r) => l._time == r._time,\n  as: (l, r) => ({\n    _time: l._time,\n    _value: r.compressor * (1.77 + (l._value - 35.0) * 0.5 / 15.0)\n             + 3.0 * r.aux_heater_3kw + 6.0 * r.aux_heater_6kw,\n    _field: \"Lampopumppu\",\n  }),\n)\n\nlights = from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"lights\" and r._field == \"is_on\")\n  |> toFloat()\n  |> aggregateWindow(every: 1h, fn: mean, createEmpty: false)\n  |> group(columns: [\"_time\"])\n  |> sum()\n  |> map(fn: (r) => ({_time: r._time, _value: r._value * float(v: ${watt_per_light}) / 1000.0, _field: \"Valaistus\"}))\n  |> group()\n\nsauna = from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"ruuvi\" and r.sensor_name == \"Sauna\")\n  |> filter(fn: (r) => r._field == \"temperature\")\n  |> aggregateWindow(every: 1m, fn: mean, createEmpty: false)\n  |> derivative(unit: 1m, nonNegative: false)\n  |> map(fn: (r) => ({r with _value: if r._value > 0.05 then 1.0 else 0.0}))\n  |> aggregateWindow(every: 1h, fn: mean, createEmpty: false)\n  |> map(fn: (r) => ({_time: r._time, _value: r._value * 6.0, _field: \"Sauna\"}))\n  |> group()\n\nhvac = from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"ruuvi\" and (r.sensor_name == \"Keittio\" or r.sensor_name == \"Keittiö\"))\n  |> filter(fn: (r) => r._field == \"pressure\")\n  |> aggregateWindow(every: 1h, fn: mean, createEmpty: false)\n  |> map(fn: (r) => ({_time: r._time, _value: float(v: ${watt_fan}) / 1000.0, _field: \"IV-kone\"}))\n  |> group()\n\nunion(tables: [heatpump, lights, sauna, hvac])\n  |> group(columns: [\"_field\"])\n  |> sum(column: \"_value\")\n  |> group()\n  |> map(fn: (r) => ({_time: now(), _value: r._value, _field: r._field}))\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> drop(columns: [\"_time\"])",
           "refId": "A"
         }
@@ -266,24 +340,42 @@
             "drawStyle": "bars",
             "fillOpacity": 80,
             "gradientMode": "none",
-            "hideFrom": {"legend": false, "tooltip": false, "viz": false},
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
             "lineWidth": 0,
             "pointSize": 5,
-            "scaleDistribution": {"type": "linear"},
+            "scaleDistribution": {
+              "type": "linear"
+            },
             "showPoints": "never",
-            "stacking": {"group": "A", "mode": "normal"},
-            "thresholdsStyle": {"mode": "off"}
+            "stacking": {
+              "group": "A",
+              "mode": "normal"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
           },
           "mappings": [],
           "unit": "kwatt"
         },
         "overrides": []
       },
-      "gridPos": {"h": 9, "w": 12, "x": 0, "y": 6},
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 6
+      },
       "id": 5,
       "options": {
         "legend": {
-          "calcs": ["mean"],
+          "calcs": [
+            "mean"
+          ],
           "displayMode": "list",
           "placement": "bottom",
           "showLegend": true
@@ -296,7 +388,10 @@
       "pluginVersion": "12.3.2",
       "targets": [
         {
-          "datasource": {"type": "influxdb", "uid": "influxdb"},
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
           "query": "import \"join\"\n\ntemps = from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"temperature\")\n  |> filter(fn: (r) => r._field == \"supply_temp\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> keep(columns: [\"_time\", \"_value\"])\n\nstatus = from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"status\")\n  |> filter(fn: (r) => r._field == \"compressor\" or r._field == \"aux_heater_3kw\" or r._field == \"aux_heater_6kw\")\n  |> toFloat()\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])\n  |> group()\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n\nheatpump = join.inner(\n  left: temps,\n  right: status,\n  on: (l, r) => l._time == r._time,\n  as: (l, r) => ({\n    _time: l._time,\n    _value: r.compressor * (1.77 + (l._value - 35.0) * 0.5 / 15.0)\n             + 3.0 * r.aux_heater_3kw + 6.0 * r.aux_heater_6kw,\n    _field: \"Lampopumppu\",\n  }),\n)\n\nlights = from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"lights\" and r._field == \"is_on\")\n  |> toFloat()\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> group(columns: [\"_time\"])\n  |> sum()\n  |> map(fn: (r) => ({_time: r._time, _value: r._value * float(v: ${watt_per_light}) / 1000.0, _field: \"Valaistus\"}))\n  |> group()\n\nsauna = from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"ruuvi\" and r.sensor_name == \"Sauna\")\n  |> filter(fn: (r) => r._field == \"temperature\")\n  |> aggregateWindow(every: 1m, fn: mean, createEmpty: false)\n  |> derivative(unit: 1m, nonNegative: false)\n  |> map(fn: (r) => ({r with _value: if r._value > 0.05 then 1.0 else 0.0}))\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> map(fn: (r) => ({_time: r._time, _value: r._value * 6.0, _field: \"Sauna\"}))\n  |> group()\n\nhvac = from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"ruuvi\" and (r.sensor_name == \"Keittio\" or r.sensor_name == \"Keittiö\"))\n  |> filter(fn: (r) => r._field == \"pressure\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> map(fn: (r) => ({_time: r._time, _value: float(v: ${watt_fan}) / 1000.0, _field: \"IV-kone\"}))\n  |> group()\n\nunion(tables: [heatpump, lights, sauna, hvac])\n  |> group(columns: [\"_field\"])",
           "refId": "A"
         }
@@ -325,13 +420,24 @@
             "drawStyle": "bars",
             "fillOpacity": 80,
             "gradientMode": "none",
-            "hideFrom": {"legend": false, "tooltip": false, "viz": false},
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
             "lineWidth": 0,
             "pointSize": 5,
-            "scaleDistribution": {"type": "linear"},
+            "scaleDistribution": {
+              "type": "linear"
+            },
             "showPoints": "never",
-            "stacking": {"group": "A", "mode": "normal"},
-            "thresholdsStyle": {"mode": "off"}
+            "stacking": {
+              "group": "A",
+              "mode": "normal"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
           },
           "decimals": 2,
           "mappings": [],
@@ -339,25 +445,62 @@
         },
         "overrides": [
           {
-            "matcher": {"id": "byFrameRefID", "options": "B"},
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "B"
+            },
             "properties": [
-              {"id": "custom.axisPlacement", "value": "right"},
-              {"id": "unit", "value": "none"},
-              {"id": "custom.drawStyle", "value": "line"},
-              {"id": "custom.lineInterpolation", "value": "stepAfter"},
-              {"id": "custom.fillOpacity", "value": 0},
-              {"id": "custom.lineWidth", "value": 2},
-              {"id": "color", "value": {"fixedColor": "light-blue", "mode": "fixed"}},
-              {"id": "displayName", "value": "Hinta (c/kWh)"}
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              },
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "custom.drawStyle",
+                "value": "line"
+              },
+              {
+                "id": "custom.lineInterpolation",
+                "value": "stepAfter"
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 2
+              },
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "light-blue",
+                  "mode": "fixed"
+                }
+              },
+              {
+                "id": "displayName",
+                "value": "Hinta (c/kWh)"
+              }
             ]
           }
         ]
       },
-      "gridPos": {"h": 9, "w": 12, "x": 12, "y": 6},
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 6
+      },
       "id": 6,
       "options": {
         "legend": {
-          "calcs": ["mean"],
+          "calcs": [
+            "mean"
+          ],
           "displayMode": "list",
           "placement": "bottom",
           "showLegend": true
@@ -370,12 +513,18 @@
       "pluginVersion": "12.3.2",
       "targets": [
         {
-          "datasource": {"type": "influxdb", "uid": "influxdb"},
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
           "query": "import \"join\"\n\ntemps = from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"temperature\")\n  |> filter(fn: (r) => r._field == \"supply_temp\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> keep(columns: [\"_time\", \"_value\"])\n\nstatus = from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"status\")\n  |> filter(fn: (r) => r._field == \"compressor\" or r._field == \"aux_heater_3kw\" or r._field == \"aux_heater_6kw\")\n  |> toFloat()\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])\n  |> group()\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n\nheatpump = join.inner(\n  left: temps,\n  right: status,\n  on: (l, r) => l._time == r._time,\n  as: (l, r) => ({\n    _time: l._time,\n    _value: r.compressor * (1.77 + (l._value - 35.0) * 0.5 / 15.0)\n             + 3.0 * r.aux_heater_3kw + 6.0 * r.aux_heater_6kw,\n    _field: \"Lampopumppu\",\n  }),\n)\n\nlights = from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"lights\" and r._field == \"is_on\")\n  |> toFloat()\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> group(columns: [\"_time\"])\n  |> sum()\n  |> map(fn: (r) => ({_time: r._time, _value: r._value * float(v: ${watt_per_light}) / 1000.0, _field: \"Valaistus\"}))\n  |> group()\n\nsauna = from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"ruuvi\" and r.sensor_name == \"Sauna\")\n  |> filter(fn: (r) => r._field == \"temperature\")\n  |> aggregateWindow(every: 1m, fn: mean, createEmpty: false)\n  |> derivative(unit: 1m, nonNegative: false)\n  |> map(fn: (r) => ({r with _value: if r._value > 0.05 then 1.0 else 0.0}))\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> map(fn: (r) => ({_time: r._time, _value: r._value * 6.0, _field: \"Sauna\"}))\n  |> group()\n\nhvac = from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"ruuvi\" and (r.sensor_name == \"Keittio\" or r.sensor_name == \"Keittiö\"))\n  |> filter(fn: (r) => r._field == \"pressure\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> map(fn: (r) => ({_time: r._time, _value: float(v: ${watt_fan}) / 1000.0, _field: \"IV-kone\"}))\n  |> group()\n\nenergy = union(tables: [heatpump, lights, sauna, hvac])\n  |> group()\n\nprice = from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"electricity\" and r._field == \"price_with_tax\")\n  |> group()\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> map(fn: (r) => ({_time: r._time, _value: r._value + 0.49 + 6.09}))\n  |> keep(columns: [\"_time\", \"_value\"])\n\njoin.inner(\n  left: energy,\n  right: price,\n  on: (l, r) => l._time == r._time,\n  as: (l, r) => ({_time: l._time, _value: l._value * r._value / 100.0, _field: l._field}),\n)\n  |> group(columns: [\"_field\"])",
           "refId": "A"
         },
         {
-          "datasource": {"type": "influxdb", "uid": "influxdb"},
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
           "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"electricity\" and r._field == \"price_with_tax\")\n  |> group()\n  |> aggregateWindow(every: 15m, fn: mean, createEmpty: false)\n  |> map(fn: (r) => ({_time: r._time, _value: r._value + 0.49 + 6.09, _field: \"Sahkohinta\"}))",
           "refId": "B"
         }
@@ -404,16 +553,27 @@
             "drawStyle": "line",
             "fillOpacity": 20,
             "gradientMode": "none",
-            "hideFrom": {"legend": false, "tooltip": false, "viz": false},
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
             "insertNulls": false,
             "lineInterpolation": "stepAfter",
             "lineWidth": 2,
             "pointSize": 5,
-            "scaleDistribution": {"type": "linear"},
+            "scaleDistribution": {
+              "type": "linear"
+            },
             "showPoints": "never",
             "spanNulls": false,
-            "stacking": {"group": "A", "mode": "none"},
-            "thresholdsStyle": {"mode": "off"}
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
           },
           "decimals": 2,
           "mappings": [],
@@ -421,20 +581,45 @@
         },
         "overrides": [
           {
-            "matcher": {"id": "byFrameRefID", "options": "A"},
-            "properties": [{"id": "displayName", "value": "Kokonaishinta"}]
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "A"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Kokonaishinta"
+              }
+            ]
           },
           {
-            "matcher": {"id": "byFrameRefID", "options": "B"},
-            "properties": [{"id": "displayName", "value": "Spot + ALV"}]
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "B"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Spot + ALV"
+              }
+            ]
           }
         ]
       },
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 15},
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 15
+      },
       "id": 7,
       "options": {
         "legend": {
-          "calcs": ["mean", "min", "max"],
+          "calcs": [
+            "mean",
+            "min",
+            "max"
+          ],
           "displayMode": "list",
           "placement": "bottom",
           "showLegend": true
@@ -447,12 +632,18 @@
       "pluginVersion": "12.3.2",
       "targets": [
         {
-          "datasource": {"type": "influxdb", "uid": "influxdb"},
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
           "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"electricity\" and r._field == \"price_with_tax\")\n  |> group()\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> map(fn: (r) => ({r with _value: r._value + 0.49 + 6.09}))\n  |> set(key: \"_field\", value: \"Kokonaishinta\")",
           "refId": "A"
         },
         {
-          "datasource": {"type": "influxdb", "uid": "influxdb"},
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
           "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"electricity\" and r._field == \"price_with_tax\")\n  |> group()\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> set(key: \"_field\", value: \"Spot + ALV\")",
           "refId": "B"
         }
@@ -475,52 +666,123 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              {"color": "green", "value": null}
+              {
+                "color": "green",
+                "value": null
+              }
             ]
           },
           "custom": {
             "align": "auto",
-            "cellOptions": {"type": "auto"},
+            "cellOptions": {
+              "type": "auto"
+            },
             "inspect": false
           }
         },
         "overrides": [
           {
-            "matcher": {"id": "byName", "options": "Kulutus (kWh)"},
-            "properties": [{"id": "unit", "value": "kwatth"}, {"id": "decimals", "value": 1}]
+            "matcher": {
+              "id": "byName",
+              "options": "Kulutus (kWh)"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "kwatth"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              }
+            ]
           },
           {
-            "matcher": {"id": "byName", "options": "Kustannus (EUR)"},
-            "properties": [{"id": "unit", "value": "currencyEUR"}, {"id": "decimals", "value": 2}]
+            "matcher": {
+              "id": "byName",
+              "options": "Kustannus (EUR)"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "currencyEUR"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
           },
           {
-            "matcher": {"id": "byName", "options": "Osuus (%)"},
-            "properties": [{"id": "unit", "value": "percent"}, {"id": "decimals", "value": 1}]
+            "matcher": {
+              "id": "byName",
+              "options": "Osuus (%)"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              }
+            ]
           },
           {
-            "matcher": {"id": "byName", "options": "Keskiteho (kW)"},
-            "properties": [{"id": "unit", "value": "kwatt"}, {"id": "decimals", "value": 2}]
+            "matcher": {
+              "id": "byName",
+              "options": "Keskiteho (kW)"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "kwatt"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
           }
         ]
       },
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 15},
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 15
+      },
       "id": 8,
       "options": {
         "showHeader": true,
         "cellHeight": "sm",
         "footer": {
           "show": true,
-          "reducer": ["sum"],
-          "fields": ["Kulutus (kWh)", "Kustannus (EUR)"],
+          "reducer": [
+            "sum"
+          ],
+          "fields": [
+            "Kulutus (kWh)",
+            "Kustannus (EUR)"
+          ],
           "countRows": false,
           "enablePagination": false
         },
-        "sortBy": [{"displayName": "Kulutus (kWh)", "desc": true}]
+        "sortBy": [
+          {
+            "displayName": "Kulutus (kWh)",
+            "desc": true
+          }
+        ]
       },
       "pluginVersion": "12.3.2",
       "targets": [
         {
-          "datasource": {"type": "influxdb", "uid": "influxdb"},
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
           "query": "import \"join\"\nimport \"math\"\n\ntemps = from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"temperature\")\n  |> filter(fn: (r) => r._field == \"supply_temp\")\n  |> aggregateWindow(every: 1h, fn: mean, createEmpty: false)\n  |> keep(columns: [\"_time\", \"_value\"])\n\nstatus = from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"status\")\n  |> filter(fn: (r) => r._field == \"compressor\" or r._field == \"aux_heater_3kw\" or r._field == \"aux_heater_6kw\")\n  |> toFloat()\n  |> aggregateWindow(every: 1h, fn: mean, createEmpty: false)\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])\n  |> group()\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n\nheatpump = join.inner(\n  left: temps,\n  right: status,\n  on: (l, r) => l._time == r._time,\n  as: (l, r) => ({\n    _time: l._time,\n    _value: r.compressor * (1.77 + (l._value - 35.0) * 0.5 / 15.0)\n             + 3.0 * r.aux_heater_3kw + 6.0 * r.aux_heater_6kw,\n    _field: \"Lampopumppu\",\n  }),\n)\n\nlights = from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"lights\" and r._field == \"is_on\")\n  |> toFloat()\n  |> aggregateWindow(every: 1h, fn: mean, createEmpty: false)\n  |> group(columns: [\"_time\"])\n  |> sum()\n  |> map(fn: (r) => ({_time: r._time, _value: r._value * float(v: ${watt_per_light}) / 1000.0, _field: \"Valaistus\"}))\n  |> group()\n\nsauna = from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"ruuvi\" and r.sensor_name == \"Sauna\")\n  |> filter(fn: (r) => r._field == \"temperature\")\n  |> aggregateWindow(every: 1m, fn: mean, createEmpty: false)\n  |> derivative(unit: 1m, nonNegative: false)\n  |> map(fn: (r) => ({r with _value: if r._value > 0.05 then 1.0 else 0.0}))\n  |> aggregateWindow(every: 1h, fn: mean, createEmpty: false)\n  |> map(fn: (r) => ({_time: r._time, _value: r._value * 6.0, _field: \"Sauna\"}))\n  |> group()\n\nhvac = from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"ruuvi\" and (r.sensor_name == \"Keittio\" or r.sensor_name == \"Keittiö\"))\n  |> filter(fn: (r) => r._field == \"pressure\")\n  |> aggregateWindow(every: 1h, fn: mean, createEmpty: false)\n  |> map(fn: (r) => ({_time: r._time, _value: float(v: ${watt_fan}) / 1000.0, _field: \"IV-kone\"}))\n  |> group()\n\nenergy = union(tables: [heatpump, lights, sauna, hvac])\n\nprice = from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"electricity\" and r._field == \"price_with_tax\")\n  |> group()\n  |> aggregateWindow(every: 1h, fn: mean, createEmpty: false)\n  |> map(fn: (r) => ({_time: r._time, _value: r._value + 0.49 + 6.09}))\n  |> keep(columns: [\"_time\", \"_value\"])\n\ncost = join.inner(\n  left: energy,\n  right: price,\n  on: (l, r) => l._time == r._time,\n  as: (l, r) => ({_time: l._time, cost: l._value * r._value / 100.0, energy: l._value, _field: l._field}),\n)\n\ntotal_energy = cost\n  |> group()\n  |> sum(column: \"energy\")\n  |> findColumn(fn: (key) => true, column: \"energy\")\n\ncost\n  |> group(columns: [\"_field\"])\n  |> reduce(fn: (r, accumulator) => ({\n    kwh: accumulator.kwh + r.energy,\n    cost: accumulator.cost + r.cost,\n    count: accumulator.count + 1.0,\n  }), identity: {kwh: 0.0, cost: 0.0, count: 0.0})\n  |> map(fn: (r) => ({\n    Kuluttaja: r._field,\n    \"Kulutus (kWh)\": r.kwh,\n    \"Keskiteho (kW)\": r.kwh / r.count,\n    \"Kustannus (EUR)\": r.cost,\n    \"Osuus (%)\": if total_energy[0] > 0.0 then r.kwh / total_energy[0] * 100.0 else 0.0,\n  }))\n  |> group()",
           "refId": "A"
         }
@@ -551,10 +813,26 @@
         "multi": false,
         "name": "watt_per_light",
         "options": [
-          {"selected": false, "text": "5", "value": "5"},
-          {"selected": true, "text": "10", "value": "10"},
-          {"selected": false, "text": "15", "value": "15"},
-          {"selected": false, "text": "20", "value": "20"}
+          {
+            "selected": false,
+            "text": "5",
+            "value": "5"
+          },
+          {
+            "selected": true,
+            "text": "10",
+            "value": "10"
+          },
+          {
+            "selected": false,
+            "text": "15",
+            "value": "15"
+          },
+          {
+            "selected": false,
+            "text": "20",
+            "value": "20"
+          }
         ],
         "query": "5,10,15,20",
         "skipUrlSync": false,
@@ -573,10 +851,26 @@
         "multi": false,
         "name": "watt_fan",
         "options": [
-          {"selected": false, "text": "200", "value": "200"},
-          {"selected": true, "text": "300", "value": "300"},
-          {"selected": false, "text": "400", "value": "400"},
-          {"selected": false, "text": "500", "value": "500"}
+          {
+            "selected": false,
+            "text": "200",
+            "value": "200"
+          },
+          {
+            "selected": true,
+            "text": "300",
+            "value": "300"
+          },
+          {
+            "selected": false,
+            "text": "400",
+            "value": "400"
+          },
+          {
+            "selected": false,
+            "text": "500",
+            "value": "500"
+          }
         ],
         "query": "200,300,400,500",
         "skipUrlSync": false,

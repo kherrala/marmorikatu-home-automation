@@ -22,54 +22,6 @@
   "links": [
     {
       "asDropdown": false,
-      "icon": "dashboard",
-      "includeVars": true,
-      "keepTime": true,
-      "tags": [],
-      "targetBlank": false,
-      "title": "Huoneet",
-      "tooltip": "View room temperatures with floor plans",
-      "type": "link",
-      "url": "/d/room-temperatures/huonelampo"
-    },
-    {
-      "asDropdown": false,
-      "icon": "bolt",
-      "includeVars": true,
-      "keepTime": true,
-      "tags": [],
-      "targetBlank": false,
-      "title": "HVAC",
-      "tooltip": "View HVAC ventilation and energy details",
-      "type": "link",
-      "url": "/d/wago-hvac/hvac"
-    },
-    {
-      "asDropdown": false,
-      "icon": "dashboard",
-      "includeVars": true,
-      "keepTime": true,
-      "tags": [],
-      "targetBlank": false,
-      "title": "Ruuvi",
-      "tooltip": "View Ruuvi Bluetooth sensor data",
-      "type": "link",
-      "url": "/d/ruuvi-sensors/ruuvi-sensors"
-    },
-    {
-      "asDropdown": false,
-      "icon": "dashboard",
-      "includeVars": true,
-      "keepTime": true,
-      "tags": [],
-      "targetBlank": false,
-      "title": "Valot",
-      "tooltip": "View light switch status by floor",
-      "type": "link",
-      "url": "/d/wago-lights/light-switch-status"
-    },
-    {
-      "asDropdown": false,
       "icon": "bolt",
       "includeVars": true,
       "keepTime": true,
@@ -640,18 +592,56 @@
       },
       "fieldConfig": {
         "defaults": {
-          "color": {"mode": "thresholds"},
+          "color": {
+            "mode": "thresholds"
+          },
           "mappings": [
-            {"options": {"0": {"color": "green", "index": 0, "text": "Halpa"}}, "type": "value"},
-            {"options": {"1": {"color": "yellow", "index": 1, "text": "Normaali"}}, "type": "value"},
-            {"options": {"2": {"color": "red", "index": 2, "text": "Kallis"}}, "type": "value"}
+            {
+              "options": {
+                "0": {
+                  "color": "green",
+                  "index": 0,
+                  "text": "Halpa"
+                }
+              },
+              "type": "value"
+            },
+            {
+              "options": {
+                "1": {
+                  "color": "yellow",
+                  "index": 1,
+                  "text": "Normaali"
+                }
+              },
+              "type": "value"
+            },
+            {
+              "options": {
+                "2": {
+                  "color": "red",
+                  "index": 2,
+                  "text": "Kallis"
+                }
+              },
+              "type": "value"
+            }
           ],
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              {"color": "green", "value": null},
-              {"color": "yellow", "value": 1},
-              {"color": "red", "value": 2}
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 2
+              }
             ]
           },
           "unit": "none"
@@ -1548,16 +1538,34 @@
         },
         "overrides": [
           {
-            "matcher": {"id": "byFrameRefID", "options": "A"},
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "A"
+            },
             "properties": [
-              {"id": "displayName", "value": "Mennyt"},
-              {"id": "color", "value": {"fixedColor": "light-blue", "mode": "fixed"}}
+              {
+                "id": "displayName",
+                "value": "Mennyt"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "light-blue",
+                  "mode": "fixed"
+                }
+              }
             ]
           },
           {
-            "matcher": {"id": "byFrameRefID", "options": "B"},
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "B"
+            },
             "properties": [
-              {"id": "displayName", "value": "Tuleva"}
+              {
+                "id": "displayName",
+                "value": "Tuleva"
+              }
             ]
           }
         ]

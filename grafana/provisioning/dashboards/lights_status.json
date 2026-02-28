@@ -20,42 +20,6 @@
     },
     {
       "asDropdown": false,
-      "icon": "dashboard",
-      "includeVars": true,
-      "keepTime": true,
-      "tags": [],
-      "targetBlank": false,
-      "title": "Huoneet",
-      "tooltip": "View room temperatures with floor plans",
-      "type": "link",
-      "url": "/d/room-temperatures/huonelampo"
-    },
-    {
-      "asDropdown": false,
-      "icon": "dashboard",
-      "includeVars": true,
-      "keepTime": true,
-      "tags": [],
-      "targetBlank": false,
-      "title": "HVAC",
-      "tooltip": "View HVAC ventilation dashboard",
-      "type": "link",
-      "url": "/d/wago-hvac/hvac"
-    },
-    {
-      "asDropdown": false,
-      "icon": "dashboard",
-      "includeVars": true,
-      "keepTime": true,
-      "tags": [],
-      "targetBlank": false,
-      "title": "Ruuvi",
-      "tooltip": "View Ruuvi Bluetooth sensor data",
-      "type": "link",
-      "url": "/d/ruuvi-sensors/ruuvi-sensors"
-    },
-    {
-      "asDropdown": false,
       "icon": "bolt",
       "includeVars": true,
       "keepTime": true,
@@ -77,6 +41,18 @@
       "tooltip": "Energy cost analysis",
       "type": "link",
       "url": "/d/energy-cost/energiakustannukset"
+    },
+    {
+      "asDropdown": false,
+      "icon": "bolt",
+      "includeVars": true,
+      "keepTime": true,
+      "tags": [],
+      "targetBlank": false,
+      "title": "Lämmitys",
+      "tooltip": "Heating control and optimization",
+      "type": "link",
+      "url": "/d/heating-control/lammityksen-ohjaus"
     }
   ],
   "liveNow": false,

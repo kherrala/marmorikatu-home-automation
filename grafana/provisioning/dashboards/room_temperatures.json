@@ -39,42 +39,6 @@
       "keepTime": true,
       "tags": [],
       "targetBlank": false,
-      "title": "HVAC",
-      "tooltip": "View HVAC ventilation and energy details",
-      "type": "link",
-      "url": "/d/wago-hvac/hvac"
-    },
-    {
-      "asDropdown": false,
-      "icon": "dashboard",
-      "includeVars": true,
-      "keepTime": true,
-      "tags": [],
-      "targetBlank": false,
-      "title": "Ruuvi",
-      "tooltip": "View Ruuvi Bluetooth sensor data",
-      "type": "link",
-      "url": "/d/ruuvi-sensors/ruuvi-sensors"
-    },
-    {
-      "asDropdown": false,
-      "icon": "dashboard",
-      "includeVars": true,
-      "keepTime": true,
-      "tags": [],
-      "targetBlank": false,
-      "title": "Valot",
-      "tooltip": "View light switch status by floor",
-      "type": "link",
-      "url": "/d/wago-lights/light-switch-status"
-    },
-    {
-      "asDropdown": false,
-      "icon": "bolt",
-      "includeVars": true,
-      "keepTime": true,
-      "tags": [],
-      "targetBlank": false,
       "title": "MLP",
       "tooltip": "Thermia heat pump details",
       "type": "link",
@@ -91,6 +55,18 @@
       "tooltip": "Energy cost analysis",
       "type": "link",
       "url": "/d/energy-cost/energiakustannukset"
+    },
+    {
+      "asDropdown": false,
+      "icon": "bolt",
+      "includeVars": true,
+      "keepTime": true,
+      "tags": [],
+      "targetBlank": false,
+      "title": "Lämmitys",
+      "tooltip": "Heating control and optimization",
+      "type": "link",
+      "url": "/d/heating-control/lammityksen-ohjaus"
     }
   ],
   "panels": [
