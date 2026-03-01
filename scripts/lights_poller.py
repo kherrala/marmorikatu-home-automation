@@ -25,33 +25,27 @@ INFLUXDB_TOKEN = os.environ.get("INFLUXDB_TOKEN", "wago-secret-token")
 INFLUXDB_ORG = os.environ.get("INFLUXDB_ORG", "wago")
 INFLUXDB_BUCKET = os.environ.get("INFLUXDB_BUCKET", "building_automation")
 
-# Floor classification based on light ID patterns
+# Floor classification based on physical light IDs returned by the API.
 # Floor 0 = Basement, Floor 1 = Ground floor, Floor 2 = Upstairs
+# Verify these against the actual /api/lights response and update as needed.
 FLOOR_MAPPING = {
     # Basement (kellari)
     "tekninen-tila": 0,
     "kellari-wc": 0,
-    "kellari-eteinen-1": 0,
-    "kellari-eteinen-2": 0,
-    "kellari-1": 0,
-    "kellari-2": 0,
+    "kellari-eteinen": 0,
+    "kellari": 0,
+    "sauna": 0,
+    "sauna-laude-ledi": 0,
     # Ground floor (alakerta)
-    "kylpyhuone-1": 1,
-    "kylpyhuone-2": 1,
-    "wc-alakerta-1": 1,
-    "wc-alakerta-2": 1,
-    "khh-1": 1,
-    "khh-2": 1,
+    "kylpyhuone": 1,
+    "wc-alakerta": 1,
+    "khh": 1,
     "khh-vaatehuone": 1,
-    "keittio-1": 1,
-    "keittio-2": 1,
-    "tuulikaappi-1": 1,
-    "tuulikaappi-2": 1,
+    "keittio": 1,
+    "tuulikaappi": 1,
     "tuulikaappi-vaatehuone": 1,
-    "mh-alakerta-1": 1,
-    "mh-alakerta-2": 1,
-    "eteinen-1": 1,
-    "eteinen-2": 1,
+    "mh-alakerta": 1,
+    "eteinen": 1,
     "saareke-1": 1,
     "saareke-2": 1,
     "saareke-3": 1,
@@ -60,25 +54,17 @@ FLOOR_MAPPING = {
     "saareke-6": 1,
     "saareke-7": 1,
     "saareke-8": 1,
-    "autokatos-1": 1,
-    "autokatos-2": 1,
+    "autokatos": 1,
     "ulkovarasto": 1,
     # Upstairs (yläkerta)
-    "porras-ak-1": 2,
-    "porras-ak-2": 2,
-    "mh-1-1": 2,
-    "mh-1-2": 2,
+    "porras-ak": 2,
+    "mh-1": 2,
     "mh-1-vaatehuone": 2,
-    "kylpyhuone-yk-1": 2,
-    "kylpyhuone-yk-2": 2,
-    "porras-yk-1": 2,
-    "porras-yk-2": 2,
-    "aula-yk-1": 2,
-    "aula-yk-2": 2,
-    "mh2-1": 2,
-    "mh2-2": 2,
-    "mh3-1": 2,
-    "mh3-2": 2,
+    "kylpyhuone-yk": 2,
+    "porras-yk": 2,
+    "aula-yk": 2,
+    "mh2": 2,
+    "mh3": 2,
 }
 
 # Global state
@@ -110,38 +96,47 @@ def poll_lights() -> list:
         return []
 
 
+def parse_polled_at(polled_at_str: str | None) -> datetime:
+    """Parse polledAt ISO8601 timestamp from API, fall back to current time."""
+    if polled_at_str:
+        try:
+            return datetime.fromisoformat(polled_at_str.replace("Z", "+00:00"))
+        except ValueError:
+            pass
+    return datetime.now(timezone.utc)
+
+
 def process_light(light: dict) -> list:
     """Process a single light and return InfluxDB points."""
     points = []
     light_id = light.get("id", "unknown")
     name = light.get("name", light_id)
     floor = get_floor(light_id)
+    timestamp = parse_polled_at(light.get("polledAt"))
 
-    # Primary switch status
+    # Primary light status
     is_on = light.get("isOn")
     if is_on is not None:
-        first_press = light.get("firstPress", name)
         point = Point("lights") \
             .tag("light_id", light_id) \
-            .tag("light_name", first_press) \
+            .tag("light_name", name) \
             .tag("floor", str(floor)) \
             .tag("floor_name", get_floor_name(floor)) \
             .tag("switch_type", "primary") \
             .field("is_on", 1 if is_on else 0) \
-            .time(datetime.now(timezone.utc), WritePrecision.S)
+            .time(timestamp, WritePrecision.S)
         points.append(point)
 
-    # Secondary switch status (for dual-function switches)
+    # Secondary light status (for dual-function lights)
     if light.get("hasDualFunction") and light.get("isOn2") is not None:
-        second_press = light.get("secondPress", f"{name} (2)")
         point = Point("lights") \
             .tag("light_id", f"{light_id}-2") \
-            .tag("light_name", second_press) \
+            .tag("light_name", f"{name} (2)") \
             .tag("floor", str(floor)) \
             .tag("floor_name", get_floor_name(floor)) \
             .tag("switch_type", "secondary") \
             .field("is_on", 1 if light["isOn2"] else 0) \
-            .time(datetime.now(timezone.utc), WritePrecision.S)
+            .time(timestamp, WritePrecision.S)
         points.append(point)
 
     return points
