@@ -235,3 +235,4 @@ Environment:
 - [grafana-dashboards.md](grafana-dashboards.md) — Dashboard inventory, conventions, and Grafana configuration
 - [mcp-server.md](mcp-server.md) — MCP server tools, endpoints, and Claude Desktop setup
 - [development.md](development.md) — Setup, service management, and troubleshooting
+- [backup-recovery.md](backup-recovery.md) — Backup schedule, manual backup trigger, and recovery procedures
