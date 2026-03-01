@@ -1612,6 +1612,7 @@
           "mode": "single",
           "sort": "none"
         },
+        "xField": "Time",
         "xTickLabelRotation": 0,
         "xTickLabelSpacing": 100
       },
