@@ -25,47 +25,6 @@ INFLUXDB_TOKEN = os.environ.get("INFLUXDB_TOKEN", "wago-secret-token")
 INFLUXDB_ORG = os.environ.get("INFLUXDB_ORG", "wago")
 INFLUXDB_BUCKET = os.environ.get("INFLUXDB_BUCKET", "building_automation")
 
-# Floor classification based on physical light IDs returned by the API.
-# Floor 0 = Basement, Floor 1 = Ground floor, Floor 2 = Upstairs
-# Verify these against the actual /api/lights response and update as needed.
-FLOOR_MAPPING = {
-    # Basement (kellari)
-    "tekninen-tila": 0,
-    "kellari-wc": 0,
-    "kellari-eteinen": 0,
-    "kellari": 0,
-    "sauna": 0,
-    "sauna-laude-ledi": 0,
-    # Ground floor (alakerta)
-    "kylpyhuone": 1,
-    "wc-alakerta": 1,
-    "khh": 1,
-    "khh-vaatehuone": 1,
-    "keittio": 1,
-    "tuulikaappi": 1,
-    "tuulikaappi-vaatehuone": 1,
-    "mh-alakerta": 1,
-    "eteinen": 1,
-    "saareke-1": 1,
-    "saareke-2": 1,
-    "saareke-3": 1,
-    "saareke-4": 1,
-    "saareke-5": 1,
-    "saareke-6": 1,
-    "saareke-7": 1,
-    "saareke-8": 1,
-    "autokatos": 1,
-    "ulkovarasto": 1,
-    # Upstairs (yläkerta)
-    "porras-ak": 2,
-    "mh-1": 2,
-    "mh-1-vaatehuone": 2,
-    "kylpyhuone-yk": 2,
-    "porras-yk": 2,
-    "aula-yk": 2,
-    "mh2": 2,
-    "mh3": 2,
-}
 
 # Global state
 influx_client = None
@@ -73,15 +32,10 @@ write_api = None
 running = True
 
 
-def get_floor(light_id: str) -> int:
-    """Get floor number for a light ID. Returns 1 (ground) if unknown."""
-    return FLOOR_MAPPING.get(light_id, 1)
-
-
-def get_floor_name(floor: int) -> str:
+def get_floor_name(floor: int | None) -> str:
     """Get human-readable floor name."""
     names = {0: "Kellari", 1: "Alakerta", 2: "Yläkerta"}
-    return names.get(floor, "Tuntematon")
+    return names.get(floor, "Muu")
 
 
 def poll_lights() -> list:
@@ -111,7 +65,8 @@ def process_light(light: dict) -> list:
     points = []
     light_id = light.get("id", "unknown")
     name = light.get("name", light_id)
-    floor = get_floor(light_id)
+    floor = light.get("floor")  # int or None (outdoor/unclassified lights)
+    floor_tag = str(floor) if floor is not None else ""
     timestamp = parse_polled_at(light.get("polledAt"))
 
     # Primary light status
@@ -120,7 +75,7 @@ def process_light(light: dict) -> list:
         point = Point("lights") \
             .tag("light_id", light_id) \
             .tag("light_name", name) \
-            .tag("floor", str(floor)) \
+            .tag("floor", floor_tag) \
             .tag("floor_name", get_floor_name(floor)) \
             .tag("switch_type", "primary") \
             .field("is_on", 1 if is_on else 0) \
@@ -132,7 +87,7 @@ def process_light(light: dict) -> list:
         point = Point("lights") \
             .tag("light_id", f"{light_id}-2") \
             .tag("light_name", f"{name} (2)") \
-            .tag("floor", str(floor)) \
+            .tag("floor", floor_tag) \
             .tag("floor_name", get_floor_name(floor)) \
             .tag("switch_type", "secondary") \
             .field("is_on", 1 if light["isOn2"] else 0) \
