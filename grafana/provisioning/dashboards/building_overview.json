@@ -1551,16 +1551,32 @@
         "overrides": [
           {
             "matcher": {
-              "id": "byName",
-              "options": "Mennyt"
+              "id": "byFrameRefID",
+              "options": "A"
             },
             "properties": [
+              {
+                "id": "displayName",
+                "value": "Mennyt"
+              },
               {
                 "id": "color",
                 "value": {
                   "fixedColor": "light-blue",
                   "mode": "fixed"
                 }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "B"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Tuleva"
               }
             ]
           }
@@ -1606,8 +1622,16 @@
             "type": "influxdb",
             "uid": "influxdb"
           },
-          "query": "import \"experimental\"\n\nstop = experimental.addDuration(d: 12h, to: now())\n\npast = from(bucket: \"building_automation\")\n  |> range(start: -6h, stop: now())\n  |> filter(fn: (r) => r._measurement == \"electricity\")\n  |> filter(fn: (r) => r._field == \"price_with_tax\")\n  |> group()\n  |> map(fn: (r) => ({r with _field: \"Mennyt\"}))\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])\n\nfuture = from(bucket: \"building_automation\")\n  |> range(start: -1h, stop: stop)\n  |> filter(fn: (r) => r._measurement == \"electricity\")\n  |> filter(fn: (r) => r._field == \"price_with_tax\")\n  |> group()\n  |> filter(fn: (r) => r._time >= now())\n  |> map(fn: (r) => ({r with _field: \"Tuleva\"}))\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])\n\nunion(tables: [past, future])",
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: -6h, stop: now())\n  |> filter(fn: (r) => r._measurement == \"electricity\")\n  |> filter(fn: (r) => r._field == \"price_with_tax\")\n  |> map(fn: (r) => ({r with _field: \"Mennyt\"}))\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])",
           "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
+          "query": "import \"experimental\"\n\nstop = experimental.addDuration(d: 12h, to: now())\n\nfrom(bucket: \"building_automation\")\n  |> range(start: -1h, stop: stop)\n  |> filter(fn: (r) => r._measurement == \"electricity\")\n  |> filter(fn: (r) => r._field == \"price_with_tax\")\n  |> filter(fn: (r) => r._time >= now())\n  |> map(fn: (r) => ({r with _field: \"Tuleva\"}))\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])",
+          "refId": "B"
         }
       ],
       "title": "Sähkön hinta tänään",
