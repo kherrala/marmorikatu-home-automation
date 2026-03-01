@@ -236,6 +236,22 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  backup:
+    build:
+      context: .
+      dockerfile: Dockerfile.backup
+    container_name: marmorikatu-backup
+    volumes:
+      - ./backups:/backups
+    environment:
+      - INFLUXDB_URL=http://influxdb:8086
+      - INFLUXDB_TOKEN=wago-secret-token
+      - RETENTION_DAYS=30
+    depends_on:
+      influxdb:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   influxdb-data:
   influxdb-config:

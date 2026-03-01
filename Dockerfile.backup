@@ -1,0 +1,17 @@
+FROM influxdb:2.7
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends cron \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY scripts/backup.sh /usr/local/bin/backup.sh
+RUN chmod +x /usr/local/bin/backup.sh
+
+# Run daily at 03:00
+RUN echo "0 3 * * * root /usr/local/bin/backup.sh >> /var/log/backup.log 2>&1" \
+        > /etc/cron.d/influxdb-backup \
+    && chmod 0644 /etc/cron.d/influxdb-backup
+
+VOLUME ["/backups"]
+
+CMD ["cron", "-f"]

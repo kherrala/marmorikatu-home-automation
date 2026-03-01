@@ -13,3 +13,6 @@ venv/
 
 # Sync state
 .last_sync
+
+# InfluxDB backups
+backups/
