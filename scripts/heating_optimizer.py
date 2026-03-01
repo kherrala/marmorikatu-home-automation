@@ -515,6 +515,14 @@ def sleep_interruptible(seconds):
         time.sleep(min(1.0, end - time.monotonic()))
 
 
+def seconds_until_next_price_boundary(buffer_secs=5):
+    """Seconds until the next 15-minute price slot boundary plus a small buffer."""
+    now = datetime.now(timezone.utc)
+    slot_start = now.replace(minute=(now.minute // 15) * 15, second=0, microsecond=0)
+    next_slot = slot_start + timedelta(minutes=15)
+    return (next_slot - now).total_seconds() + buffer_secs
+
+
 def main():
     log.info("=" * 60)
     log.info("Floor Heating Temperature Optimizer")
@@ -530,7 +538,7 @@ def main():
     log.info(f"Max EVU:    {MAX_EVU_HOURS}h ({MAX_EVU_SLOTS} slots) consecutive")
     log.info(f"Rel spread: {MIN_RELATIVE_SPREAD} c/kWh min for relative fallback")
     log.info(f"History:    {HISTORY_DAYS} days for percentile thresholds")
-    log.info(f"Interval:   {CHECK_INTERVAL}s, hold: {MIN_HOLD_MINUTES}min")
+    log.info(f"Interval:   15-min price boundaries (+5s buffer), hold: {MIN_HOLD_MINUTES}min")
     if DRY_RUN:
         log.info("*** DRY RUN MODE — no MQTT commands will be sent ***")
     log.info("-" * 60)
@@ -552,11 +560,13 @@ def main():
     # Configure reduction_t at startup
     set_reduction_t(REDUCTION_T)
 
-    # Run immediately, then every CHECK_INTERVAL
+    # Run immediately, then at each 15-minute price slot boundary
     check_and_control(query_api, write_api)
 
     while running:
-        sleep_interruptible(CHECK_INTERVAL)
+        secs = seconds_until_next_price_boundary()
+        log.info(f"Sleeping {secs:.0f}s until next price slot boundary")
+        sleep_interruptible(secs)
         if running:
             check_and_control(query_api, write_api)
 
