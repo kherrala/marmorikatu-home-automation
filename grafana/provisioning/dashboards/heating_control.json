@@ -168,6 +168,16 @@
                 }
               },
               "type": "value"
+            },
+            {
+              "options": {
+                "3": {
+                  "color": "orange",
+                  "index": 3,
+                  "text": "Esilämmitys"
+                }
+              },
+              "type": "value"
             }
           ],
           "thresholds": {
@@ -184,6 +194,10 @@
               {
                 "color": "red",
                 "value": 2
+              },
+              {
+                "color": "orange",
+                "value": 3
               }
             ]
           },
@@ -221,7 +235,7 @@
             "type": "influxdb",
             "uid": "influxdb"
           },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"heating_optimizer\" and r._field == \"tier\")\n  |> last()\n  |> keep(columns: [\"_time\", \"_value\"])\n  |> map(fn: (r) => ({_time: r._time, _value: if r._value == \"CHEAP\" then \"0\" else if r._value == \"NORMAL\" then \"1\" else \"2\"}))\n  |> toFloat()",
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"heating_optimizer\" and r._field == \"tier\")\n  |> last()\n  |> keep(columns: [\"_time\", \"_value\"])\n  |> map(fn: (r) => ({_time: r._time, _value: if r._value == \"CHEAP\" then \"0\" else if r._value == \"NORMAL\" then \"1\" else if r._value == \"EXPENSIVE\" then \"2\" else \"3\"}))\n  |> toFloat()",
           "refId": "A"
         }
       ],
