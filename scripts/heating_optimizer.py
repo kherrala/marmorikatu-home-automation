@@ -66,6 +66,12 @@ MAX_EVU_SLOTS = MAX_EVU_HOURS * 4  # quarter-hour slots
 # relative pre-heat fallback when no historically-expensive slots exist.
 MIN_RELATIVE_SPREAD = float(os.environ.get("MIN_RELATIVE_SPREAD", "2.0"))
 
+# Flicker reduction: minimum contiguous EXPENSIVE slots to keep (shorter → NORMAL)
+MIN_EXPENSIVE_SLOTS = int(os.environ.get("MIN_EXPENSIVE_SLOTS", "2"))
+# Minimum EXPENSIVE block length (hours) before disabling aux heaters
+BOILER_DISABLE_MIN_HOURS = int(os.environ.get("BOILER_DISABLE_MIN_HOURS", "4"))
+BOILER_DISABLE_MIN_SLOTS = BOILER_DISABLE_MIN_HOURS * 4  # quarter-hour slots
+
 CHECK_INTERVAL = int(os.environ.get("CHECK_INTERVAL", "300"))
 MIN_HOLD_MINUTES = int(os.environ.get("MIN_HOLD_MINUTES", "15"))
 
@@ -329,6 +335,37 @@ def apply_relative_fallback(classified):
     return result
 
 
+def filter_short_expensive_blocks(classified):
+    """
+    Remove EXPENSIVE blocks shorter than MIN_EXPENSIVE_SLOTS by downgrading
+    them to NORMAL. Prevents EVU/boiler flicker from isolated 15-min spikes.
+    """
+    if MIN_EXPENSIVE_SLOTS <= 1:
+        return classified
+
+    result = list(classified)
+
+    # Find contiguous EXPENSIVE blocks and measure their length
+    i = 0
+    while i < len(result):
+        if result[i][1] != EXPENSIVE:
+            i += 1
+            continue
+        # Found start of an EXPENSIVE block — find its end
+        block_start = i
+        while i < len(result) and result[i][1] == EXPENSIVE:
+            i += 1
+        block_len = i - block_start
+        if block_len < MIN_EXPENSIVE_SLOTS:
+            for j in range(block_start, i):
+                ts, _, price = result[j]
+                result[j] = (ts, NORMAL, price)
+            log.info(f"Filtered short EXPENSIVE block: {block_len} slot(s) at "
+                     f"{result[block_start][0].strftime('%H:%M')} → NORMAL")
+
+    return result
+
+
 def get_current_action(schedule, outdoor_temp):
     """
     Look up the current quarter-hour slot and return (setpoint, evu_enabled, boiler_steps).
@@ -351,6 +388,29 @@ def get_current_action(schedule, outdoor_temp):
 
     log.info(f"Current slot: tier={current_tier}, price={current_price:.2f} c/kWh" if current_price else f"Current slot: tier={current_tier}")
 
+    # Compute contiguous EXPENSIVE block length around current slot
+    expensive_block_len = 0
+    if current_tier == EXPENSIVE:
+        # Find the index of the current slot
+        current_idx = 0
+        for idx, (ts, tier, price) in enumerate(schedule):
+            slot_time = ts.replace(tzinfo=timezone.utc) if ts.tzinfo is None else ts
+            if slot_time <= now_utc:
+                current_idx = idx
+            else:
+                break
+        # Count backwards to block start
+        start = current_idx
+        while start > 0 and schedule[start - 1][1] == EXPENSIVE:
+            start -= 1
+        # Count forwards to block end
+        end = current_idx
+        while end < len(schedule) - 1 and schedule[end + 1][1] == EXPENSIVE:
+            end += 1
+        expensive_block_len = end - start + 1
+        block_hours = expensive_block_len * 15 / 60
+        log.info(f"EXPENSIVE block: {expensive_block_len} slots ({block_hours:.1f}h)")
+
     # Base action from tier
     if current_tier == "PRE_HEAT":
         setpoint = COMFORT_MAX
@@ -359,7 +419,18 @@ def get_current_action(schedule, outdoor_temp):
     elif current_tier == EXPENSIVE:
         setpoint = COMFORT_DEFAULT
         evu = True
-        boiler_steps = 0  # disable aux heaters during expensive periods
+        # Only disable aux heaters for long blocks or very cold weather
+        if expensive_block_len >= BOILER_DISABLE_MIN_SLOTS:
+            boiler_steps = 0
+        elif outdoor_temp is not None and outdoor_temp < -10:
+            # Between BOILER_COLD_LIMIT and -10°C: short blocks still disable
+            # (the cold-weather safety below will override if < BOILER_COLD_LIMIT)
+            boiler_steps = 0
+        else:
+            boiler_steps = BOILER_STEPS_DEFAULT
+            log.info(f"Short EXPENSIVE block ({expensive_block_len} slots < "
+                     f"{BOILER_DISABLE_MIN_SLOTS}) and outdoor > -10°C — "
+                     f"keeping aux heaters enabled")
     else:  # CHEAP or NORMAL
         setpoint = COMFORT_DEFAULT
         evu = False
@@ -451,8 +522,9 @@ def check_and_control(query_api, write_api):
     # 4. Classify prices using historical thresholds
     classified = classify_prices(prices, p_cheap, p_expensive)
 
-    # 5. Apply relative fallback (may add EXPENSIVE slots), then pre-heat + EVU cap
+    # 5. Apply relative fallback (may add EXPENSIVE slots), filter short blocks, then pre-heat + EVU cap
     schedule = apply_relative_fallback(classified)
+    schedule = filter_short_expensive_blocks(schedule)
     schedule = apply_pre_heat_and_evu_cap(schedule)
 
     # Count tiers for logging
@@ -537,6 +609,8 @@ def main():
     log.info(f"Pre-heat:   {PRE_HEAT_HOURS}h ({PRE_HEAT_SLOTS} slots)")
     log.info(f"Max EVU:    {MAX_EVU_HOURS}h ({MAX_EVU_SLOTS} slots) consecutive")
     log.info(f"Rel spread: {MIN_RELATIVE_SPREAD} c/kWh min for relative fallback")
+    log.info(f"Min block:  {MIN_EXPENSIVE_SLOTS} slots ({MIN_EXPENSIVE_SLOTS * 15}min) — shorter EXPENSIVE blocks filtered")
+    log.info(f"Boiler gate: {BOILER_DISABLE_MIN_HOURS}h ({BOILER_DISABLE_MIN_SLOTS} slots) — shorter blocks keep aux heaters")
     log.info(f"History:    {HISTORY_DAYS} days for percentile thresholds")
     log.info(f"Interval:   15-min price boundaries (+5s buffer), hold: {MIN_HOLD_MINUTES}min")
     if DRY_RUN:

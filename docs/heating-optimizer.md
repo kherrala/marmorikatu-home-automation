@@ -41,6 +41,10 @@ When the entire forecast has **no EXPENSIVE slots** (all prices below the histor
 
 The normal pre-heat look-ahead then applies before these relatively-expensive blocks, creating a balanced approach: pre-heat during cheap hours before the reduction, then save during the relatively expensive hours. The relative fallback runs before the pre-heat and EVU cap steps so that all schedule adjustments apply correctly.
 
+### Minimum Expensive Block Filter
+
+After relative fallback classification, contiguous EXPENSIVE blocks shorter than `MIN_EXPENSIVE_SLOTS` (default: 2 = 30 min) are downgraded to NORMAL. This prevents EVU and aux heater flicker from isolated 15-minute price spikes that would cause frequent MQTT register writes for negligible savings. The filter runs before EVU cap and pre-heat look-ahead, so filtered-out blocks don't trigger any downstream actions.
+
 ### EVU Cap
 
 Consecutive EXPENSIVE slots are capped at `MAX_EVU_HOURS` (default: 3 hours = 12 quarter-hour slots). Beyond this, slots are downgraded to NORMAL. This prevents extended EVU periods during sustained price peaks where comfort would suffer.
@@ -56,7 +60,11 @@ Before each EXPENSIVE block, the preceding `PRE_HEAT_HOURS` (default: 2 hours = 
 | PRE_HEAT | COMFORT_MAX (23°C) | OFF | Default (2) | 23°C |
 | CHEAP | COMFORT_DEFAULT (22°C) | OFF | Default (2) | 22°C |
 | NORMAL | COMFORT_DEFAULT (22°C) | OFF | Default (2) | 22°C |
-| EXPENSIVE | COMFORT_DEFAULT (22°C) | ON | **0 (disabled)** | 19°C |
+| EXPENSIVE (block ≥ 4h) | COMFORT_DEFAULT (22°C) | ON | **0 (disabled)** | 19°C |
+| EXPENSIVE (block < 4h, outdoor > −10°C) | COMFORT_DEFAULT (22°C) | ON | Default (2) | 19°C |
+| EXPENSIVE (block < 4h, outdoor ≤ −10°C) | COMFORT_DEFAULT (22°C) | ON | **0 (disabled)** | 19°C |
+
+Aux heater disabling is gated by the contiguous EXPENSIVE block length: blocks shorter than `BOILER_DISABLE_MIN_HOURS` (default: 4h) keep aux heaters enabled when outdoor temperature is mild (> −10°C), since the compressor handles the load fine without aux heaters. In cold weather (≤ −10°C), short blocks still disable aux heaters (the cold-weather safety at −15°C overrides this if needed). This reduces unnecessary r51 register writes.
 
 ## Safety Protections
 
@@ -67,6 +75,18 @@ Before each EXPENSIVE block, the preceding `PRE_HEAT_HOURS` (default: 2 hours = 
 | Above −10°C | COMFORT_MAX (23°C) — full pre-heat |
 | −10°C to −20°C | COMFORT_DEFAULT + 1°C — limited pre-heat |
 | Below −20°C | No pre-heat (COMFORT_DEFAULT only) |
+
+### Aux Heater Block-Length Gate
+
+Aux heaters are only disabled during EXPENSIVE blocks that are long enough to justify the register write:
+
+| Block Length | Outdoor > −10°C | Outdoor −15°C to −10°C | Outdoor < −15°C |
+|---|---|---|---|
+| < 30 min | No action (filtered by min block filter) | No action | No action |
+| 30 min – 4h | EVU only, **boiler stays enabled** | EVU + boiler disabled | EVU only, boiler stays enabled (cold safety) |
+| ≥ 4h | EVU + boiler disabled | EVU + boiler disabled | EVU only, boiler stays enabled (cold safety) |
+
+The `BOILER_DISABLE_MIN_HOURS` threshold (default: 4h) prevents unnecessary r51 register writes during moderate expensive blocks where the compressor handles the load alone.
 
 ### Aux Heater Cold-Weather Protection
 
@@ -107,14 +127,16 @@ Every `CHECK_INTERVAL` (5 minutes):
 2. Fetch 30-day historical prices → compute P25/P75 thresholds
 3. Fetch outdoor temperature from Ruuvi sensor
 4. Classify each 15-min slot → CHEAP / NORMAL / EXPENSIVE
-5. Apply EVU cap (max 3h consecutive EXPENSIVE)
-6. Apply pre-heat look-ahead (boost CHEAP before EXPENSIVE)
-7. Apply relative fallback (if no EXPENSIVE slots, use within-window P25)
-8. Look up current 15-min slot → determine setpoint, EVU, boiler steps
-9. Apply cold-weather constraints (pre-heat limiting, aux heater protection)
-10. Rate-limit check → skip publish if too recent
-11. Publish changes via MQTT (only if values changed)
-12. Log decision to InfluxDB
+5. Apply relative fallback (if no EXPENSIVE slots, use within-window P75)
+6. Filter short EXPENSIVE blocks (< MIN_EXPENSIVE_SLOTS → NORMAL)
+7. Apply EVU cap (max 3h consecutive EXPENSIVE)
+8. Apply pre-heat look-ahead (boost CHEAP before EXPENSIVE)
+9. Look up current 15-min slot → determine setpoint, EVU, boiler steps
+10. Apply block-length gate on aux heaters (short blocks keep boiler enabled)
+11. Apply cold-weather constraints (pre-heat limiting, aux heater protection)
+12. Rate-limit check → skip publish if too recent
+13. Publish changes via MQTT (only if values changed)
+14. Log decision to InfluxDB
 ```
 
 ## InfluxDB Measurement
@@ -153,6 +175,8 @@ All via environment variables (with defaults):
 | `PRE_HEAT_HOURS` | 2 | Hours to pre-heat before expensive blocks |
 | `MAX_EVU_HOURS` | 3 | Max consecutive hours of EVU/aux heater restriction |
 | `MIN_RELATIVE_SPREAD` | 2.0 | Min price spread (c/kWh) to activate relative fallback |
+| `MIN_EXPENSIVE_SLOTS` | 2 | Min contiguous EXPENSIVE slots to keep (shorter → NORMAL) |
+| `BOILER_DISABLE_MIN_HOURS` | 4 | Min EXPENSIVE block length (hours) to disable aux heaters |
 | `CHECK_INTERVAL` | 300 | Main loop interval (seconds) |
 | `MIN_HOLD_MINUTES` | 15 | Minimum time between MQTT changes |
 | `DRY_RUN` | 0 | Set to 1 to log decisions without publishing MQTT |
