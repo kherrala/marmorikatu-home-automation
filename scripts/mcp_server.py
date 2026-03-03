@@ -738,6 +738,26 @@ temperatures, and durations.""",
                 "required": []
             }
         ),
+        Tool(
+            name="get_energy_cost",
+            description="""Estimate electricity consumption and cost breakdown by component.
+
+Calculates estimated consumption (kWh) and cost (EUR) for: heat pump
+(compressor + aux heaters), sauna, lighting, and HVAC fan. Uses component
+status data from InfluxDB combined with spot electricity prices. Cost model:
+spot price + 0.49 c/kWh margin + 6.09 c/kWh transfer fee.""",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "time_range": {
+                        "type": "string",
+                        "description": "Time range (e.g., '-24h', '-7d', '-1d')",
+                        "default": "-24h"
+                    }
+                },
+                "required": []
+            }
+        ),
     ]
 
 
@@ -2075,6 +2095,103 @@ from(bucket: "{INFLUXDB_BUCKET}")
                 "recent_sessions": sessions[-10:],  # last 10 sessions max
                 "total_sessions_in_period": len(sessions),
                 "history_days": history_days,
+            }
+
+            return [TextContent(type="text", text=json.dumps(result, indent=2, ensure_ascii=False, default=str))]
+        except Exception as e:
+            return [TextContent(type="text", text=f"Error: {str(e)}")]
+
+    elif name == "get_energy_cost":
+        try:
+            time_range = arguments.get("time_range", "-24h")
+            MARGIN = 0.49   # c/kWh
+            TRANSFER = 6.09  # c/kWh
+            WATT_PER_LIGHT = 10
+            WATT_FAN = 300
+
+            # Heat pump: compressor + aux heaters (hourly mean status × rated power)
+            flux_hp = f"""
+from(bucket: "{INFLUXDB_BUCKET}")
+  |> range(start: {time_range})
+  |> filter(fn: (r) => r._measurement == "thermia")
+  |> filter(fn: (r) => r._field == "compressor" or r._field == "aux_heater_3kw" or r._field == "aux_heater_6kw" or r._field == "supply_temp")
+  |> aggregateWindow(every: 1h, fn: mean, createEmpty: false)
+  |> pivot(rowKey: ["_time"], columnKey: ["_field"], valueColumn: "_value")
+  |> sort(columns: ["_time"])
+"""
+            hp_data = execute_flux_query(flux_hp)
+            hp_kwh = 0.0
+            for row in hp_data:
+                comp = row.get("compressor", 0) or 0
+                aux3 = row.get("aux_heater_3kw", 0) or 0
+                aux6 = row.get("aux_heater_6kw", 0) or 0
+                sup_t = row.get("supply_temp", 35) or 35
+                # Compressor power varies with supply temp (1.77-2.27 kW)
+                comp_kw = comp * (1.77 + (sup_t - 35.0) * 0.5 / 15.0)
+                hp_kwh += comp_kw + aux3 * 3.0 + aux6 * 6.0  # 1h window = kWh directly
+
+            # Lighting: count active lights × watt_per_light
+            flux_lights = f"""
+from(bucket: "{INFLUXDB_BUCKET}")
+  |> range(start: {time_range})
+  |> filter(fn: (r) => r._measurement == "lights" and r._field == "is_on")
+  |> aggregateWindow(every: 1h, fn: mean, createEmpty: false)
+  |> group()
+  |> aggregateWindow(every: 1h, fn: sum, createEmpty: false)
+"""
+            light_data = execute_flux_query(flux_lights)
+            light_kwh = sum((r.get("_value", 0) or 0) * WATT_PER_LIGHT / 1000.0 for r in light_data)
+
+            # HVAC fan: constant assumed power when system running
+            fan_hours = len(hp_data)  # approximate: assume fan runs whenever we have data
+            fan_kwh = fan_hours * WATT_FAN / 1000.0
+
+            # Sauna: detect heating hours via temperature derivative
+            flux_sauna = f"""
+from(bucket: "{INFLUXDB_BUCKET}")
+  |> range(start: {time_range})
+  |> filter(fn: (r) => r._measurement == "ruuvi" and r.sensor_name == "Sauna")
+  |> filter(fn: (r) => r._field == "temperature")
+  |> aggregateWindow(every: 1m, fn: mean, createEmpty: false)
+  |> derivative(unit: 1m, nonNegative: false)
+  |> map(fn: (r) => ({{r with _value: if r._value > 0.05 then 1.0 else 0.0}}))
+  |> aggregateWindow(every: 1h, fn: mean, createEmpty: false)
+"""
+            sauna_data = execute_flux_query(flux_sauna)
+            sauna_kwh = sum((r.get("_value", 0) or 0) * 6.0 for r in sauna_data)
+
+            total_kwh = hp_kwh + light_kwh + fan_kwh + sauna_kwh
+
+            # Average electricity price for the period
+            flux_price = f"""
+from(bucket: "{INFLUXDB_BUCKET}")
+  |> range(start: {time_range})
+  |> filter(fn: (r) => r._measurement == "electricity" and r._field == "price_with_tax")
+  |> mean()
+"""
+            price_data = execute_flux_query(flux_price)
+            avg_price = price_data[0].get("_value", 5.0) if price_data else 5.0
+
+            total_price_c_kwh = avg_price + MARGIN + TRANSFER
+            total_cost_eur = total_kwh * total_price_c_kwh / 100.0
+
+            result = {
+                "time_range": time_range,
+                "consumption_kwh": {
+                    "heat_pump": round(hp_kwh, 2),
+                    "lighting": round(light_kwh, 2),
+                    "sauna": round(sauna_kwh, 2),
+                    "hvac_fan": round(fan_kwh, 2),
+                    "total": round(total_kwh, 2),
+                },
+                "cost": {
+                    "avg_spot_price_c_kwh": round(avg_price, 2),
+                    "margin_c_kwh": MARGIN,
+                    "transfer_c_kwh": TRANSFER,
+                    "total_price_c_kwh": round(total_price_c_kwh, 2),
+                    "estimated_total_eur": round(total_cost_eur, 2),
+                },
+                "note": "Estimates based on component status data and assumed wattages",
             }
 
             return [TextContent(type="text", text=json.dumps(result, indent=2, ensure_ascii=False, default=str))]
