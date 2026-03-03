@@ -50,16 +50,6 @@ def poll_lights() -> list:
         return []
 
 
-def parse_polled_at(polled_at_str: str | None) -> datetime:
-    """Parse polledAt ISO8601 timestamp from API, fall back to current time."""
-    if polled_at_str:
-        try:
-            return datetime.fromisoformat(polled_at_str.replace("Z", "+00:00"))
-        except ValueError:
-            pass
-    return datetime.now(timezone.utc)
-
-
 def process_light(light: dict) -> list:
     """Process a single light and return InfluxDB points."""
     points = []
@@ -67,7 +57,7 @@ def process_light(light: dict) -> list:
     name = light.get("name", light_id)
     floor = light.get("floor")  # int or None (outdoor/unclassified lights)
     floor_tag = str(floor) if floor is not None else ""
-    timestamp = parse_polled_at(light.get("polledAt"))
+    timestamp = datetime.now(timezone.utc)
 
     # Primary light status
     is_on = light.get("isOn")
