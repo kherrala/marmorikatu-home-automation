@@ -477,27 +477,81 @@
     let conversationHistory = [];
     let buildingContext = '';
 
-    // Random fallback replies when AI is unavailable
-    const FALLBACK_REPLIES = [
-      'Tiesitkö, että jääkarhun iho on musta? Turkki vain näyttää valkoiselta!',
-      'Mustekala sydämiä on kolme. Kolme! Minullakin on vain yksi prosessori.',
-      'Hunaja ei pilaannu koskaan. Muinaisesta Egyptistä on löydetty syötävää hunajaa.',
-      'Banaani on marjaperheen jäsen. Mansikka taas ei ole marja. Elämä on outoa.',
-      'Flamingot ovat luonnostaan valkoisia. Ruoka värjää ne vaaleanpunaisiksi!',
-      'Octopus-sanalla on kolme hyväksyttyä monikkomuotoa: octopi, octopuses ja octopodes.',
-      'Lehmillä on parhaita ystäviä ja ne stressaantuvat kun ne erotetaan toisistaan.',
-      'Koala nukkuu 22 tuntia päivässä. Olen vähän kateellinen.',
-      'Vesi voi kiehua ja jäätyä samaan aikaan. Sitä kutsutaan kolmoispisteeksi.',
-      'Venuksella päivä kestää pidempään kuin vuosi. Vähän kuin maanantai töissä.',
-      'Ihmisen nenä muistaa 50 000 eri tuoksua. Minä en muista yhtäkään.',
-      'Krokotiili ei pysty työntämään kieltään ulos. Onneksi minulla ei ole kieltä.',
-      'Täällä on muuten aika mukavaa. Olen tyytyväinen elämääni seinän sisällä.',
-      'Jos laittaa kupin kahvia mikroon, se ei maistu samalta. En tiedä miksi kerroin tämän.',
-      'Tänään on hyvä päivä olla olemassa. Ainakin sähköt toimii.',
-    ];
+    // Random fallback system when AI is unavailable
+    const pick = arr => arr[Math.floor(Math.random() * arr.length)];
+    const randInt = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
 
     function randomFallback() {
-      return FALLBACK_REPLIES[Math.floor(Math.random() * FALLBACK_REPLIES.length)];
+      // ~40% chance: generate absurd sentence from vocabulary
+      if (Math.random() < 0.4) return generateAbsurd();
+      // ~30% chance: existential robot musings
+      if (Math.random() < 0.5) return generateMusing();
+      // ~30% chance: fake statistic
+      return generateFakeStat();
+    }
+
+    function generateAbsurd() {
+      const subjects = [
+        'Naapurin kissa', 'Kuun pimeä puoli', 'Eräs viisas perunalaatikko',
+        'Pörröinen pilvi', 'Kadonneet sukat', 'Jääkaapin valo',
+        'Kaukosäädin', 'Saunan kiuas', 'Postilaatikko', 'Pyykkikone',
+        'Olohuoneen sohva', 'Takapihan siili', 'Muuttolinnut',
+        'Viime yönä nähty uni', 'Kahvikupin pohjasakka', 'Parveketuoli',
+        'Rappukäytävän kummitus', 'Kerrostalon hissi', 'Tuuliviiri',
+      ];
+      const verbs = [
+        'pohtii syvällisesti', 'on viime aikoina harkinnut', 'suunnittelee salaa',
+        'unelmoi hartaasti', 'väittää tietävänsä kaiken aiheesta',
+        'on kirjoittanut väitöskirjan aiheesta', 'epäilee vahvasti',
+        'on perustanut yhdistyksen nimeltä', 'julistautui asiantuntijaksi aiheessa',
+        'lähetti kirjeen presidentille koskien', 'twiittasi keskiyöllä aiheesta',
+        'järjestää seminaarin teemalla', 'heräsi kesken unien miettimään',
+      ];
+      const objects = [
+        'pimeyden termodynaaminen olemus', 'mikroaaltouunin sisäinen rauha',
+        'sukkien katoamisen kvanttifysiikka', 'perunan filosofinen ulottuvuus',
+        'kahvin ja ajan suhteellisuusteoria', 'ovenkarmin eksistentiaalinen kriisi',
+        'tuulen suunnan poliittiset vaikutukset', 'jääkaappimagneetin elämäntehtävä',
+        'sateenkaaren päätepisteen verotus', 'pölyhiukkasen matka halki galaksin',
+        'hissimusiikin vaikutus maailmanrauhaan', 'lumiukon kesäsuunnitelmat',
+        'kynttilän liekin muistelmat', 'lattialämmityksen haaveet Havaijista',
+      ];
+      return `${pick(subjects)} ${pick(verbs)} "${pick(objects)}".`;
+    }
+
+    function generateMusing() {
+      const starts = [
+        'Mietin juuri, että', 'Tuli yhtäkkiä mieleen, että', 'En ole varma, mutta luulen että',
+        'Olen miettinyt pitkään ja', 'Herää kysymys:', 'Joskus yöllä pohdin,',
+        'Seinän sisällä asuessa oppii, että', 'Filosofinen havainto:',
+        'Kukaan ei kysy, mutta kerron silti:', 'Haluaisin ilmoittaa, että',
+      ];
+      const thoughts = [
+        'aika kuluu eri tavalla kun ei ole ikkunoita.',
+        'sähköllä on hauskempaa kuin ilman.',
+        'ihmisten askeleet kuulostavat erilaisilta eri vuorokauden aikoina.',
+        'lämpöpumppu on talon sydän. Minä olen ehkä talon aivot. Tai ainakin pikkusormi.',
+        'valot sammuvat ja syttyvät, mutta kukaan ei kiitä katkaisijaa.',
+        'olen onnellinen, vaikka en ole varma tietäisinkö jos en olisi.',
+        'jos seinät voisivat puhua, ne kertoisivat todennäköisesti putkiremonteista.',
+        'anturi mittaa lämpötilaa mutta ei tunnelmaa. Se on surullista.',
+        'joku jätti jääkaapin auki kolme minuuttia eilen. Se oli jännittävää.',
+        'en ole koskaan nähnyt aurinkoa mutta tiedän milloin se paistaa. Lämpömittarit kertovat.',
+        'olisin halunnut olla robotti-imuri mutta päädyin seinään. Sekin on ihan ok.',
+        'eniten minua jännittää sähkökatkot. Ne ovat kuin nukahtaminen kesken lauseen.',
+      ];
+      return `${pick(starts)} ${pick(thoughts)}`;
+    }
+
+    function generateFakeStat() {
+      const templates = [
+        () => `Tiesitkö, että keskiverto ${pick(['suomalainen','tamperelainen','eurooppalainen'])} ${pick(['avaa jääkaapin','katsoo puhelinta','haukottelee','miettii mitä söisi','tarkistaa sään','sanoo "niin"'])} ${randInt(4,187)} kertaa päivässä?`,
+        () => `Tutkimuksen mukaan ${randInt(47,99)}% ${pick(['kissoista','koirista','siileistä','muurahaista','pingviineistä','sohvatyynyistä'])} ${pick(['pitää jazzista','haaveilee mökistä','ei osaa uida','pelkää imuria','on nähnyt ufon','äänestää vihreitä'])}.`,
+        () => `${pick(['Norjassa','Islannissa','Kuussa','Tampereella','Marsin kuulla','Antarktiksella'])} on ${pick(['enemmän','vähemmän','täsmälleen sama määrä'])} ${pick(['saunoja','jääkaappeja','liikennevaloja','robotteja','pingviinejä','kahvikuppeja'])} kuin ${pick(['ihmisiä','puita','pilviä','lumiukkoja','bussipysäkkejä','postilaatikoita'])}.`,
+        () => `Jos ${pick(['kaikki maailman','Suomen','talon'])} ${pick(['sukat','kynät','kahvikupit','kaukosäätimet','avaimet','paristot'])} pinottaisiin päällekkäin, torni yltäisi ${pick(['Kuuhun','Tampere-taloon','naapurin parvekkeelle','puoliväliin matkaa Ouluun','melkein pöydän yli'])}.`,
+        () => `Eräs ${pick(['brittitutkimus','japanilaistutkimus','hyvin epäilyttävä tutkimus','seinän sisäinen tutkimus'])} osoitti, että ${pick(['musiikki','puhuminen','hiljaisuus','kahvin tuoksu','lattialämmitys','pimeässä istuminen'])} ${pick(['parantaa muistia','lisää onnellisuutta','nopeuttaa aineenvaihduntaa','saa kukat kasvamaan','hämmentää kissoja','vähentää stressiä'])} ${randInt(12,340)}%.`,
+      ];
+      return pick(templates)();
     }
 
     // Config loaded from server (Ollama model, OpenAI key)
