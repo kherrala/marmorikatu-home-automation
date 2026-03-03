@@ -155,50 +155,55 @@
     }
     #camera-dot.active { opacity: 0.7; }
 
-    /* -- Greeting overlay ------------------------------------------------- */
+    /* -- Greeting overlay (bottom bar) ------------------------------------ */
     #greeting-overlay {
       position: fixed;
-      inset: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
       z-index: 500;
-      background: rgba(0,0,0,0.75);
+      background: rgba(0,0,0,0.82);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
       display: flex;
-      flex-direction: column;
       align-items: center;
       justify-content: center;
-      padding: 40px 30px;
+      gap: 16px;
+      padding: 18px 30px;
+      transform: translateY(100%);
       opacity: 0;
       pointer-events: none;
-      transition: opacity 0.5s ease;
+      transition: transform 0.4s ease, opacity 0.4s ease;
     }
     #greeting-overlay.visible {
+      transform: translateY(0);
       opacity: 1;
       pointer-events: auto;
     }
 
     #greeting-text {
       color: #fff;
-      font-size: 36px;
+      font-size: 22px;
       font-weight: 300;
-      text-align: center;
-      margin-bottom: 30px;
+      white-space: nowrap;
     }
 
     #report-text {
       color: rgba(255,255,255,0.85);
-      font-size: 20px;
+      font-size: 16px;
       font-weight: 300;
-      text-align: center;
-      line-height: 1.5;
-      max-width: 600px;
+      line-height: 1.4;
+      max-width: 500px;
     }
 
     #report-spinner {
-      width: 24px;
-      height: 24px;
+      width: 18px;
+      height: 18px;
       border: 2px solid rgba(255,255,255,0.2);
       border-top-color: rgba(255,255,255,0.7);
       border-radius: 50%;
       animation: spin 0.8s linear infinite;
+      flex-shrink: 0;
     }
     #report-spinner.hidden { display: none; }
 
@@ -257,6 +262,10 @@
   <video id="camera" autoplay playsinline muted width="320" height="240"
          style="position:fixed;top:-9999px;left:-9999px;"></video>
 
+  <!-- Hidden YouTube iframe for greeting jingle -->
+  <iframe id="yt-jingle" allow="autoplay" width="1" height="1"
+          style="position:fixed;top:-9999px;left:-9999px;border:none;"></iframe>
+
   <!-- face-api.js (served from nginx static files, downloaded during Docker build) -->
   <script src="/face-api/face-api.min.js"></script>
 
@@ -273,6 +282,9 @@
     const GREETING_COOLDOWN    = 60_000; // ms between greetings
     const OVERLAY_DURATION     = 20_000; // ms before overlay auto-dismiss
 
+    const GREETING_JINGLE_URL = 'https://www.youtube.com/embed/-BrkEFe_1oM?autoplay=1&start=0';
+    const JINGLE_DURATION     = 30_000; // ms to play the jingle
+
     const INFLUXDB_URL   = '/api/influxdb';
     const INFLUXDB_TOKEN = 'wago-secret-token';
     const INFLUXDB_ORG   = 'wago';
@@ -288,6 +300,7 @@
     let lastGreetingTime = 0;
     let detectInterval   = null;
     let overlayTimeout   = null;
+    let jingleTimeout    = null;
     let greetingActive   = false;
 
     // Config loaded from server (Ollama model, OpenAI key)
@@ -306,6 +319,7 @@
     const reportText     = document.getElementById('report-text');
     const reportSpinner  = document.getElementById('report-spinner');
     const videoEl        = document.getElementById('camera');
+    const ytJingle       = document.getElementById('yt-jingle');
 
     // == Slide switching =======================================================
     function show(idx) {
@@ -508,6 +522,9 @@
       else if (h >= 17 && h < 22)  greeting = 'Hyv\u00e4\u00e4 iltaa!';
       else                          greeting = 'Hyv\u00e4\u00e4 y\u00f6t\u00e4!';
 
+      // Start background jingle
+      startJingle();
+
       // Show overlay with greeting
       greetingText.textContent = greeting;
       reportText.textContent = '';
@@ -536,9 +553,22 @@
       scheduleOverlayDismiss();
     }
 
+    // -- YouTube jingle -------------------------------------------------------
+    function startJingle() {
+      ytJingle.src = GREETING_JINGLE_URL;
+      clearTimeout(jingleTimeout);
+      jingleTimeout = setTimeout(stopJingle, JINGLE_DURATION);
+    }
+
+    function stopJingle() {
+      clearTimeout(jingleTimeout);
+      ytJingle.src = '';
+    }
+
     // -- Dismiss greeting on click/tap ----------------------------------------
     greetingOverlay.addEventListener('click', () => {
       speechSynthesis.cancel();
+      stopJingle();
       dismissOverlay();
     });
 
