@@ -477,6 +477,29 @@
     let conversationHistory = [];
     let buildingContext = '';
 
+    // Random fallback replies when AI is unavailable
+    const FALLBACK_REPLIES = [
+      'Tiesitkö, että jääkarhun iho on musta? Turkki vain näyttää valkoiselta!',
+      'Mustekala sydämiä on kolme. Kolme! Minullakin on vain yksi prosessori.',
+      'Hunaja ei pilaannu koskaan. Muinaisesta Egyptistä on löydetty syötävää hunajaa.',
+      'Banaani on marjaperheen jäsen. Mansikka taas ei ole marja. Elämä on outoa.',
+      'Flamingot ovat luonnostaan valkoisia. Ruoka värjää ne vaaleanpunaisiksi!',
+      'Octopus-sanalla on kolme hyväksyttyä monikkomuotoa: octopi, octopuses ja octopodes.',
+      'Lehmillä on parhaita ystäviä ja ne stressaantuvat kun ne erotetaan toisistaan.',
+      'Koala nukkuu 22 tuntia päivässä. Olen vähän kateellinen.',
+      'Vesi voi kiehua ja jäätyä samaan aikaan. Sitä kutsutaan kolmoispisteeksi.',
+      'Venuksella päivä kestää pidempään kuin vuosi. Vähän kuin maanantai töissä.',
+      'Ihmisen nenä muistaa 50 000 eri tuoksua. Minä en muista yhtäkään.',
+      'Krokotiili ei pysty työntämään kieltään ulos. Onneksi minulla ei ole kieltä.',
+      'Täällä on muuten aika mukavaa. Olen tyytyväinen elämääni seinän sisällä.',
+      'Jos laittaa kupin kahvia mikroon, se ei maistu samalta. En tiedä miksi kerroin tämän.',
+      'Tänään on hyvä päivä olla olemassa. Ainakin sähköt toimii.',
+    ];
+
+    function randomFallback() {
+      return FALLBACK_REPLIES[Math.floor(Math.random() * FALLBACK_REPLIES.length)];
+    }
+
     // Config loaded from server (Ollama model, OpenAI key)
     let appConfig = {};
 
@@ -745,17 +768,16 @@
       try {
         const buildingData = await fetchBuildingData();
         buildingContext = formatBuildingContext(buildingData);
-        const report = await generateReport(buildingData);
-        if (report) {
-          reportSpinner.classList.add('hidden');
-          reportText.textContent = report;
-          conversationHistory.push({ role: 'assistant', content: report });
-          await speakAndWait(report);
-        } else {
-          reportSpinner.classList.add('hidden');
-        }
-      } catch {
+        const report = await generateReport(buildingData) || randomFallback();
         reportSpinner.classList.add('hidden');
+        reportText.textContent = report;
+        conversationHistory.push({ role: 'assistant', content: report });
+        await speakAndWait(report);
+      } catch {
+        const fallback = randomFallback();
+        reportSpinner.classList.add('hidden');
+        reportText.textContent = fallback;
+        await speakAndWait(fallback);
       }
 
       // Enter listening mode after report (if recognition available)
@@ -920,18 +942,16 @@
       reportSpinner.classList.remove('hidden');
 
       try {
-        const response = await generateConversationalResponse();
+        const response = await generateConversationalResponse() || randomFallback();
         reportSpinner.classList.add('hidden');
-        if (response) {
-          reportText.textContent = response;
-          conversationHistory.push({ role: 'assistant', content: response });
-          await speakAndWait(response);
-        } else {
-          reportText.textContent = 'En saanut vastausta.';
-        }
+        reportText.textContent = response;
+        conversationHistory.push({ role: 'assistant', content: response });
+        await speakAndWait(response);
       } catch {
+        const fallback = randomFallback();
         reportSpinner.classList.add('hidden');
-        reportText.textContent = 'En saanut vastausta.';
+        reportText.textContent = fallback;
+        await speakAndWait(fallback);
       }
 
       // Resume listening if still within time window
