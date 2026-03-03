@@ -923,12 +923,45 @@
       speakAndWait(text);
     }
 
-    function speakAndWait(text) {
+    async function speakAndWait(text) {
+      // Try server-side TTS first (respects native device volume)
+      try {
+        const res = await fetch('/api/chat/tts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text })
+        });
+        if (res.ok) {
+          const blob = await res.blob();
+          const url = URL.createObjectURL(blob);
+          const audio = new Audio(url);
+          avatarEl.classList.add('speaking');
+          avatarEl.classList.remove('listening');
+          return new Promise(resolve => {
+            audio.onended = () => {
+              avatarEl.classList.remove('speaking');
+              URL.revokeObjectURL(url);
+              resolve();
+            };
+            audio.onerror = () => {
+              avatarEl.classList.remove('speaking');
+              URL.revokeObjectURL(url);
+              resolve();
+            };
+            audio.play().catch(() => {
+              avatarEl.classList.remove('speaking');
+              URL.revokeObjectURL(url);
+              resolve();
+            });
+          });
+        }
+      } catch { /* server TTS failed, fall back to browser */ }
+
+      // Fallback: browser speechSynthesis
       return new Promise(resolve => {
         const utterance = new SpeechSynthesisUtterance(text);
         utterance.lang = 'fi-FI';
         const voices = speechSynthesis.getVoices();
-        // Prefer a Finnish female voice
         const fiFemale = voices.find(v => v.lang.startsWith('fi') && /female|satu|marjut/i.test(v.name));
         const fiVoice = fiFemale || voices.find(v => v.lang.startsWith('fi'));
         if (fiVoice) utterance.voice = fiVoice;

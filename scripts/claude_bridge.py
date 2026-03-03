@@ -3,31 +3,39 @@
 Claude Bridge Service — connects kiosk AI to Claude API with MCP tools.
 
 Runs as an HTTP server that accepts chat requests, sends them to Claude
-with MCP tool definitions, and executes tool calls against the MCP server.
-This allows Claude to dynamically query building automation data.
+with MCP tool definitions, and executes tool calls against MCP servers.
+Supports multiple MCP servers simultaneously — tools from all connected
+servers are aggregated and presented to Claude. Servers that are offline
+are retried automatically.
+
+Also provides a /tts endpoint for server-side Finnish speech synthesis
+that respects native device volume (unlike browser speechSynthesis on iOS).
 """
 
 import os
+import io
 import json
 import logging
 import asyncio
 from contextlib import asynccontextmanager
 
 import anthropic
+import edge_tts
 import uvicorn
 from mcp.client.sse import sse_client
 from mcp.client.session import ClientSession
 from starlette.applications import Starlette
 from starlette.routing import Route
 from starlette.requests import Request
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, Response
 
 # Configuration
-MCP_URL = os.environ.get("MCP_URL", "http://localhost:3001/sse")
+MCP_URLS_RAW = os.environ.get("MCP_URLS", os.environ.get("MCP_URL", "http://localhost:3001/sse"))
 CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-6")
 MAX_TOOL_ITERATIONS = int(os.environ.get("MAX_TOOL_ITERATIONS", "10"))
 MAX_TOKENS = int(os.environ.get("MAX_TOKENS", "300"))
 BRIDGE_PORT = int(os.environ.get("BRIDGE_PORT", "3002"))
+TTS_VOICE = os.environ.get("TTS_VOICE", "fi-FI-NooraNeural")
 
 SYSTEM_PROMPT = (
     "Olet kotiautomaatioavustaja Marmorikadun omakotitalossa. "
@@ -39,43 +47,62 @@ SYSTEM_PROMPT = (
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("claude-bridge")
 
-# Shared state — persistent MCP connection managed by background task
-mcp_session: ClientSession | None = None
-mcp_tools: list = []
-mcp_tools_claude: list[dict] = []  # Pre-converted for Claude API
+# Parse comma-separated MCP URLs
+mcp_urls: list[str] = [u.strip() for u in MCP_URLS_RAW.split(",") if u.strip()]
+
+# Per-server state: url → { session, tools_claude, tool_names }
+_servers: dict[str, dict] = {}
+_lock = asyncio.Lock()
+_tasks: list[asyncio.Task] = []
 claude_client: anthropic.AsyncAnthropic | None = None
-_mcp_task: asyncio.Task | None = None
 
 
-def convert_mcp_tools_to_claude(tools) -> list[dict]:
-    """Convert MCP tool definitions to Claude API tool format."""
-    return [
-        {
-            "name": tool.name,
-            "description": tool.description or "",
-            "input_schema": tool.inputSchema or {"type": "object", "properties": {}},
-        }
-        for tool in tools
-    ]
+def _aggregated_tools() -> list[dict]:
+    """Return combined Claude-format tools from all connected servers."""
+    tools = []
+    for info in _servers.values():
+        tools.extend(info["tools_claude"])
+    return tools
 
 
-async def mcp_connection_loop():
-    """Background task: maintain persistent MCP connection with reconnection."""
-    global mcp_session, mcp_tools, mcp_tools_claude
+def _find_session(tool_name: str) -> ClientSession | None:
+    """Find the MCP session that owns a given tool."""
+    for info in _servers.values():
+        if tool_name in info["tool_names"]:
+            return info["session"]
+    return None
+
+
+async def mcp_connection_loop(url: str):
+    """Background task: maintain persistent connection to one MCP server."""
 
     while True:
         try:
-            log.info("Connecting to MCP server at %s ...", MCP_URL)
-            async with sse_client(MCP_URL) as (read_stream, write_stream):
+            log.info("Connecting to MCP server at %s ...", url)
+            async with sse_client(url) as (read_stream, write_stream):
                 async with ClientSession(read_stream, write_stream) as session:
                     await session.initialize()
-
                     tools_result = await asyncio.wait_for(session.list_tools(), timeout=10)
-                    mcp_tools = tools_result.tools
-                    mcp_tools_claude = convert_mcp_tools_to_claude(mcp_tools)
-                    mcp_session = session
-                    log.info("MCP connected — %d tools available:", len(mcp_tools))
-                    for t in mcp_tools:
+
+                    tools_claude = [
+                        {
+                            "name": t.name,
+                            "description": t.description or "",
+                            "input_schema": t.inputSchema or {"type": "object", "properties": {}},
+                        }
+                        for t in tools_result.tools
+                    ]
+                    tool_names = {t.name for t in tools_result.tools}
+
+                    async with _lock:
+                        _servers[url] = {
+                            "session": session,
+                            "tools_claude": tools_claude,
+                            "tool_names": tool_names,
+                        }
+
+                    log.info("MCP %s — %d tools:", url, len(tools_claude))
+                    for t in tools_result.tools:
                         log.info("  • %s", t.name)
 
                     # Keep alive until connection drops
@@ -84,15 +111,14 @@ async def mcp_connection_loop():
         except asyncio.CancelledError:
             break
         except Exception as e:
-            log.warning("MCP connection lost (%s), reconnecting in 5s...", e)
-            mcp_session = None
-            mcp_tools = []
-            mcp_tools_claude = []
+            log.warning("MCP %s lost (%s), reconnecting in 5s...", url, e)
+            async with _lock:
+                _servers.pop(url, None)
             await asyncio.sleep(5)
 
 
-async def run_agentic_loop(session: ClientSession, messages: list[dict], tools: list[dict]) -> dict:
-    """Run Claude agentic loop with tool execution against MCP server."""
+async def run_agentic_loop(messages: list[dict], tools: list[dict]) -> dict:
+    """Run Claude agentic loop with tool execution against MCP servers."""
     all_tool_calls = []
 
     for iteration in range(MAX_TOOL_ITERATIONS):
@@ -104,18 +130,14 @@ async def run_agentic_loop(session: ClientSession, messages: list[dict], tools: 
             tools=tools,
         )
 
-        # Check if Claude wants to use tools
         tool_use_blocks = [b for b in response.content if b.type == "tool_use"]
 
         if not tool_use_blocks:
-            # No tool calls — extract final text
             text = "".join(b.text for b in response.content if b.type == "text").strip()
             return {"response": text, "model": CLAUDE_MODEL, "tool_calls": all_tool_calls}
 
-        # Append assistant message with all content blocks
         messages.append({"role": "assistant", "content": response.content})
 
-        # Execute each tool call against MCP server
         tool_results = []
         for block in tool_use_blocks:
             tool_name = block.name
@@ -123,15 +145,20 @@ async def run_agentic_loop(session: ClientSession, messages: list[dict], tools: 
             log.info("Tool call [%d]: %s(%s)", iteration + 1, tool_name, json.dumps(tool_input, ensure_ascii=False))
             all_tool_calls.append({"tool": tool_name, "input": tool_input})
 
-            try:
-                result = await session.call_tool(tool_name, tool_input)
-                result_text = "\n".join(
-                    c.text for c in result.content if hasattr(c, "text")
-                )
-                log.info("Tool result [%d]: %s → %d chars", iteration + 1, tool_name, len(result_text))
-            except Exception as e:
-                result_text = f"Error calling {tool_name}: {e}"
-                log.error("Tool error: %s", result_text)
+            session = _find_session(tool_name)
+            if not session:
+                result_text = f"Error: tool '{tool_name}' not available (MCP server offline?)"
+                log.error("Tool routing error: %s", result_text)
+            else:
+                try:
+                    result = await session.call_tool(tool_name, tool_input)
+                    result_text = "\n".join(
+                        c.text for c in result.content if hasattr(c, "text")
+                    )
+                    log.info("Tool result [%d]: %s → %d chars", iteration + 1, tool_name, len(result_text))
+                except Exception as e:
+                    result_text = f"Error calling {tool_name}: {e}"
+                    log.error("Tool error: %s", result_text)
 
             tool_results.append({
                 "type": "tool_result",
@@ -141,18 +168,16 @@ async def run_agentic_loop(session: ClientSession, messages: list[dict], tools: 
 
         messages.append({"role": "user", "content": tool_results})
 
-    # Reached max iterations
     text = "Anteeksi, en saanut vastausta valmiiksi ajoissa."
     return {"response": text, "model": CLAUDE_MODEL, "tool_calls": all_tool_calls}
 
 
 async def chat_endpoint(request: Request) -> JSONResponse:
     """POST /chat — run Claude agentic loop with MCP tools."""
-    session = mcp_session
-    tools = mcp_tools_claude
+    tools = _aggregated_tools()
 
-    if not session or not tools:
-        return JSONResponse({"error": "MCP not connected"}, status_code=503)
+    if not tools:
+        return JSONResponse({"error": "No MCP servers connected"}, status_code=503)
 
     try:
         body = await request.json()
@@ -164,7 +189,7 @@ async def chat_endpoint(request: Request) -> JSONResponse:
         return JSONResponse({"error": "No messages provided"}, status_code=400)
 
     try:
-        result = await run_agentic_loop(session, messages, tools)
+        result = await run_agentic_loop(messages, tools)
         return JSONResponse(result)
     except anthropic.APIError as e:
         log.error("Claude API error: %s", e)
@@ -174,39 +199,75 @@ async def chat_endpoint(request: Request) -> JSONResponse:
         return JSONResponse({"error": str(e)}, status_code=500)
 
 
+async def tts_endpoint(request: Request) -> Response:
+    """POST /tts — server-side Finnish TTS, returns audio/mpeg.
+
+    Plays through <audio> element in the browser, which respects
+    the native device volume (unlike speechSynthesis on iOS).
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "Invalid JSON"}, status_code=400)
+
+    text = body.get("text", "").strip()
+    if not text:
+        return JSONResponse({"error": "No text provided"}, status_code=400)
+
+    voice = body.get("voice", TTS_VOICE)
+
+    try:
+        communicate = edge_tts.Communicate(text, voice)
+        audio_buf = io.BytesIO()
+        async for chunk in communicate.stream():
+            if chunk["type"] == "audio":
+                audio_buf.write(chunk["data"])
+        return Response(audio_buf.getvalue(), media_type="audio/mpeg")
+    except Exception as e:
+        log.error("TTS error: %s", e)
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
 async def health_endpoint(request: Request) -> JSONResponse:
     """GET /health — return MCP connection status."""
+    servers_status = {}
+    for url in mcp_urls:
+        info = _servers.get(url)
+        servers_status[url] = {
+            "connected": info is not None,
+            "tools": len(info["tools_claude"]) if info else 0,
+        }
     return JSONResponse({
         "status": "ok",
-        "mcp_connected": mcp_session is not None,
-        "mcp_url": MCP_URL,
-        "tools_count": len(mcp_tools),
+        "mcp_servers": servers_status,
+        "tools_count": len(_aggregated_tools()),
         "model": CLAUDE_MODEL,
     })
 
 
 @asynccontextmanager
 async def lifespan(app):
-    """Start background MCP connection and Claude client."""
-    global claude_client, _mcp_task
+    """Start background MCP connections and Claude client."""
+    global claude_client
 
     claude_client = anthropic.AsyncAnthropic()
     log.info("Claude client initialized (model: %s)", CLAUDE_MODEL)
+    log.info("MCP servers: %s", mcp_urls)
 
-    _mcp_task = asyncio.create_task(mcp_connection_loop())
+    for url in mcp_urls:
+        _tasks.append(asyncio.create_task(mcp_connection_loop(url)))
 
     yield
 
-    _mcp_task.cancel()
-    try:
-        await _mcp_task
-    except asyncio.CancelledError:
-        pass
+    for task in _tasks:
+        task.cancel()
+    await asyncio.gather(*_tasks, return_exceptions=True)
 
 
 app = Starlette(
     routes=[
         Route("/chat", chat_endpoint, methods=["POST"]),
+        Route("/tts", tts_endpoint, methods=["POST"]),
         Route("/health", health_endpoint),
     ],
     lifespan=lifespan,

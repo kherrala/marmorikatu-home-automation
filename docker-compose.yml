@@ -149,10 +149,12 @@ services:
     ports:
       - "3002:3002"
     environment:
-      - MCP_URL=http://mcp:3001/sse
+      - MCP_URLS=http://mcp:3001/sse,http://host.docker.internal:3003/sse
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - CLAUDE_MODEL=claude-sonnet-4-6
       - BRIDGE_PORT=3002
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       mcp:
         condition: service_healthy
