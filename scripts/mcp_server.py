@@ -10,6 +10,8 @@ Runs as an SSE (Server-Sent Events) server for URL-based MCP integration.
 
 import os
 import json
+import logging
+import traceback
 from datetime import datetime, timezone
 from typing import Any
 import asyncio
@@ -22,6 +24,9 @@ from influxdb_client import InfluxDBClient
 from starlette.applications import Starlette
 from starlette.routing import Route, Mount
 from starlette.responses import JSONResponse
+
+log = logging.getLogger("mcp-server")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
 # Configuration
 INFLUXDB_URL = os.environ.get("INFLUXDB_URL", "http://localhost:8086")
@@ -2099,6 +2104,7 @@ from(bucket: "{INFLUXDB_BUCKET}")
 
             return [TextContent(type="text", text=json.dumps(result, indent=2, ensure_ascii=False, default=str))]
         except Exception as e:
+            log.error("get_sauna_status error: %s\n%s", e, traceback.format_exc())
             return [TextContent(type="text", text=f"Error: {str(e)}")]
 
     elif name == "get_energy_cost":
@@ -2196,6 +2202,7 @@ from(bucket: "{INFLUXDB_BUCKET}")
 
             return [TextContent(type="text", text=json.dumps(result, indent=2, ensure_ascii=False, default=str))]
         except Exception as e:
+            log.error("get_energy_cost error: %s\n%s", e, traceback.format_exc())
             return [TextContent(type="text", text=f"Error: {str(e)}")]
 
     return [TextContent(type="text", text=f"Unknown tool: {name}")]
