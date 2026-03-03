@@ -779,6 +779,7 @@
     // -- Face detection loop --------------------------------------------------
     let consecutiveDetections = 0;
     const DETECTIONS_REQUIRED = 3; // require 3 consecutive detections
+    let faceWasAbsent = true; // must be true to allow greeting trigger
 
     function startFaceDetection() {
       detectInterval = setInterval(async () => {
@@ -795,12 +796,14 @@
           if (detection) {
             consecutiveDetections++;
             // Re-check guards after async detection (multiple detections can be in-flight)
-            if (consecutiveDetections >= DETECTIONS_REQUIRED && !greetingActive && Date.now() - lastGreetingTime >= GREETING_COOLDOWN) {
+            if (consecutiveDetections >= DETECTIONS_REQUIRED && !greetingActive && faceWasAbsent && Date.now() - lastGreetingTime >= GREETING_COOLDOWN) {
               consecutiveDetections = 0;
+              faceWasAbsent = false; // require face to leave before next trigger
               triggerGreeting();
             }
           } else {
             consecutiveDetections = 0;
+            faceWasAbsent = true; // face gone — next appearance can trigger
           }
         } catch (err) {
           console.warn('Face detection error:', err);
@@ -905,6 +908,7 @@
     }
 
     function dismissOverlay() {
+      greetingActive = false; // immediately prevent any new listening/speech
       clearTimeout(overlayTimeout);
       stopJingle();
       stopListening();
@@ -913,7 +917,6 @@
       avatarEl.classList.remove('listening');
       greetingOverlay.classList.remove('visible');
       lastGreetingTime = Date.now(); // cooldown starts from dismiss
-      setTimeout(() => { greetingActive = false; }, 500);
     }
 
     // -- Text-to-speech -------------------------------------------------------

@@ -173,6 +173,30 @@ SCHEMA = {
             "tags": {
                 "data_type": ["temperature", "status", "alarm", "performance", "runtime", "setting"]
             }
+        },
+        "electricity": {
+            "description": "Nord Pool Finland electricity spot prices (updated daily around 14:15 EET)",
+            "fields": {
+                "price_no_tax": {"unit": "c/kWh", "description": "Spot price without tax"},
+                "price_with_tax": {"unit": "c/kWh", "description": "Spot price with tax (25% VAT)"},
+            },
+            "tags": {
+                "source": ["spot-hinta.fi"],
+                "market": ["FI"]
+            }
+        },
+        "heating_optimizer": {
+            "description": "Floor heating optimizer decisions (logged every 15 minutes at price slot boundaries)",
+            "fields": {
+                "setpoint": {"unit": "°C", "description": "Heat pump indoor target temperature"},
+                "evu_active": {"unit": "bool", "description": "EVU mode active (1=on, reduces target by reduction_t)"},
+                "boiler_steps": {"unit": "-", "description": "Aux heater steps (0=OFF, 1=3kW, 2=3+6kW)"},
+                "tier": {"unit": "-", "description": "Price tier (CHEAP/NORMAL/EXPENSIVE/PRE_HEAT)"},
+                "effective_target": {"unit": "°C", "description": "Effective target temperature (setpoint - reduction if EVU)"},
+                "price": {"unit": "c/kWh", "description": "Current electricity price"},
+                "outdoor_temp": {"unit": "°C", "description": "Outdoor temperature at decision time"},
+            },
+            "tags": {}
         }
     },
     "calculations": {
@@ -656,6 +680,39 @@ aux-to-compressor runtime ratio, and number of compressor start/stop cycles.""",
                         "type": "string",
                         "description": "Time range (e.g., '-24h', '-7d')",
                         "default": "-24h"
+                    }
+                },
+                "required": []
+            }
+        ),
+        Tool(
+            name="get_electricity_prices",
+            description="""Get current and upcoming electricity spot prices (Nord Pool Finland).
+
+Returns the current hour's price, today's price range (min/max/average),
+hourly price schedule for today and tomorrow (if available), and highlights
+the cheapest and most expensive hours. Prices are in c/kWh including tax.""",
+            inputSchema={
+                "type": "object",
+                "properties": {},
+                "required": []
+            }
+        ),
+        Tool(
+            name="get_heating_status",
+            description="""Get the current heating optimizer status.
+
+Returns the current price tier (CHEAP/NORMAL/EXPENSIVE/PRE_HEAT), heat pump
+setpoint, EVU mode (energy utility lockout) status, auxiliary heater status,
+effective target temperature, and current electricity price. Shows how the
+optimizer is adjusting heating based on electricity prices.""",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "time_range": {
+                        "type": "string",
+                        "description": "Time range for status history (e.g., '-6h', '-24h'). Default returns only latest status.",
+                        "default": "-1h"
                     }
                 },
                 "required": []
@@ -1754,6 +1811,158 @@ from(bucket: "{INFLUXDB_BUCKET}")
                     "description": "Total aux runtime / compressor runtime (lower = better efficiency)",
                 },
             }
+
+            return [TextContent(type="text", text=json.dumps(result, indent=2, ensure_ascii=False, default=str))]
+        except Exception as e:
+            return [TextContent(type="text", text=f"Error: {str(e)}")]
+
+    elif name == "get_electricity_prices":
+        try:
+            now_utc = datetime.now(timezone.utc)
+
+            # Fetch today's and tomorrow's prices
+            flux = f"""
+from(bucket: "{INFLUXDB_BUCKET}")
+  |> range(start: -24h, stop: 48h)
+  |> filter(fn: (r) => r._measurement == "electricity" and r._field == "price_with_tax")
+  |> group()
+  |> sort(columns: ["_time"])
+"""
+            results = execute_flux_query(flux)
+
+            if not results:
+                return [TextContent(type="text", text="Sähkön hintatietoja ei ole saatavilla.")]
+
+            # Parse into hourly prices
+            prices = []
+            for r in results:
+                prices.append({
+                    "time": r["_time"],
+                    "price_c_kwh": round(r.get("_value", 0), 2),
+                })
+
+            # Find current price
+            current_price = None
+            for p in prices:
+                pt = datetime.fromisoformat(p["time"])
+                if pt.tzinfo is None:
+                    pt = pt.replace(tzinfo=timezone.utc)
+                if pt <= now_utc:
+                    current_price = p
+                else:
+                    break
+
+            # Split into today and tomorrow (EET)
+            from datetime import timedelta
+            eet_offset = timedelta(hours=2)
+            today_date = (now_utc + eet_offset).date()
+            tomorrow_date = today_date + timedelta(days=1)
+
+            today_prices = []
+            tomorrow_prices = []
+            for p in prices:
+                pt = datetime.fromisoformat(p["time"])
+                if pt.tzinfo is None:
+                    pt = pt.replace(tzinfo=timezone.utc)
+                d = (pt + eet_offset).date()
+                if d == today_date:
+                    today_prices.append(p)
+                elif d == tomorrow_date:
+                    tomorrow_prices.append(p)
+
+            # Stats
+            def price_stats(price_list):
+                vals = [p["price_c_kwh"] for p in price_list]
+                if not vals:
+                    return None
+                cheapest = min(price_list, key=lambda p: p["price_c_kwh"])
+                most_expensive = max(price_list, key=lambda p: p["price_c_kwh"])
+                return {
+                    "min_c_kwh": min(vals),
+                    "max_c_kwh": max(vals),
+                    "avg_c_kwh": round(sum(vals) / len(vals), 2),
+                    "cheapest_hour": cheapest["time"],
+                    "most_expensive_hour": most_expensive["time"],
+                    "hours_count": len(vals),
+                }
+
+            result = {
+                "current_price_c_kwh": current_price["price_c_kwh"] if current_price else None,
+                "current_hour": current_price["time"] if current_price else None,
+                "today": price_stats(today_prices),
+                "today_prices": today_prices,
+                "tomorrow_available": len(tomorrow_prices) > 0,
+            }
+            if tomorrow_prices:
+                result["tomorrow"] = price_stats(tomorrow_prices)
+                result["tomorrow_prices"] = tomorrow_prices
+
+            return [TextContent(type="text", text=json.dumps(result, indent=2, ensure_ascii=False, default=str))]
+        except Exception as e:
+            return [TextContent(type="text", text=f"Error: {str(e)}")]
+
+    elif name == "get_heating_status":
+        try:
+            time_range = arguments.get("time_range", "-1h")
+
+            # Get latest heating optimizer decision
+            flux = f"""
+from(bucket: "{INFLUXDB_BUCKET}")
+  |> range(start: {time_range})
+  |> filter(fn: (r) => r._measurement == "heating_optimizer")
+  |> pivot(rowKey: ["_time"], columnKey: ["_field"], valueColumn: "_value")
+  |> sort(columns: ["_time"], desc: true)
+"""
+            results = execute_flux_query(flux)
+
+            if not results:
+                return [TextContent(type="text", text="Lämmitysoptimoinnin tilatietoja ei ole saatavilla.")]
+
+            latest = results[0]
+
+            tier = latest.get("tier", "UNKNOWN")
+            setpoint = latest.get("setpoint")
+            evu_active = latest.get("evu_active")
+            boiler_steps = latest.get("boiler_steps")
+            effective_target = latest.get("effective_target")
+            price = latest.get("price")
+            outdoor_temp = latest.get("outdoor_temp")
+
+            boiler_label = {0: "OFF", 1: "3kW", 2: "3+6kW"}.get(
+                int(boiler_steps) if boiler_steps is not None else -1, str(boiler_steps)
+            )
+
+            tier_descriptions = {
+                "CHEAP": "Halpa sähkö — normaali lämmitys",
+                "NORMAL": "Normaali hinta — normaali lämmitys",
+                "EXPENSIVE": "Kallis sähkö — EVU-tila päällä, lämmitystä rajoitettu",
+                "PRE_HEAT": "Esilämmitys — nostettu lämpötila ennen kallista jaksoa",
+            }
+
+            result = {
+                "timestamp": latest.get("_time"),
+                "tier": tier,
+                "tier_description": tier_descriptions.get(tier, tier),
+                "setpoint_c": setpoint,
+                "effective_target_c": effective_target,
+                "evu_active": bool(int(evu_active)) if evu_active is not None else None,
+                "boiler_steps": boiler_label,
+                "current_price_c_kwh": round(price, 2) if price is not None else None,
+                "outdoor_temp_c": round(outdoor_temp, 1) if outdoor_temp is not None else None,
+            }
+
+            # Include history if more than just latest
+            if len(results) > 1:
+                history = []
+                for r in results[:24]:  # last 24 entries max
+                    history.append({
+                        "time": r.get("_time"),
+                        "tier": r.get("tier"),
+                        "setpoint": r.get("setpoint"),
+                        "effective_target": r.get("effective_target"),
+                        "price": round(r["price"], 2) if r.get("price") is not None else None,
+                    })
+                result["history"] = history
 
             return [TextContent(type="text", text=json.dumps(result, indent=2, ensure_ascii=False, default=str))]
         except Exception as e:
