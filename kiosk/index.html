@@ -432,7 +432,7 @@
     // == Set iframe sources from origin hostname ===============================
     const host = window.location.hostname;
     document.querySelector('#slide-0 iframe').src = `/grafana/?kiosk`;
-    document.querySelector('#slide-1 iframe').src = `https://${host}:3444`;
+    document.querySelector('#slide-1 iframe').src = `/nysse/`;
     document.querySelector('#slide-2 iframe').src = `https://${host}/webvisu/webvisu.htm`;
 
     // == Init carousel =========================================================
@@ -623,6 +623,7 @@
 
     function dismissOverlay() {
       clearTimeout(overlayTimeout);
+      stopJingle();
       greetingOverlay.classList.remove('visible');
       setTimeout(() => { greetingActive = false; }, 500);
     }
@@ -773,7 +774,7 @@
       return parts.join('\n');
     }
 
-    // -- Generate AI report (Ollama -> OpenAI fallback) -----------------------
+    // -- Generate AI report (Ollama -> Claude -> OpenAI fallback) -------------
     async function generateReport(buildingData) {
       const context = formatBuildingContext(buildingData);
       if (!context) return null;
@@ -781,7 +782,7 @@
       const systemPrompt = 'Olet kotiautomaatioavustaja. Anna lyhyt 2 lauseen tilannekatsaus suomeksi. \u00c4l\u00e4 toista lukemia sellaisenaan, vaan tiivist\u00e4 oleellinen.';
       const userPrompt = `Talon tilanne juuri nyt:\n${context}`;
 
-      // Try Ollama first
+      // 1. Try Ollama first (local, free)
       try {
         const model = appConfig.ollamaModel || 'llama3.1:8b';
         const controller = new AbortController();
@@ -801,37 +802,67 @@
 
         if (res.ok) {
           const data = await res.json();
-          return data.response?.trim() || null;
+          const text = data.response?.trim();
+          if (text) return text;
         }
-      } catch { /* Ollama failed, try fallback */ }
+      } catch { /* Ollama failed, try Claude */ }
 
-      // Fallback to OpenAI
-      const apiKey = appConfig.openaiApiKey;
-      if (!apiKey) return null;
+      // 2. Try Claude API (Haiku — fast and cheap)
+      if (appConfig.anthropicApiKey) {
+        try {
+          const res = await fetch('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            headers: {
+              'x-api-key': appConfig.anthropicApiKey,
+              'anthropic-version': '2023-06-01',
+              'anthropic-dangerous-direct-browser-access': 'true',
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              model: 'claude-haiku-4-5-20251001',
+              max_tokens: 150,
+              system: systemPrompt,
+              messages: [
+                { role: 'user', content: userPrompt }
+              ]
+            })
+          });
 
-      try {
-        const res = await fetch('https://api.openai.com/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${apiKey}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            model: 'gpt-4o-mini',
-            messages: [
-              { role: 'system', content: systemPrompt },
-              { role: 'user', content: userPrompt }
-            ],
-            max_tokens: 150,
-            temperature: 0.7
-          })
-        });
+          if (res.ok) {
+            const data = await res.json();
+            const text = data.content?.[0]?.text?.trim();
+            if (text) return text;
+          }
+        } catch { /* Claude failed, try OpenAI */ }
+      }
 
-        if (res.ok) {
-          const data = await res.json();
-          return data.choices?.[0]?.message?.content?.trim() || null;
-        }
-      } catch { /* Both failed */ }
+      // 3. Fallback to OpenAI (gpt-4o-mini — cheap)
+      if (appConfig.openaiApiKey) {
+        try {
+          const res = await fetch('https://api.openai.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${appConfig.openaiApiKey}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              model: 'gpt-4o-mini',
+              messages: [
+                { role: 'system', content: systemPrompt },
+                { role: 'user', content: userPrompt }
+              ],
+              max_tokens: 150,
+              temperature: 0.7
+            })
+          });
+
+          if (res.ok) {
+            const data = await res.json();
+            const text = data.choices?.[0]?.message?.content?.trim();
+            if (text) return text;
+          }
+        } catch { /* All failed */ }
+      }
 
       return null;
     }

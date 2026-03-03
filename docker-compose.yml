@@ -49,6 +49,7 @@ services:
       # Allow embedding in iframes
       - GF_SECURITY_ALLOW_EMBEDDING=true
       # Serve from /grafana/ sub-path behind nginx HTTPS proxy
+      - GF_SERVER_DOMAIN=192.168.1.160
       - GF_SERVER_ROOT_URL=%(protocol)s://%(domain)s:%(http_port)s/grafana/
       - GF_SERVER_SERVE_FROM_SUB_PATH=true
     depends_on:
@@ -167,10 +168,10 @@ services:
     ports:
       - "80:80"
       - "443:443"
-      - "3444:3444"
     environment:
       - OLLAMA_URL=http://192.168.1.36:11434
       - OLLAMA_MODEL=llama3.1:8b
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
