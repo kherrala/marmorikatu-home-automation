@@ -1,10 +1,38 @@
 server {
     listen 80;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+
+    ssl_certificate     /etc/nginx/ssl/kiosk.crt;
+    ssl_certificate_key /etc/nginx/ssl/kiosk.key;
+
     root /usr/share/nginx/html;
     index index.html;
 
     location / {
         try_files $uri $uri/ /index.html;
+    }
+
+    # InfluxDB proxy (avoids CORS from browser)
+    location /api/influxdb/ {
+        proxy_pass http://influxdb:8086/;
+        proxy_set_header Host influxdb;
+    }
+
+    # Ollama proxy (URL injected via envsubst)
+    location /api/ollama/ {
+        proxy_pass ${OLLAMA_URL}/;
+        proxy_read_timeout 30s;
+        proxy_connect_timeout 5s;
+    }
+
+    # Config endpoint: exposes non-secret settings + optional API key to the browser
+    location = /api/config {
+        default_type application/json;
+        return 200 '{"ollamaModel":"${OLLAMA_MODEL}","openaiApiKey":"${OPENAI_API_KEY}"}';
     }
 
     # Proxy WAGO WebVisu static files, strip framing restrictions
