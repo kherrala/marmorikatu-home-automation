@@ -670,8 +670,8 @@
       speechSynthesis.speak(silentUtterance);
 
       // Unlock audio playback on iOS (must happen in user gesture handler)
-      jingleAudio.volume = 0;
-      jingleAudio.play().then(() => { jingleAudio.pause(); jingleAudio.volume = 1; }).catch(() => { jingleAudio.volume = 1; });
+      jingleAudio.muted = true;
+      jingleAudio.play().then(() => { jingleAudio.pause(); jingleAudio.currentTime = 0; jingleAudio.muted = false; }).catch(() => { jingleAudio.muted = false; });
 
       // Initialize SpeechRecognition (user gesture required on iOS)
       initSpeechRecognition();
