@@ -31,7 +31,7 @@ from starlette.responses import JSONResponse, Response
 
 # Configuration
 MCP_URLS_RAW = os.environ.get("MCP_URLS", os.environ.get("MCP_URL", "http://localhost:3001/sse"))
-CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-6")
+CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", "claude-haiku-4-5-20251001")
 MAX_TOOL_ITERATIONS = int(os.environ.get("MAX_TOOL_ITERATIONS", "10"))
 MAX_TOKENS = int(os.environ.get("MAX_TOKENS", "300"))
 BRIDGE_PORT = int(os.environ.get("BRIDGE_PORT", "3002"))
