@@ -75,3 +75,18 @@ server {
         proxy_ssl_verify  off;
     }
 }
+
+# Nysse bus timetables — HTTPS proxy on port 3444
+# (separate port avoids sub-path issues with SPA asset loading)
+server {
+    listen 3444 ssl;
+
+    ssl_certificate     /etc/nginx/ssl/kiosk.crt;
+    ssl_certificate_key /etc/nginx/ssl/kiosk.key;
+
+    location / {
+        proxy_pass http://host.docker.internal:3010;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+}

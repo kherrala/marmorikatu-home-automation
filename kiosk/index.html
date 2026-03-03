@@ -262,9 +262,8 @@
   <video id="camera" autoplay playsinline muted width="320" height="240"
          style="position:fixed;top:-9999px;left:-9999px;"></video>
 
-  <!-- Hidden YouTube iframe for greeting jingle -->
-  <iframe id="yt-jingle" allow="autoplay" width="1" height="1"
-          style="position:fixed;top:-9999px;left:-9999px;border:none;"></iframe>
+  <!-- Greeting jingle (local MP3, preloaded for instant playback) -->
+  <audio id="jingle" preload="auto" src="/jingle.mp3"></audio>
 
   <!-- face-api.js (served from nginx static files, downloaded during Docker build) -->
   <script src="/face-api/face-api.min.js"></script>
@@ -282,7 +281,6 @@
     const GREETING_COOLDOWN    = 60_000; // ms between greetings
     const OVERLAY_DURATION     = 20_000; // ms before overlay auto-dismiss
 
-    const GREETING_JINGLE_URL = 'https://www.youtube.com/embed/-BrkEFe_1oM?autoplay=1&start=0';
     const JINGLE_DURATION     = 30_000; // ms to play the jingle
 
     const INFLUXDB_URL   = '/api/influxdb';
@@ -319,7 +317,7 @@
     const reportText     = document.getElementById('report-text');
     const reportSpinner  = document.getElementById('report-spinner');
     const videoEl        = document.getElementById('camera');
-    const ytJingle       = document.getElementById('yt-jingle');
+    const jingleAudio    = document.getElementById('jingle');
 
     // == Slide switching =======================================================
     function show(idx) {
@@ -434,7 +432,7 @@
     // == Set iframe sources from origin hostname ===============================
     const host = window.location.hostname;
     document.querySelector('#slide-0 iframe').src = `/grafana/?kiosk`;
-    document.querySelector('#slide-1 iframe').src = `http://${host}:3010`;
+    document.querySelector('#slide-1 iframe').src = `https://${host}:3444`;
     document.querySelector('#slide-2 iframe').src = `https://${host}/webvisu/webvisu.htm`;
 
     // == Init carousel =========================================================
@@ -462,6 +460,9 @@
       silentUtterance.volume = 0;
       speechSynthesis.speak(silentUtterance);
 
+      // Unlock audio playback on iOS (must happen in user gesture handler)
+      jingleAudio.play().then(() => jingleAudio.pause()).catch(() => {});
+
       startOverlay.classList.add('hidden');
 
       await loadConfig();
@@ -469,6 +470,12 @@
     });
 
     // -- Camera init ----------------------------------------------------------
+    // Off-screen canvas for rotating the camera frame before face detection.
+    // The tablet is mounted rotated 90° CW, so faces appear sideways in the
+    // raw camera feed. We rotate the frame 90° CW to make faces upright.
+    const rotCanvas = document.createElement('canvas');
+    const rotCtx    = rotCanvas.getContext('2d');
+
     async function initCamera() {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
@@ -490,15 +497,34 @@
     }
 
     // -- Face detection loop --------------------------------------------------
+    function getRotatedFrame() {
+      const vw = videoEl.videoWidth;
+      const vh = videoEl.videoHeight;
+      if (!vw || !vh) return null;
+
+      // Rotate 90° CW: swap width/height, translate + rotate
+      rotCanvas.width  = vh;
+      rotCanvas.height = vw;
+      rotCtx.save();
+      rotCtx.translate(vh, 0);
+      rotCtx.rotate(Math.PI / 2);
+      rotCtx.drawImage(videoEl, 0, 0);
+      rotCtx.restore();
+      return rotCanvas;
+    }
+
     function startFaceDetection() {
       detectInterval = setInterval(async () => {
         if (!cameraReady || greetingActive) return;
         if (Date.now() - lastGreetingTime < GREETING_COOLDOWN) return;
 
         try {
+          const frame = getRotatedFrame();
+          if (!frame) return;
+
           const detection = await faceapi.detectSingleFace(
-            videoEl,
-            new faceapi.TinyFaceDetectorOptions({ inputSize: 160, scoreThreshold: 0.5 })
+            frame,
+            new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.35 })
           );
           if (detection) {
             triggerGreeting();
@@ -553,16 +579,18 @@
       scheduleOverlayDismiss();
     }
 
-    // -- YouTube jingle -------------------------------------------------------
+    // -- Jingle (local MP3) ---------------------------------------------------
     function startJingle() {
-      ytJingle.src = GREETING_JINGLE_URL;
+      jingleAudio.currentTime = 0;
+      jingleAudio.play().catch(() => {});
       clearTimeout(jingleTimeout);
       jingleTimeout = setTimeout(stopJingle, JINGLE_DURATION);
     }
 
     function stopJingle() {
       clearTimeout(jingleTimeout);
-      ytJingle.src = '';
+      jingleAudio.pause();
+      jingleAudio.currentTime = 0;
     }
 
     // -- Dismiss greeting on click/tap ----------------------------------------

@@ -26,7 +26,8 @@ COPY kiosk/nginx.conf.template /etc/nginx/templates/default.conf.template
 COPY kiosk/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
-# Copy the kiosk HTML
+# Copy the kiosk HTML and audio assets
 COPY kiosk/index.html /usr/share/nginx/html/index.html
+COPY kiosk/jingle.mp3 /usr/share/nginx/html/jingle.mp3
 
 ENTRYPOINT ["/entrypoint.sh"]
