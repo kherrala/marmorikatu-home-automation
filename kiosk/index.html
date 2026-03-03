@@ -449,7 +449,8 @@
 
     const FACE_DETECT_INTERVAL = 500;   // ms between detection attempts
     const GREETING_COOLDOWN    = 30_000; // ms after overlay dismiss before next greeting
-    const OVERLAY_DURATION     = 60_000; // ms before overlay auto-dismiss
+    const LISTEN_TIMEOUT       = 10_000; // ms of silence before auto-dismiss
+    const MAX_OVERLAY_DURATION = 300_000; // 5 min absolute max to prevent stuck overlay
 
     const JINGLE_DURATION     = 30_000; // ms to play the jingle
 
@@ -728,34 +729,51 @@
       jingleAudio.muted = true;
       jingleAudio.play().then(() => { jingleAudio.pause(); jingleAudio.currentTime = 0; jingleAudio.muted = false; }).catch(() => { jingleAudio.muted = false; });
 
-      // Initialize SpeechRecognition (user gesture required on iOS)
-      initSpeechRecognition();
-
       startOverlay.classList.add('hidden');
 
       await loadConfig();
-      await initCamera();
+      await initCamera(); // Requests camera + mic together
+      initSpeechRecognition(); // Safe to init after mic is pre-authorized
     });
 
     // -- Camera init ----------------------------------------------------------
     async function initCamera() {
+      // Request camera + mic in one dialog (pre-authorizes mic for speech recognition)
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: 'user', width: 320, height: 240 },
-          audio: false
+          audio: true
         });
         videoEl.srcObject = stream;
+        // Stop audio tracks immediately — only needed to pre-authorize mic
+        stream.getAudioTracks().forEach(t => t.stop());
         await videoEl.play();
-
-        // Load face-api.js model
-        await faceapi.nets.tinyFaceDetector.loadFromUri('/face-api');
-
-        cameraReady = true;
-        cameraDot.classList.add('active');
-        startFaceDetection();
       } catch (err) {
-        console.warn('Camera init failed, kiosk continues without face detection:', err);
+        console.warn('Camera+mic failed, trying video only:', err);
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: 'user', width: 320, height: 240 },
+            audio: false
+          });
+          videoEl.srcObject = stream;
+          await videoEl.play();
+        } catch (err2) {
+          console.warn('Camera init failed, kiosk continues without face detection:', err2);
+          return;
+        }
       }
+
+      // Load face-api.js model (separate try so camera still works if model fails)
+      try {
+        await faceapi.nets.tinyFaceDetector.loadFromUri('/face-api');
+      } catch (err) {
+        console.warn('Face detection model failed to load:', err);
+        return;
+      }
+
+      cameraReady = true;
+      cameraDot.classList.add('active');
+      startFaceDetection();
     }
 
     // -- Face detection loop --------------------------------------------------
@@ -835,10 +853,10 @@
         await speakAndWait(fallback);
       }
 
-      // Enter listening mode after report (if recognition available)
+      // Enter listening mode (waits for jingle to finish if still playing)
       startListening();
 
-      // Auto-dismiss after OVERLAY_DURATION (or after speech, whichever is later)
+      // Auto-dismiss after LISTEN_TIMEOUT of silence
       scheduleOverlayDismiss();
     }
 
@@ -864,8 +882,12 @@
     // -- Schedule overlay dismiss ---------------------------------------------
     function scheduleOverlayDismiss() {
       clearTimeout(overlayTimeout);
-      const elapsed = Date.now() - overlayStartTime;
-      const remaining = Math.max(0, OVERLAY_DURATION - elapsed);
+
+      // Absolute safety net
+      if (Date.now() - overlayStartTime > MAX_OVERLAY_DURATION) {
+        dismissOverlay();
+        return;
+      }
 
       overlayTimeout = setTimeout(() => {
         // Wait for speech to finish if still speaking
@@ -879,7 +901,7 @@
         } else {
           dismissOverlay();
         }
-      }, remaining);
+      }, LISTEN_TIMEOUT);
     }
 
     function dismissOverlay() {
@@ -945,8 +967,8 @@
       };
 
       recognition.onend = () => {
-        // Auto-restart if still in listening mode and within time window
-        if (listeningActive && Date.now() - overlayStartTime < OVERLAY_DURATION) {
+        // Auto-restart if still in listening mode and within max duration
+        if (listeningActive && Date.now() - overlayStartTime < MAX_OVERLAY_DURATION) {
           try { recognition.start(); } catch { /* already started */ }
         }
       };
@@ -956,7 +978,7 @@
         // Restart on recoverable errors
         if (listeningActive && event.error !== 'not-allowed' && event.error !== 'service-not-allowed') {
           setTimeout(() => {
-            if (listeningActive && Date.now() - overlayStartTime < OVERLAY_DURATION) {
+            if (listeningActive && Date.now() - overlayStartTime < MAX_OVERLAY_DURATION) {
               try { recognition.start(); } catch { /* ignore */ }
             }
           }, 500);
@@ -965,7 +987,20 @@
     }
 
     function startListening() {
-      if (!recognition) return;
+      if (!recognition || !greetingActive) return;
+
+      // Wait for jingle to finish before opening mic
+      if (!jingleAudio.paused) {
+        const onJingleDone = () => {
+          jingleAudio.removeEventListener('ended', onJingleDone);
+          jingleAudio.removeEventListener('pause', onJingleDone);
+          if (greetingActive) startListening();
+        };
+        jingleAudio.addEventListener('ended', onJingleDone);
+        jingleAudio.addEventListener('pause', onJingleDone);
+        return;
+      }
+
       listeningActive = true;
       listeningIndicator.classList.remove('hidden');
       avatarEl.classList.add('listening');
@@ -984,6 +1019,9 @@
     async function handleVoiceResult(transcript) {
       // Show what the user said
       userTextEl.textContent = `"${transcript}"`;
+
+      // Cancel idle dismiss timer while processing
+      clearTimeout(overlayTimeout);
 
       // Pause listening while processing + speaking
       listeningActive = false;
@@ -1010,12 +1048,10 @@
         await speakAndWait(fallback);
       }
 
-      // Resume listening if still within time window
-      if (Date.now() - overlayStartTime < OVERLAY_DURATION && greetingActive) {
-        listeningActive = true;
-        listeningIndicator.classList.remove('hidden');
-        avatarEl.classList.add('listening');
-        try { recognition.start(); } catch { /* ignore */ }
+      // Resume listening if still within max duration
+      if (Date.now() - overlayStartTime < MAX_OVERLAY_DURATION && greetingActive) {
+        startListening();
+        scheduleOverlayDismiss(); // Reset 10s idle timer
       }
     }
 
