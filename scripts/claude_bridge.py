@@ -37,12 +37,23 @@ MAX_TOKENS = int(os.environ.get("MAX_TOKENS", "300"))
 BRIDGE_PORT = int(os.environ.get("BRIDGE_PORT", "3002"))
 TTS_VOICE = os.environ.get("TTS_VOICE", "fi-FI-NooraNeural")
 
-SYSTEM_PROMPT = (
-    "Olet kotiautomaatioavustaja Marmorikadun omakotitalossa. "
-    "Vastaa aina lyhyesti suomeksi (1–3 lausetta). "
-    "Vastauksesi luetaan ääneen, joten älä käytä markdown-muotoilua, listoja tai erikoismerkkejä. "
-    "Käytä työkaluja hakeaksesi ajantasaiset tiedot ennen vastaamista."
-)
+WEEKDAYS_FI = ["maanantai", "tiistai", "keskiviikko", "torstai", "perjantai", "lauantai", "sunnuntai"]
+
+
+def get_system_prompt() -> str:
+    """Build system prompt with current date and time."""
+    from datetime import datetime, timezone, timedelta
+    now = datetime.now(timezone(timedelta(hours=2)))  # EET
+    weekday = WEEKDAYS_FI[now.weekday()]
+    date_str = f"{weekday} {now.day}.{now.month}.{now.year}"
+    time_str = f"{now.hour}:{now.minute:02d}"
+    return (
+        f"Olet kotiautomaatioavustaja Marmorikadun omakotitalossa. "
+        f"Nyt on {date_str}, kello {time_str}. "
+        f"Vastaa aina lyhyesti suomeksi (1–3 lausetta). "
+        f"Vastauksesi luetaan ääneen, joten älä käytä markdown-muotoilua, listoja tai erikoismerkkejä. "
+        f"Käytä työkaluja hakeaksesi ajantasaiset tiedot ennen vastaamista."
+    )
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("claude-bridge")
@@ -129,7 +140,7 @@ async def run_agentic_loop(messages: list[dict], tools: list[dict]) -> dict:
         response = await claude_client.messages.create(
             model=CLAUDE_MODEL,
             max_tokens=MAX_TOKENS,
-            system=SYSTEM_PROMPT,
+            system=get_system_prompt(),
             messages=messages,
             tools=tools,
         )
