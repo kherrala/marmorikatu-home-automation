@@ -155,36 +155,49 @@
     }
     #camera-dot.active { opacity: 0.7; }
 
-    /* -- Greeting overlay (full-screen) ----------------------------------- */
+    /* -- Greeting overlay (centered card) --------------------------------- */
     #greeting-overlay {
       position: fixed;
       inset: 0;
       z-index: 500;
-      background: rgba(0,0,0,0.88);
-      backdrop-filter: blur(16px);
-      -webkit-backdrop-filter: blur(16px);
       display: flex;
-      flex-direction: column;
       align-items: center;
       justify-content: center;
-      gap: 20px;
-      padding: 40px 30px;
       opacity: 0;
       pointer-events: none;
-      transform: scale(0.92);
-      transition: opacity 0.5s ease, transform 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+      transition: opacity 0.5s ease;
     }
     #greeting-overlay.visible {
       opacity: 1;
       pointer-events: auto;
-      transform: scale(1);
+    }
+
+    #greeting-card {
+      background: rgba(0,0,0,0.78);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-radius: 28px;
+      border: 1px solid rgba(255,255,255,0.1);
+      box-shadow: 0 8px 40px rgba(0,0,0,0.5);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+      padding: 36px 40px 32px;
+      max-width: 460px;
+      width: 90%;
+      transform: scale(0.92) translateY(12px);
+      transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    #greeting-overlay.visible #greeting-card {
+      transform: scale(1) translateY(0);
     }
 
     /* -- Avatar ----------------------------------------------------------- */
     #avatar-container {
       flex-shrink: 0;
-      width: 240px;
-      height: 240px;
+      width: 160px;
+      height: 160px;
     }
     #avatar {
       width: 100%;
@@ -220,6 +233,14 @@
       0%, 100% { transform: translateY(0) rotate(0deg); }
       25%  { transform: translateY(-3px) rotate(1.5deg); }
       75%  { transform: translateY(-2px) rotate(-1.5deg); }
+    }
+
+    #avatar.listening {
+      animation: listenPulse 2s ease-in-out infinite;
+    }
+    @keyframes listenPulse {
+      0%, 100% { transform: translateY(0) rotate(0deg); }
+      50%  { transform: translateY(-2px) rotate(2deg); }
     }
 
     /* -- Greeting content ------------------------------------------------- */
@@ -268,6 +289,45 @@
     @keyframes spin {
       to { transform: rotate(360deg); }
     }
+
+    /* -- User speech text -------------------------------------------------- */
+    #user-text {
+      color: rgba(255,255,255,0.5);
+      font-size: 15px;
+      font-style: italic;
+      text-align: center;
+      min-height: 0;
+      transition: opacity 0.3s;
+    }
+    #user-text:empty { display: none; }
+
+    /* -- Listening indicator ----------------------------------------------- */
+    #listening-indicator {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      margin-top: 8px;
+    }
+    #listening-indicator.hidden { display: none; }
+
+    #listening-indicator span {
+      color: rgba(255,255,255,0.55);
+      font-size: 14px;
+      font-weight: 300;
+    }
+
+    #mic-pulse {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: #e53935;
+      animation: micPulse 1.5s ease-in-out infinite;
+    }
+    @keyframes micPulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50%  { opacity: 0.5; transform: scale(1.3); }
+    }
   </style>
 </head>
 <body>
@@ -283,51 +343,58 @@
 
   <!-- Greeting + AI report overlay -->
   <div id="greeting-overlay">
-    <div id="avatar-container">
-      <svg id="avatar" viewBox="0 0 120 120" fill="none">
-        <!-- Hair back -->
-        <ellipse cx="60" cy="58" rx="46" ry="50" fill="#3d2b1f"/>
-        <!-- Neck -->
-        <rect x="50" y="92" width="20" height="16" rx="6" fill="#f0c8a0"/>
-        <!-- Face -->
-        <ellipse cx="60" cy="62" rx="34" ry="38" fill="#f5d4b8"/>
-        <!-- Hair front / bangs -->
-        <path d="M26 50 Q32 22 60 18 Q88 22 94 50 Q88 34 60 30 Q32 34 26 50z" fill="#3d2b1f"/>
-        <!-- Hair sides -->
-        <path d="M26 50 Q22 65 24 90 Q28 80 30 60z" fill="#3d2b1f"/>
-        <path d="M94 50 Q98 65 96 90 Q92 80 90 60z" fill="#3d2b1f"/>
-        <!-- Eyebrows -->
-        <path d="M40 48 Q47 44 54 47" stroke="#3d2b1f" stroke-width="1.8" fill="none" stroke-linecap="round"/>
-        <path d="M66 47 Q73 44 80 48" stroke="#3d2b1f" stroke-width="1.8" fill="none" stroke-linecap="round"/>
-        <!-- Eyes -->
-        <g class="avatar-eye-lid">
-          <ellipse cx="47" cy="56" rx="6" ry="6" fill="#fff"/>
-          <circle cx="47" cy="56.5" r="3.5" fill="#5b3a1a"/>
-          <circle cx="48.5" cy="55" r="1.3" fill="#fff"/>
-          <ellipse cx="73" cy="56" rx="6" ry="6" fill="#fff"/>
-          <circle cx="73" cy="56.5" r="3.5" fill="#5b3a1a"/>
-          <circle cx="74.5" cy="55" r="1.3" fill="#fff"/>
-        </g>
-        <!-- Eyelashes -->
-        <path d="M41 51.5 Q47 49 53 51.5" stroke="#3d2b1f" stroke-width="1.2" fill="none"/>
-        <path d="M67 51.5 Q73 49 79 51.5" stroke="#3d2b1f" stroke-width="1.2" fill="none"/>
-        <!-- Nose -->
-        <path d="M58 66 Q60 70 62 66" stroke="#dbb896" stroke-width="1.2" fill="none" stroke-linecap="round"/>
-        <!-- Mouth -->
-        <g class="avatar-mouth-inner">
-          <path d="M48 78 Q54 84 60 84 Q66 84 72 78" stroke="#d4736a" stroke-width="2" fill="none" stroke-linecap="round"/>
-          <path d="M50 79 Q60 86 70 79" fill="#d4736a" fill-opacity="0.25"/>
-        </g>
-        <!-- Cheek blush -->
-        <circle cx="38" cy="70" r="7" fill="#f0a0a0" opacity="0.2"/>
-        <circle cx="82" cy="70" r="7" fill="#f0a0a0" opacity="0.2"/>
-      </svg>
-    </div>
-    <div id="greeting-content">
-      <div id="greeting-text"></div>
-      <div id="report-row">
-        <div id="report-spinner"></div>
-        <div id="report-text"></div>
+    <div id="greeting-card">
+      <div id="avatar-container">
+        <svg id="avatar" viewBox="0 0 120 120" fill="none">
+          <!-- Hair back -->
+          <ellipse cx="60" cy="58" rx="46" ry="50" fill="#3d2b1f"/>
+          <!-- Neck -->
+          <rect x="50" y="92" width="20" height="16" rx="6" fill="#f0c8a0"/>
+          <!-- Face -->
+          <ellipse cx="60" cy="62" rx="34" ry="38" fill="#f5d4b8"/>
+          <!-- Hair front / bangs -->
+          <path d="M26 50 Q32 22 60 18 Q88 22 94 50 Q88 34 60 30 Q32 34 26 50z" fill="#3d2b1f"/>
+          <!-- Hair sides -->
+          <path d="M26 50 Q22 65 24 90 Q28 80 30 60z" fill="#3d2b1f"/>
+          <path d="M94 50 Q98 65 96 90 Q92 80 90 60z" fill="#3d2b1f"/>
+          <!-- Eyebrows -->
+          <path d="M40 48 Q47 44 54 47" stroke="#3d2b1f" stroke-width="1.8" fill="none" stroke-linecap="round"/>
+          <path d="M66 47 Q73 44 80 48" stroke="#3d2b1f" stroke-width="1.8" fill="none" stroke-linecap="round"/>
+          <!-- Eyes -->
+          <g class="avatar-eye-lid">
+            <ellipse cx="47" cy="56" rx="6" ry="6" fill="#fff"/>
+            <circle cx="47" cy="56.5" r="3.5" fill="#5b3a1a"/>
+            <circle cx="48.5" cy="55" r="1.3" fill="#fff"/>
+            <ellipse cx="73" cy="56" rx="6" ry="6" fill="#fff"/>
+            <circle cx="73" cy="56.5" r="3.5" fill="#5b3a1a"/>
+            <circle cx="74.5" cy="55" r="1.3" fill="#fff"/>
+          </g>
+          <!-- Eyelashes -->
+          <path d="M41 51.5 Q47 49 53 51.5" stroke="#3d2b1f" stroke-width="1.2" fill="none"/>
+          <path d="M67 51.5 Q73 49 79 51.5" stroke="#3d2b1f" stroke-width="1.2" fill="none"/>
+          <!-- Nose -->
+          <path d="M58 66 Q60 70 62 66" stroke="#dbb896" stroke-width="1.2" fill="none" stroke-linecap="round"/>
+          <!-- Mouth -->
+          <g class="avatar-mouth-inner">
+            <path d="M48 78 Q54 84 60 84 Q66 84 72 78" stroke="#d4736a" stroke-width="2" fill="none" stroke-linecap="round"/>
+            <path d="M50 79 Q60 86 70 79" fill="#d4736a" fill-opacity="0.25"/>
+          </g>
+          <!-- Cheek blush -->
+          <circle cx="38" cy="70" r="7" fill="#f0a0a0" opacity="0.2"/>
+          <circle cx="82" cy="70" r="7" fill="#f0a0a0" opacity="0.2"/>
+        </svg>
+      </div>
+      <div id="greeting-content">
+        <div id="greeting-text"></div>
+        <div id="report-row">
+          <div id="report-spinner"></div>
+          <div id="report-text"></div>
+        </div>
+        <div id="user-text"></div>
+        <div id="listening-indicator" class="hidden">
+          <div id="mic-pulse"></div>
+          <span>Kuuntelen...</span>
+        </div>
       </div>
     </div>
   </div>
@@ -382,7 +449,7 @@
 
     const FACE_DETECT_INTERVAL = 500;   // ms between detection attempts
     const GREETING_COOLDOWN    = 60_000; // ms between greetings
-    const OVERLAY_DURATION     = 20_000; // ms before overlay auto-dismiss
+    const OVERLAY_DURATION     = 60_000; // ms before overlay auto-dismiss (matches cooldown)
 
     const JINGLE_DURATION     = 30_000; // ms to play the jingle
 
@@ -403,6 +470,12 @@
     let overlayTimeout   = null;
     let jingleTimeout    = null;
     let greetingActive   = false;
+
+    // Voice command state
+    let recognition = null;
+    let listeningActive = false;
+    let conversationHistory = [];
+    let buildingContext = '';
 
     // Config loaded from server (Ollama model, OpenAI key)
     let appConfig = {};
@@ -427,6 +500,8 @@
     const reportSpinner  = document.getElementById('report-spinner');
     const videoEl        = document.getElementById('camera');
     const jingleAudio    = document.getElementById('jingle');
+    const userTextEl     = document.getElementById('user-text');
+    const listeningIndicator = document.getElementById('listening-indicator');
 
     // == Slide switching =======================================================
     function show(idx) {
@@ -572,7 +647,11 @@
       speechSynthesis.speak(silentUtterance);
 
       // Unlock audio playback on iOS (must happen in user gesture handler)
-      jingleAudio.play().then(() => jingleAudio.pause()).catch(() => {});
+      jingleAudio.volume = 0;
+      jingleAudio.play().then(() => { jingleAudio.pause(); jingleAudio.volume = 1; }).catch(() => { jingleAudio.volume = 1; });
+
+      // Initialize SpeechRecognition (user gesture required on iOS)
+      initSpeechRecognition();
 
       startOverlay.classList.add('hidden');
 
@@ -602,6 +681,9 @@
     }
 
     // -- Face detection loop --------------------------------------------------
+    let consecutiveDetections = 0;
+    const DETECTIONS_REQUIRED = 2; // require 2 consecutive detections to avoid false positives
+
     function startFaceDetection() {
       detectInterval = setInterval(async () => {
         if (!cameraReady || greetingActive) return;
@@ -612,14 +694,21 @@
 
           const detection = await faceapi.detectSingleFace(
             videoEl,
-            new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.35 })
+            new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.3 })
           );
-          // Re-check guards after async detection (multiple detections can be in-flight)
-          if (detection && !greetingActive && Date.now() - lastGreetingTime >= GREETING_COOLDOWN) {
-            triggerGreeting();
+          if (detection) {
+            consecutiveDetections++;
+            // Re-check guards after async detection (multiple detections can be in-flight)
+            if (consecutiveDetections >= DETECTIONS_REQUIRED && !greetingActive && Date.now() - lastGreetingTime >= GREETING_COOLDOWN) {
+              consecutiveDetections = 0;
+              triggerGreeting();
+            }
+          } else {
+            consecutiveDetections = 0;
           }
         } catch (err) {
           console.warn('Face detection error:', err);
+          consecutiveDetections = 0;
         }
       }, FACE_DETECT_INTERVAL);
     }
@@ -628,6 +717,9 @@
     async function triggerGreeting() {
       greetingActive = true;
       lastGreetingTime = Date.now();
+      conversationHistory = [];
+      buildingContext = '';
+      userTextEl.textContent = '';
 
       // Determine time-appropriate greeting
       const h = new Date().getHours();
@@ -647,22 +739,27 @@
       greetingOverlay.classList.add('visible');
 
       // Speak greeting
-      speak(greeting);
+      await speakAndWait(greeting);
 
       // Fetch building data and generate AI report in parallel
       try {
         const buildingData = await fetchBuildingData();
+        buildingContext = formatBuildingContext(buildingData);
         const report = await generateReport(buildingData);
         if (report) {
           reportSpinner.classList.add('hidden');
           reportText.textContent = report;
-          speak(report);
+          conversationHistory.push({ role: 'assistant', content: report });
+          await speakAndWait(report);
         } else {
           reportSpinner.classList.add('hidden');
         }
       } catch {
         reportSpinner.classList.add('hidden');
       }
+
+      // Enter listening mode after report (if recognition available)
+      startListening();
 
       // Auto-dismiss after OVERLAY_DURATION (or after speech, whichever is later)
       scheduleOverlayDismiss();
@@ -684,8 +781,6 @@
 
     // -- Dismiss greeting on click/tap ----------------------------------------
     greetingOverlay.addEventListener('click', () => {
-      speechSynthesis.cancel();
-      stopJingle();
       dismissOverlay();
     });
 
@@ -713,7 +808,10 @@
     function dismissOverlay() {
       clearTimeout(overlayTimeout);
       stopJingle();
+      stopListening();
+      speechSynthesis.cancel();
       avatarEl.classList.remove('speaking');
+      avatarEl.classList.remove('listening');
       greetingOverlay.classList.remove('visible');
       setTimeout(() => { greetingActive = false; }, 500);
     }
@@ -722,16 +820,224 @@
     const avatarEl = document.getElementById('avatar');
 
     function speak(text) {
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = 'fi-FI';
-      // Try to find a Finnish voice
-      const voices = speechSynthesis.getVoices();
-      const fiVoice = voices.find(v => v.lang.startsWith('fi'));
-      if (fiVoice) utterance.voice = fiVoice;
-      utterance.rate = 0.95;
-      utterance.onstart = () => avatarEl.classList.add('speaking');
-      utterance.onend   = () => avatarEl.classList.remove('speaking');
-      speechSynthesis.speak(utterance);
+      speakAndWait(text);
+    }
+
+    function speakAndWait(text) {
+      return new Promise(resolve => {
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = 'fi-FI';
+        const voices = speechSynthesis.getVoices();
+        // Prefer a Finnish female voice
+        const fiFemale = voices.find(v => v.lang.startsWith('fi') && /female|satu|marjut/i.test(v.name));
+        const fiVoice = fiFemale || voices.find(v => v.lang.startsWith('fi'));
+        if (fiVoice) utterance.voice = fiVoice;
+        utterance.rate = 0.95;
+        utterance.onstart = () => {
+          avatarEl.classList.add('speaking');
+          avatarEl.classList.remove('listening');
+        };
+        utterance.onend = () => {
+          avatarEl.classList.remove('speaking');
+          resolve();
+        };
+        utterance.onerror = () => {
+          avatarEl.classList.remove('speaking');
+          resolve();
+        };
+        speechSynthesis.speak(utterance);
+      });
+    }
+
+    // -- Speech recognition (voice commands) ----------------------------------
+    function initSpeechRecognition() {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRecognition) {
+        console.warn('SpeechRecognition not available');
+        return;
+      }
+      recognition = new SpeechRecognition();
+      recognition.lang = 'fi-FI';
+      recognition.interimResults = false;
+      recognition.continuous = false;
+
+      recognition.onresult = (event) => {
+        const transcript = event.results[event.results.length - 1][0].transcript.trim();
+        if (transcript) handleVoiceResult(transcript);
+      };
+
+      recognition.onend = () => {
+        // Auto-restart if still in listening mode and within time window
+        if (listeningActive && Date.now() - lastGreetingTime < OVERLAY_DURATION) {
+          try { recognition.start(); } catch { /* already started */ }
+        }
+      };
+
+      recognition.onerror = (event) => {
+        console.warn('Speech recognition error:', event.error);
+        // Restart on recoverable errors
+        if (listeningActive && event.error !== 'not-allowed' && event.error !== 'service-not-allowed') {
+          setTimeout(() => {
+            if (listeningActive && Date.now() - lastGreetingTime < OVERLAY_DURATION) {
+              try { recognition.start(); } catch { /* ignore */ }
+            }
+          }, 500);
+        }
+      };
+    }
+
+    function startListening() {
+      if (!recognition) return;
+      listeningActive = true;
+      listeningIndicator.classList.remove('hidden');
+      avatarEl.classList.add('listening');
+      try { recognition.start(); } catch { /* ignore */ }
+    }
+
+    function stopListening() {
+      listeningActive = false;
+      listeningIndicator.classList.add('hidden');
+      avatarEl.classList.remove('listening');
+      if (recognition) {
+        try { recognition.stop(); } catch { /* ignore */ }
+      }
+    }
+
+    async function handleVoiceResult(transcript) {
+      // Show what the user said
+      userTextEl.textContent = `"${transcript}"`;
+
+      // Pause listening while processing + speaking
+      listeningActive = false;
+      listeningIndicator.classList.add('hidden');
+      avatarEl.classList.remove('listening');
+      try { recognition.stop(); } catch { /* ignore */ }
+
+      // Add to conversation history
+      conversationHistory.push({ role: 'user', content: transcript });
+
+      // Show spinner while generating response
+      reportSpinner.classList.remove('hidden');
+
+      try {
+        const response = await generateConversationalResponse();
+        reportSpinner.classList.add('hidden');
+        if (response) {
+          reportText.textContent = response;
+          conversationHistory.push({ role: 'assistant', content: response });
+          await speakAndWait(response);
+        } else {
+          reportText.textContent = 'En saanut vastausta.';
+        }
+      } catch {
+        reportSpinner.classList.add('hidden');
+        reportText.textContent = 'En saanut vastausta.';
+      }
+
+      // Resume listening if still within time window
+      if (Date.now() - lastGreetingTime < OVERLAY_DURATION && greetingActive) {
+        listeningActive = true;
+        listeningIndicator.classList.remove('hidden');
+        avatarEl.classList.add('listening');
+        try { recognition.start(); } catch { /* ignore */ }
+      }
+    }
+
+    async function generateConversationalResponse() {
+      const systemPrompt = 'Olet kotiautomaatioavustaja. Vastaa lyhyesti suomeksi. K\u00e4yt\u00f6ss\u00e4si on talon sensoritiedot.';
+      const contextMsg = buildingContext ? `Talon sensoritiedot:\n${buildingContext}` : '';
+
+      // Build messages array for chat APIs
+      const messages = [];
+      if (contextMsg) {
+        messages.push({ role: 'user', content: contextMsg });
+        messages.push({ role: 'assistant', content: 'Selvä, minulla on talon tiedot käytössäni.' });
+      }
+      messages.push(...conversationHistory);
+
+      // 1. Try Ollama
+      try {
+        const model = appConfig.ollamaModel || 'llama3.1:8b';
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 8000);
+
+        // Ollama chat API supports messages
+        const res = await fetch('/api/ollama/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model,
+            messages: [{ role: 'system', content: systemPrompt }, ...messages],
+            stream: false
+          }),
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+
+        if (res.ok) {
+          const data = await res.json();
+          const text = data.message?.content?.trim();
+          if (text) return text;
+        }
+      } catch { /* Ollama failed */ }
+
+      // 2. Try Claude API
+      if (appConfig.anthropicApiKey) {
+        try {
+          const claudeMessages = messages.map(m => ({ role: m.role, content: m.content }));
+          const res = await fetch('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            headers: {
+              'x-api-key': appConfig.anthropicApiKey,
+              'anthropic-version': '2023-06-01',
+              'anthropic-dangerous-direct-browser-access': 'true',
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              model: 'claude-haiku-4-5-20251001',
+              max_tokens: 200,
+              system: systemPrompt,
+              messages: claudeMessages
+            })
+          });
+
+          if (res.ok) {
+            const data = await res.json();
+            const text = data.content?.[0]?.text?.trim();
+            if (text) return text;
+          }
+        } catch { /* Claude failed */ }
+      }
+
+      // 3. Fallback to OpenAI
+      if (appConfig.openaiApiKey) {
+        try {
+          const res = await fetch('https://api.openai.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${appConfig.openaiApiKey}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              model: 'gpt-4o-mini',
+              messages: [
+                { role: 'system', content: systemPrompt },
+                ...messages
+              ],
+              max_tokens: 200,
+              temperature: 0.7
+            })
+          });
+
+          if (res.ok) {
+            const data = await res.json();
+            const text = data.choices?.[0]?.message?.content?.trim();
+            if (text) return text;
+          }
+        } catch { /* All failed */ }
+      }
+
+      return null;
     }
 
     // -- InfluxDB Flux query helper -------------------------------------------
