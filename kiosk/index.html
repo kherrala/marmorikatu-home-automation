@@ -448,8 +448,8 @@
     const PEAK_END    = 9;
 
     const FACE_DETECT_INTERVAL = 500;   // ms between detection attempts
-    const GREETING_COOLDOWN    = 60_000; // ms between greetings
-    const OVERLAY_DURATION     = 60_000; // ms before overlay auto-dismiss (matches cooldown)
+    const GREETING_COOLDOWN    = 30_000; // ms after overlay dismiss before next greeting
+    const OVERLAY_DURATION     = 60_000; // ms before overlay auto-dismiss
 
     const JINGLE_DURATION     = 30_000; // ms to play the jingle
 
@@ -465,7 +465,8 @@
     let paused        = false;
 
     let cameraReady      = false;
-    let lastGreetingTime = 0;
+    let lastGreetingTime = 0;   // set on dismiss, for cooldown
+    let overlayStartTime = 0;   // set on trigger, for overlay duration
     let detectInterval   = null;
     let overlayTimeout   = null;
     let jingleTimeout    = null;
@@ -793,7 +794,7 @@
     // -- Trigger greeting sequence --------------------------------------------
     async function triggerGreeting() {
       greetingActive = true;
-      lastGreetingTime = Date.now();
+      overlayStartTime = Date.now();
       conversationHistory = [];
       buildingContext = '';
       userTextEl.textContent = '';
@@ -806,8 +807,8 @@
       else if (h >= 17 && h < 22)  greeting = 'Hyv\u00e4\u00e4 iltaa!';
       else                          greeting = 'Hyv\u00e4\u00e4 y\u00f6t\u00e4!';
 
-      // Start background jingle
-      startJingle();
+      // Start background jingle (morning only)
+      if (h >= 5 && h < 10) startJingle();
 
       // Show overlay with greeting
       greetingText.textContent = greeting;
@@ -863,7 +864,7 @@
     // -- Schedule overlay dismiss ---------------------------------------------
     function scheduleOverlayDismiss() {
       clearTimeout(overlayTimeout);
-      const elapsed = Date.now() - lastGreetingTime;
+      const elapsed = Date.now() - overlayStartTime;
       const remaining = Math.max(0, OVERLAY_DURATION - elapsed);
 
       overlayTimeout = setTimeout(() => {
@@ -889,6 +890,7 @@
       avatarEl.classList.remove('speaking');
       avatarEl.classList.remove('listening');
       greetingOverlay.classList.remove('visible');
+      lastGreetingTime = Date.now(); // cooldown starts from dismiss
       setTimeout(() => { greetingActive = false; }, 500);
     }
 
@@ -944,7 +946,7 @@
 
       recognition.onend = () => {
         // Auto-restart if still in listening mode and within time window
-        if (listeningActive && Date.now() - lastGreetingTime < OVERLAY_DURATION) {
+        if (listeningActive && Date.now() - overlayStartTime < OVERLAY_DURATION) {
           try { recognition.start(); } catch { /* already started */ }
         }
       };
@@ -954,7 +956,7 @@
         // Restart on recoverable errors
         if (listeningActive && event.error !== 'not-allowed' && event.error !== 'service-not-allowed') {
           setTimeout(() => {
-            if (listeningActive && Date.now() - lastGreetingTime < OVERLAY_DURATION) {
+            if (listeningActive && Date.now() - overlayStartTime < OVERLAY_DURATION) {
               try { recognition.start(); } catch { /* ignore */ }
             }
           }, 500);
@@ -1009,7 +1011,7 @@
       }
 
       // Resume listening if still within time window
-      if (Date.now() - lastGreetingTime < OVERLAY_DURATION && greetingActive) {
+      if (Date.now() - overlayStartTime < OVERLAY_DURATION && greetingActive) {
         listeningActive = true;
         listeningIndicator.classList.remove('hidden');
         avatarEl.classList.add('listening');
