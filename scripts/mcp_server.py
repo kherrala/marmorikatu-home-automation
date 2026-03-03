@@ -1774,9 +1774,6 @@ def create_starlette_app():
                 streams[0], streams[1], app.create_initialization_options()
             )
 
-    async def handle_messages(request):
-        await sse.handle_post_message(request.scope, request.receive, request._send)
-
     async def health_check(request):
         return JSONResponse({"status": "ok", "service": "building-automation-mcp"})
 
@@ -1785,7 +1782,7 @@ def create_starlette_app():
         routes=[
             Route("/health", health_check),
             Route("/sse", handle_sse),
-            Mount("/messages/", routes=[Route("/", handle_messages, methods=["POST"])]),
+            Mount("/messages/", app=sse.handle_post_message),
         ],
     )
 

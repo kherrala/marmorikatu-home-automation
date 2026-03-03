@@ -69,11 +69,11 @@ async def mcp_connection_loop():
             async with sse_client(MCP_URL) as (read_stream, write_stream):
                 async with ClientSession(read_stream, write_stream) as session:
                     await session.initialize()
-                    mcp_session = session
 
-                    tools_result = await session.list_tools()
+                    tools_result = await asyncio.wait_for(session.list_tools(), timeout=10)
                     mcp_tools = tools_result.tools
                     mcp_tools_claude = convert_mcp_tools_to_claude(mcp_tools)
+                    mcp_session = session
                     log.info("MCP connected — %d tools available:", len(mcp_tools))
                     for t in mcp_tools:
                         log.info("  • %s", t.name)
