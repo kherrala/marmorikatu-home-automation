@@ -141,6 +141,23 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  claude-bridge:
+    build:
+      context: .
+      dockerfile: Dockerfile.claude-bridge
+    container_name: marmorikatu-claude-bridge
+    ports:
+      - "3002:3002"
+    environment:
+      - MCP_URL=http://mcp:3001/sse
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - CLAUDE_MODEL=claude-sonnet-4-6
+      - BRIDGE_PORT=3002
+    depends_on:
+      mcp:
+        condition: service_healthy
+    restart: unless-stopped
+
   lights:
     build:
       context: .

@@ -1031,7 +1031,25 @@
       }
       messages.push(...conversationHistory);
 
-      // 1. Try Ollama
+      // 1. Try Claude Bridge (MCP-powered, can query live data)
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000);
+        const res = await fetch('/api/chat/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ messages: conversationHistory }),
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        if (res.ok) {
+          const data = await res.json();
+          const text = data.response?.trim();
+          if (text) return text;
+        }
+      } catch { /* Bridge failed, try Ollama */ }
+
+      // 2. Try Ollama
       try {
         const model = appConfig.ollamaModel || 'llama3.1:8b';
         const controller = new AbortController();
@@ -1057,7 +1075,7 @@
         }
       } catch { /* Ollama failed */ }
 
-      // 2. Try Claude API
+      // 3. Try Claude API (direct, no MCP)
       if (appConfig.anthropicApiKey) {
         try {
           const claudeMessages = messages.map(m => ({ role: m.role, content: m.content }));
@@ -1085,7 +1103,7 @@
         } catch { /* Claude failed */ }
       }
 
-      // 3. Fallback to OpenAI
+      // 4. Fallback to OpenAI
       if (appConfig.openaiApiKey) {
         try {
           const res = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -1258,7 +1276,27 @@
       const systemPrompt = 'Olet kotiautomaatioavustaja. Anna lyhyt 2 lauseen tilannekatsaus suomeksi. \u00c4l\u00e4 toista lukemia sellaisenaan, vaan tiivist\u00e4 oleellinen.';
       const userPrompt = `Talon tilanne juuri nyt:\n${context}`;
 
-      // 1. Try Ollama first (local, free)
+      // 1. Try Claude Bridge (MCP-powered, fetches its own data)
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 15000);
+        const res = await fetch('/api/chat/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            messages: [{ role: 'user', content: 'Anna lyhyt tilannekatsaus talon tämänhetkisestä tilanteesta.' }]
+          }),
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        if (res.ok) {
+          const data = await res.json();
+          const text = data.response?.trim();
+          if (text) return text;
+        }
+      } catch { /* Bridge failed, try Ollama */ }
+
+      // 2. Try Ollama (local, free)
       try {
         const model = appConfig.ollamaModel || 'llama3.1:8b';
         const controller = new AbortController();
@@ -1283,7 +1321,7 @@
         }
       } catch { /* Ollama failed, try Claude */ }
 
-      // 2. Try Claude API (Haiku — fast and cheap)
+      // 3. Try Claude API (Haiku — fast and cheap, no MCP)
       if (appConfig.anthropicApiKey) {
         try {
           const res = await fetch('https://api.anthropic.com/v1/messages', {
@@ -1312,7 +1350,7 @@
         } catch { /* Claude failed, try OpenAI */ }
       }
 
-      // 3. Fallback to OpenAI (gpt-4o-mini — cheap)
+      // 4. Fallback to OpenAI (gpt-4o-mini — cheap)
       if (appConfig.openaiApiKey) {
         try {
           const res = await fetch('https://api.openai.com/v1/chat/completions', {

@@ -1,0 +1,25 @@
+# Claude Bridge — MCP-powered AI for Kiosk
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# Install dependencies
+RUN pip install --no-cache-dir anthropic mcp uvicorn starlette httpx
+
+# Copy bridge script
+COPY scripts/claude_bridge.py /app/
+
+# Environment variables (defaults, override in docker-compose)
+ENV MCP_URL=http://mcp:3001/sse
+ENV CLAUDE_MODEL=claude-sonnet-4-6
+ENV BRIDGE_PORT=3002
+
+# Expose the bridge port
+EXPOSE 3002
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:3002/health')" || exit 1
+
+# Run the bridge
+CMD ["python", "/app/claude_bridge.py"]
