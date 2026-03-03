@@ -419,7 +419,7 @@
 
     // == Set iframe sources from origin hostname ===============================
     const host = window.location.hostname;
-    document.querySelector('#slide-0 iframe').src = `http://${host}:3000/?kiosk`;
+    document.querySelector('#slide-0 iframe').src = `/grafana/?kiosk`;
     document.querySelector('#slide-1 iframe').src = `http://${host}:3010`;
     document.querySelector('#slide-2 iframe').src = `https://${host}/webvisu/webvisu.htm`;
 
@@ -536,6 +536,12 @@
       scheduleOverlayDismiss();
     }
 
+    // -- Dismiss greeting on click/tap ----------------------------------------
+    greetingOverlay.addEventListener('click', () => {
+      speechSynthesis.cancel();
+      dismissOverlay();
+    });
+
     // -- Schedule overlay dismiss ---------------------------------------------
     function scheduleOverlayDismiss() {
       clearTimeout(overlayTimeout);
@@ -558,6 +564,7 @@
     }
 
     function dismissOverlay() {
+      clearTimeout(overlayTimeout);
       greetingOverlay.classList.remove('visible');
       setTimeout(() => { greetingActive = false; }, 500);
     }
