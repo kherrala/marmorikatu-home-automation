@@ -30,4 +30,7 @@ RUN chmod +x /entrypoint.sh
 COPY kiosk/index.html /usr/share/nginx/html/index.html
 COPY kiosk/jingle.mp3 /usr/share/nginx/html/jingle.mp3
 
+# Build version stamp (changes on every rebuild for auto-reload detection)
+RUN date +%s > /usr/share/nginx/html/version.txt
+
 ENTRYPOINT ["/entrypoint.sh"]
