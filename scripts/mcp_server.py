@@ -260,7 +260,11 @@ def execute_flux_query(query: str) -> list[dict]:
         results = []
         for table in tables:
             for record in table.records:
-                row = {"_time": record.get_time().isoformat() if record.get_time() else None}
+                try:
+                    t = record.get_time()
+                    row = {"_time": t.isoformat() if t else None}
+                except KeyError:
+                    row = {"_time": None}
                 for key, value in record.values.items():
                     if not key.startswith("_") or key in ["_value", "_field", "_measurement"]:
                         row[key] = value
@@ -443,9 +447,11 @@ Typical good efficiency is 50-80%.""",
         ),
         Tool(
             name="get_energy_consumption",
-            description="""Get energy consumption summary for heat pump and auxiliary heater.
+            description="""Get estimated energy consumption breakdown by component.
 
-Returns cumulative energy readings and consumption over the time range.""",
+Estimates consumption (kWh) for: heat pump (compressor + aux heaters),
+sauna, lighting, and HVAC fan. Uses component status data from InfluxDB
+with the same calculation as the Energy Cost dashboard.""",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -1088,54 +1094,95 @@ from(bucket: "{INFLUXDB_BUCKET}")
             return [TextContent(type="text", text=f"Error: {str(e)}")]
 
     elif name == "get_energy_consumption":
-        time_range = arguments.get("time_range", "-7d")
-
-        query = f'''
-from(bucket: "{INFLUXDB_BUCKET}")
-  |> range(start: {time_range})
-  |> filter(fn: (r) => r._measurement == "hvac")
-  |> filter(fn: (r) => r._field == "Lampopumppu_energia" or r._field == "Lisavastus_energia")
-  |> aggregateWindow(every: {time_range.replace("-", "")}, fn: spread, createEmpty: false)
-  |> pivot(rowKey: ["_time"], columnKey: ["_field"], valueColumn: "_value")
-'''
         try:
-            # Get consumption (difference between first and last)
-            q_first = f'''
+            time_range = arguments.get("time_range", "-7d")
+            WATT_PER_LIGHT = 10
+            WATT_FAN = 300
+
+            # Heat pump: join supply_temp with compressor/aux status
+            flux_hp_temps = f"""
 from(bucket: "{INFLUXDB_BUCKET}")
   |> range(start: {time_range})
-  |> filter(fn: (r) => r._measurement == "hvac")
-  |> filter(fn: (r) => r._field == "Lampopumppu_energia" or r._field == "Lisavastus_energia")
-  |> first()
-'''
-            q_last = f'''
+  |> filter(fn: (r) => r._measurement == "thermia" and r.data_type == "temperature")
+  |> filter(fn: (r) => r._field == "supply_temp")
+  |> aggregateWindow(every: 1h, fn: mean, createEmpty: false)
+  |> keep(columns: ["_time", "_value"])
+"""
+            flux_hp_status = f"""
 from(bucket: "{INFLUXDB_BUCKET}")
   |> range(start: {time_range})
-  |> filter(fn: (r) => r._measurement == "hvac")
-  |> filter(fn: (r) => r._field == "Lampopumppu_energia" or r._field == "Lisavastus_energia")
-  |> last()
-'''
-            first_results = execute_flux_query(q_first)
-            last_results = execute_flux_query(q_last)
+  |> filter(fn: (r) => r._measurement == "thermia" and r.data_type == "status")
+  |> filter(fn: (r) => r._field == "compressor" or r._field == "aux_heater_3kw" or r._field == "aux_heater_6kw")
+  |> toFloat()
+  |> aggregateWindow(every: 1h, fn: mean, createEmpty: false)
+  |> keep(columns: ["_time", "_value", "_field"])
+  |> group()
+  |> pivot(rowKey: ["_time"], columnKey: ["_field"], valueColumn: "_value")
+"""
+            hp_temps = execute_flux_query(flux_hp_temps)
+            hp_status = execute_flux_query(flux_hp_status)
+            temp_by_time = {r.get("_time"): r.get("_value", 35) or 35 for r in hp_temps}
 
-            first_vals = {r["_field"]: r["_value"] for r in first_results}
-            last_vals = {r["_field"]: r["_value"] for r in last_results}
+            hp_comp_kwh = 0.0
+            hp_aux_kwh = 0.0
+            for row in hp_status:
+                comp = row.get("compressor", 0) or 0
+                aux3 = row.get("aux_heater_3kw", 0) or 0
+                aux6 = row.get("aux_heater_6kw", 0) or 0
+                sup_t = temp_by_time.get(row.get("_time"), 35)
+                hp_comp_kwh += comp * (1.77 + (sup_t - 35.0) * 0.5 / 15.0)
+                hp_aux_kwh += aux3 * 3.0 + aux6 * 6.0
 
-            hp_consumption = (last_vals.get("Lampopumppu_energia", 0) or 0) - (first_vals.get("Lampopumppu_energia", 0) or 0)
-            aux_consumption = (last_vals.get("Lisavastus_energia", 0) or 0) - (first_vals.get("Lisavastus_energia", 0) or 0)
+            # Lighting
+            flux_lights = f"""
+from(bucket: "{INFLUXDB_BUCKET}")
+  |> range(start: {time_range})
+  |> filter(fn: (r) => r._measurement == "lights" and r._field == "is_on")
+  |> toFloat()
+  |> aggregateWindow(every: 1h, fn: mean, createEmpty: false)
+  |> group(columns: ["_time"])
+  |> sum()
+  |> group()
+"""
+            light_data = execute_flux_query(flux_lights)
+            light_kwh = sum((r.get("_value", 0) or 0) * WATT_PER_LIGHT / 1000.0 for r in light_data)
+
+            # Sauna
+            flux_sauna = f"""
+from(bucket: "{INFLUXDB_BUCKET}")
+  |> range(start: {time_range})
+  |> filter(fn: (r) => r._measurement == "ruuvi" and r.sensor_name == "Sauna")
+  |> filter(fn: (r) => r._field == "temperature")
+  |> aggregateWindow(every: 1m, fn: mean, createEmpty: false)
+  |> derivative(unit: 1m, nonNegative: false)
+  |> map(fn: (r) => ({{r with _value: if r._value > 0.05 then 1.0 else 0.0}}))
+  |> aggregateWindow(every: 1h, fn: mean, createEmpty: false)
+"""
+            sauna_data = execute_flux_query(flux_sauna)
+            sauna_kwh = sum((r.get("_value", 0) or 0) * 6.0 for r in sauna_data)
+
+            # HVAC fan
+            flux_fan = f"""
+from(bucket: "{INFLUXDB_BUCKET}")
+  |> range(start: {time_range})
+  |> filter(fn: (r) => r._measurement == "ruuvi" and (r.sensor_name == "Keittio" or r.sensor_name == "Keittiö"))
+  |> filter(fn: (r) => r._field == "pressure")
+  |> aggregateWindow(every: 1h, fn: mean, createEmpty: false)
+"""
+            fan_data = execute_flux_query(flux_fan)
+            fan_kwh = len(fan_data) * WATT_FAN / 1000.0
+
+            total_kwh = hp_comp_kwh + hp_aux_kwh + light_kwh + sauna_kwh + fan_kwh
 
             result = {
                 "time_range": time_range,
-                "heat_pump": {
-                    "start_reading_kwh": first_vals.get("Lampopumppu_energia"),
-                    "end_reading_kwh": last_vals.get("Lampopumppu_energia"),
-                    "consumption_kwh": hp_consumption
-                },
-                "auxiliary_heater": {
-                    "start_reading_kwh": first_vals.get("Lisavastus_energia"),
-                    "end_reading_kwh": last_vals.get("Lisavastus_energia"),
-                    "consumption_kwh": aux_consumption
-                },
-                "total_consumption_kwh": hp_consumption + aux_consumption
+                "heat_pump_compressor_kwh": round(hp_comp_kwh, 2),
+                "heat_pump_aux_heaters_kwh": round(hp_aux_kwh, 2),
+                "lighting_kwh": round(light_kwh, 2),
+                "sauna_kwh": round(sauna_kwh, 2),
+                "hvac_fan_kwh": round(fan_kwh, 2),
+                "total_kwh": round(total_kwh, 2),
+                "note": "Estimates based on component status data and assumed wattages",
             }
 
             return [TextContent(type="text", text=json.dumps(result, indent=2, ensure_ascii=False, default=str))]
@@ -2115,44 +2162,68 @@ from(bucket: "{INFLUXDB_BUCKET}")
             WATT_PER_LIGHT = 10
             WATT_FAN = 300
 
-            # Heat pump: compressor + aux heaters (hourly mean status × rated power)
-            flux_hp = f"""
+            # Heat pump: join supply_temp with compressor/aux status (matches Energy Cost dashboard)
+            flux_hp_temps = f"""
 from(bucket: "{INFLUXDB_BUCKET}")
   |> range(start: {time_range})
-  |> filter(fn: (r) => r._measurement == "thermia")
-  |> filter(fn: (r) => r._field == "compressor" or r._field == "aux_heater_3kw" or r._field == "aux_heater_6kw" or r._field == "supply_temp")
+  |> filter(fn: (r) => r._measurement == "thermia" and r.data_type == "temperature")
+  |> filter(fn: (r) => r._field == "supply_temp")
   |> aggregateWindow(every: 1h, fn: mean, createEmpty: false)
-  |> pivot(rowKey: ["_time"], columnKey: ["_field"], valueColumn: "_value")
-  |> sort(columns: ["_time"])
+  |> keep(columns: ["_time", "_value"])
 """
-            hp_data = execute_flux_query(flux_hp)
+            flux_hp_status = f"""
+from(bucket: "{INFLUXDB_BUCKET}")
+  |> range(start: {time_range})
+  |> filter(fn: (r) => r._measurement == "thermia" and r.data_type == "status")
+  |> filter(fn: (r) => r._field == "compressor" or r._field == "aux_heater_3kw" or r._field == "aux_heater_6kw")
+  |> toFloat()
+  |> aggregateWindow(every: 1h, fn: mean, createEmpty: false)
+  |> keep(columns: ["_time", "_value", "_field"])
+  |> group()
+  |> pivot(rowKey: ["_time"], columnKey: ["_field"], valueColumn: "_value")
+"""
+            hp_temps = execute_flux_query(flux_hp_temps)
+            hp_status = execute_flux_query(flux_hp_status)
+
+            # Build time-indexed lookup for supply temps
+            temp_by_time = {r.get("_time"): r.get("_value", 35) or 35 for r in hp_temps}
+
             hp_kwh = 0.0
-            for row in hp_data:
+            for row in hp_status:
                 comp = row.get("compressor", 0) or 0
                 aux3 = row.get("aux_heater_3kw", 0) or 0
                 aux6 = row.get("aux_heater_6kw", 0) or 0
-                sup_t = row.get("supply_temp", 35) or 35
+                sup_t = temp_by_time.get(row.get("_time"), 35)
                 # Compressor power varies with supply temp (1.77-2.27 kW)
                 comp_kw = comp * (1.77 + (sup_t - 35.0) * 0.5 / 15.0)
                 hp_kwh += comp_kw + aux3 * 3.0 + aux6 * 6.0  # 1h window = kWh directly
 
-            # Lighting: count active lights × watt_per_light
+            # Lighting: mean on-state per light per hour, sum across lights (matches dashboard)
             flux_lights = f"""
 from(bucket: "{INFLUXDB_BUCKET}")
   |> range(start: {time_range})
   |> filter(fn: (r) => r._measurement == "lights" and r._field == "is_on")
+  |> toFloat()
   |> aggregateWindow(every: 1h, fn: mean, createEmpty: false)
+  |> group(columns: ["_time"])
+  |> sum()
   |> group()
-  |> aggregateWindow(every: 1h, fn: sum, createEmpty: false)
 """
             light_data = execute_flux_query(flux_lights)
             light_kwh = sum((r.get("_value", 0) or 0) * WATT_PER_LIGHT / 1000.0 for r in light_data)
 
-            # HVAC fan: constant assumed power when system running
-            fan_hours = len(hp_data)  # approximate: assume fan runs whenever we have data
-            fan_kwh = fan_hours * WATT_FAN / 1000.0
+            # HVAC fan: assume constant power for each hour we have pressure data
+            flux_fan = f"""
+from(bucket: "{INFLUXDB_BUCKET}")
+  |> range(start: {time_range})
+  |> filter(fn: (r) => r._measurement == "ruuvi" and (r.sensor_name == "Keittio" or r.sensor_name == "Keittiö"))
+  |> filter(fn: (r) => r._field == "pressure")
+  |> aggregateWindow(every: 1h, fn: mean, createEmpty: false)
+"""
+            fan_data = execute_flux_query(flux_fan)
+            fan_kwh = len(fan_data) * WATT_FAN / 1000.0
 
-            # Sauna: detect heating hours via temperature derivative
+            # Sauna: detect heating hours via temperature derivative (matches dashboard)
             flux_sauna = f"""
 from(bucket: "{INFLUXDB_BUCKET}")
   |> range(start: {time_range})
