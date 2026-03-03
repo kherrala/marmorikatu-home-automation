@@ -75,6 +75,7 @@ def _find_session(tool_name: str) -> ClientSession | None:
 
 async def mcp_connection_loop(url: str):
     """Background task: maintain persistent connection to one MCP server."""
+    retry_delay = 5  # seconds, grows with backoff
 
     while True:
         try:
@@ -105,16 +106,19 @@ async def mcp_connection_loop(url: str):
                     for t in tools_result.tools:
                         log.info("  • %s", t.name)
 
+                    retry_delay = 5  # reset on successful connection
+
                     # Keep alive until connection drops
                     while True:
                         await asyncio.sleep(60)
         except asyncio.CancelledError:
             break
         except Exception as e:
-            log.warning("MCP %s lost (%s), reconnecting in 5s...", url, e)
+            log.warning("MCP %s lost (%s), reconnecting in %ds...", url, e, retry_delay)
             async with _lock:
                 _servers.pop(url, None)
-            await asyncio.sleep(5)
+            await asyncio.sleep(retry_delay)
+            retry_delay = min(retry_delay * 2, 60)  # backoff up to 60s
 
 
 async def run_agentic_loop(messages: list[dict], tools: list[dict]) -> dict:
