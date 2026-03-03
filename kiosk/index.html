@@ -760,8 +760,7 @@
 
     // -- Face detection loop --------------------------------------------------
     let consecutiveDetections = 0;
-    const DETECTIONS_REQUIRED = 3; // require 3 consecutive high-confidence detections
-    const MIN_FACE_SCORE      = 0.5; // minimum confidence to count as a real face
+    const DETECTIONS_REQUIRED = 3; // require 3 consecutive detections
 
     function startFaceDetection() {
       detectInterval = setInterval(async () => {
@@ -773,9 +772,9 @@
 
           const detection = await faceapi.detectSingleFace(
             videoEl,
-            new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.4 })
+            new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.35 })
           );
-          if (detection && detection.score >= MIN_FACE_SCORE) {
+          if (detection) {
             consecutiveDetections++;
             // Re-check guards after async detection (multiple detections can be in-flight)
             if (consecutiveDetections >= DETECTIONS_REQUIRED && !greetingActive && Date.now() - lastGreetingTime >= GREETING_COOLDOWN) {
