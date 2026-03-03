@@ -300,7 +300,7 @@ def apply_pre_heat_and_evu_cap(classified):
     return result
 
 
-def apply_relative_fallback(classified):
+def apply_relative_fallback(classified, p_cheap):
     """
     Fallback for low-price periods: when the forecast has no historically-
     expensive slots but prices still vary meaningfully, mark the relatively
@@ -311,6 +311,8 @@ def apply_relative_fallback(classified):
     Only activates when:
       - No EXPENSIVE slots in the forecast (absolute approach is dormant)
       - Max-min price spread >= MIN_RELATIVE_SPREAD c/kWh
+      - Within-window P75 is above the absolute CHEAP threshold (no point
+        in load-shifting when all prices are objectively cheap)
     """
     if any(tier == EXPENSIVE for _, tier, _ in classified):
         return classified  # Absolute classification is already active
@@ -323,6 +325,12 @@ def apply_relative_fallback(classified):
         return classified
 
     p75 = percentile(prices_only, 75)
+
+    if p75 <= p_cheap:
+        log.info(f"Relative fallback: within-window P75 {p75:.2f} c/kWh ≤ absolute cheap threshold "
+                 f"{p_cheap:.2f} c/kWh — all prices objectively cheap, no action")
+        return classified
+
     log.info(f"Relative fallback active: spread {spread:.2f} c/kWh, "
              f"within-window P75 = {p75:.2f} c/kWh → expensive above this")
 
@@ -523,7 +531,7 @@ def check_and_control(query_api, write_api):
     classified = classify_prices(prices, p_cheap, p_expensive)
 
     # 5. Apply relative fallback (may add EXPENSIVE slots), filter short blocks, then pre-heat + EVU cap
-    schedule = apply_relative_fallback(classified)
+    schedule = apply_relative_fallback(classified, p_cheap)
     schedule = filter_short_expensive_blocks(schedule)
     schedule = apply_pre_heat_and_evu_cap(schedule)
 
