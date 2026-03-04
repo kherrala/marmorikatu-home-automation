@@ -1062,23 +1062,14 @@
       reportSpinner.classList.remove('hidden');
       greetingOverlay.classList.add('visible');
 
-      // Speak greeting AND fetch data + generate report in parallel
-      const reportPromise = (async () => {
-        try {
-          const buildingData = await fetchBuildingData();
-          buildingContext = formatBuildingContext(buildingData);
-          return await generateReport(buildingData) || randomFallback();
-        } catch {
-          return randomFallback();
-        }
-      })();
+      // Speak greeting, then show a random quote
+      reportSpinner.classList.add('hidden');
+      const quote = randomFallback();
+      reportText.textContent = quote;
+      conversationHistory.push({ role: 'assistant', content: quote });
 
       await speakAndWait(greeting);
-      const report = await reportPromise;
-      reportSpinner.classList.add('hidden');
-      reportText.textContent = report;
-      conversationHistory.push({ role: 'assistant', content: report });
-      await speakAndWait(report);
+      await speakAndWait(quote);
 
       // Minimize avatar to bottom-right before entering listening mode
       minimizeOverlay();
@@ -1212,7 +1203,18 @@
       });
     }
 
-    // -- Speech recognition (MediaRecorder + server-side Whisper) -------------
+    // -- Speech recognition ---------------------------------------------------
+    // Native Web Speech API on Chrome/Edge; MediaRecorder + Whisper on Safari
+
+    const NativeSpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const isAppleBrowser = /iPad|iPhone|iPod/.test(navigator.userAgent)
+                        || (/Safari/.test(navigator.userAgent) && !/Chrome/.test(navigator.userAgent));
+    const useNativeSpeech = !!NativeSpeechRecognition && !isAppleBrowser;
+
+    let nativeRecognizer = null;
+    let nativeSpeechTimer = null;
+    let nativeSpeechText = '';
+    const NATIVE_SPEECH_PAUSE = 2000;
 
     let mediaRecorder = null;
     let audioChunks = [];
@@ -1228,8 +1230,16 @@
     let micReady = false;
 
     function initSpeechRecognition() {
-      // Mic stream was already obtained in initCameraSteps (audio: true).
-      // Re-use those audio tracks if available, otherwise request mic now.
+      if (useNativeSpeech) {
+        // Native API manages its own mic — just mark ready
+        micReady = true;
+        recognition = true;
+        console.log('[voice] Using native Web Speech API (fi-FI)');
+        return;
+      }
+
+      // MediaRecorder path: reuse camera audio tracks or request mic
+      console.log('[voice] Using MediaRecorder + server transcription');
       const existingStream = videoEl.srcObject;
       const audioTracks = existingStream?.getAudioTracks() || [];
 
@@ -1292,15 +1302,71 @@
         return;
       }
 
-      // Resume AudioContext if suspended (Safari requires user gesture)
-      if (audioContext?.state === 'suspended') audioContext.resume();
-
       listeningActive = true;
       listeningIndicator.classList.remove('hidden');
       avatarEl.classList.add('listening');
       scheduleOverlayDismiss();
 
-      startRecording();
+      if (useNativeSpeech) {
+        startNativeRecognition();
+      } else {
+        if (audioContext?.state === 'suspended') audioContext.resume();
+        startRecording();
+      }
+    }
+
+    // -- Native Web Speech API -----------------------------------------------
+    function startNativeRecognition() {
+      if (!listeningActive) return;
+
+      nativeSpeechText = '';
+      clearTimeout(nativeSpeechTimer);
+
+      nativeRecognizer = new NativeSpeechRecognition();
+      nativeRecognizer.lang = 'fi-FI';
+      nativeRecognizer.continuous = true;
+      nativeRecognizer.interimResults = false;
+      nativeRecognizer.maxAlternatives = 1;
+
+      nativeRecognizer.onresult = (event) => {
+        let transcript = '';
+        for (let i = 0; i < event.results.length; i++) {
+          if (event.results[i].isFinal) {
+            transcript += event.results[i][0].transcript;
+          }
+        }
+        nativeSpeechText = transcript.trim();
+        console.log('[voice] Native partial:', nativeSpeechText);
+
+        clearTimeout(nativeSpeechTimer);
+        nativeSpeechTimer = setTimeout(() => {
+          if (nativeSpeechText && listeningActive) {
+            console.log('[voice] Native final:', nativeSpeechText);
+            try { nativeRecognizer.stop(); } catch {}
+            handleVoiceResult(nativeSpeechText);
+          }
+        }, NATIVE_SPEECH_PAUSE);
+      };
+
+      nativeRecognizer.onerror = (event) => {
+        console.warn('[voice] Native error:', event.error);
+        if (event.error === 'no-speech' && listeningActive && kioskState === STATES.GREETING) {
+          startNativeRecognition();
+        }
+      };
+
+      nativeRecognizer.onend = () => {
+        if (nativeSpeechText && listeningActive) {
+          clearTimeout(nativeSpeechTimer);
+          handleVoiceResult(nativeSpeechText);
+          return;
+        }
+        if (listeningActive && kioskState === STATES.GREETING) {
+          startNativeRecognition();
+        }
+      };
+
+      nativeRecognizer.start();
     }
     function startRecording() {
       if (!audioStream || !listeningActive) {
@@ -1416,6 +1482,11 @@
       listeningIndicator.classList.add('hidden');
       avatarEl.classList.remove('listening');
       clearTimeout(silenceTimer);
+      clearTimeout(nativeSpeechTimer);
+      if (nativeRecognizer) {
+        try { nativeRecognizer.abort(); } catch {}
+        nativeRecognizer = null;
+      }
       if (mediaRecorder && mediaRecorder.state === 'recording') {
         try { mediaRecorder.stop(); } catch { /* ignore */ }
       }
@@ -1433,6 +1504,11 @@
       listeningIndicator.classList.add('hidden');
       avatarEl.classList.remove('listening');
       clearTimeout(silenceTimer);
+      clearTimeout(nativeSpeechTimer);
+      if (nativeRecognizer) {
+        try { nativeRecognizer.abort(); } catch {}
+        nativeRecognizer = null;
+      }
       if (mediaRecorder && mediaRecorder.state === 'recording') {
         try { mediaRecorder.stop(); } catch { /* ignore */ }
       }
