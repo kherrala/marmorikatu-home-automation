@@ -168,20 +168,24 @@ async def run_ollama_agentic_loop(messages: list[dict], tools: list[dict]) -> di
 
     async with httpx.AsyncClient(timeout=120) as client:
         for iteration in range(MAX_TOOL_ITERATIONS):
-            resp = await client.post(
-                f"{OLLAMA_URL}/v1/chat/completions",
-                json={
-                    "model": OLLAMA_MODEL,
-                    "messages": oai_messages,
-                    "tools": openai_tools,
+            request_body = {
+                "model": OLLAMA_MODEL,
+                "messages": oai_messages,
+                "tools": openai_tools,
+                "temperature": 0.3,
+                "presence_penalty": 0,
+                "options": {
+                    "num_ctx": OLLAMA_NUM_CTX,
                     "temperature": 0.3,
                     "presence_penalty": 0,
-                    "options": {
-                        "num_ctx": OLLAMA_NUM_CTX,
-                        "temperature": 0.3,
-                        "presence_penalty": 0,
-                    },
                 },
+            }
+            if iteration == 0:
+                with open("/tmp/ollama_request.json", "w") as f:
+                    json.dump(request_body, f, ensure_ascii=False)
+            resp = await client.post(
+                f"{OLLAMA_URL}/v1/chat/completions",
+                json=request_body,
             )
             resp.raise_for_status()
             data = resp.json()
