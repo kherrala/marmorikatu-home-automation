@@ -1062,24 +1062,23 @@
       reportSpinner.classList.remove('hidden');
       greetingOverlay.classList.add('visible');
 
-      // Speak greeting
-      await speakAndWait(greeting);
+      // Speak greeting AND fetch data + generate report in parallel
+      const reportPromise = (async () => {
+        try {
+          const buildingData = await fetchBuildingData();
+          buildingContext = formatBuildingContext(buildingData);
+          return await generateReport(buildingData) || randomFallback();
+        } catch {
+          return randomFallback();
+        }
+      })();
 
-      // Fetch building data and generate AI report in parallel
-      try {
-        const buildingData = await fetchBuildingData();
-        buildingContext = formatBuildingContext(buildingData);
-        const report = await generateReport(buildingData) || randomFallback();
-        reportSpinner.classList.add('hidden');
-        reportText.textContent = report;
-        conversationHistory.push({ role: 'assistant', content: report });
-        await speakAndWait(report);
-      } catch {
-        const fallback = randomFallback();
-        reportSpinner.classList.add('hidden');
-        reportText.textContent = fallback;
-        await speakAndWait(fallback);
-      }
+      await speakAndWait(greeting);
+      const report = await reportPromise;
+      reportSpinner.classList.add('hidden');
+      reportText.textContent = report;
+      conversationHistory.push({ role: 'assistant', content: report });
+      await speakAndWait(report);
 
       // Minimize avatar to bottom-right before entering listening mode
       minimizeOverlay();
