@@ -139,8 +139,45 @@
       font-size: 14px;
       margin-top: 12px;
     }
+    #init-spinner {
+      width: 32px;
+      height: 32px;
+      border: 3px solid rgba(255,255,255,0.15);
+      border-top-color: rgba(255,255,255,0.7);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin-top: 20px;
+    }
+    #init-spinner.hidden { display: none; }
+    #init-error {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      gap: 14px;
+      margin-top: 20px;
+    }
+    #init-error.visible { display: flex; }
+    #init-error .error-message {
+      color: rgba(255,255,255,0.7);
+      font-size: 18px;
+    }
+    #retry-btn {
+      background: rgba(255,255,255,0.15);
+      color: #fff;
+      border: 1px solid rgba(255,255,255,0.25);
+      padding: 10px 28px;
+      border-radius: 8px;
+      font-size: 16px;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+    #skip-btn {
+      color: rgba(255,255,255,0.4);
+      font-size: 13px;
+      text-decoration: underline;
+    }
 
-    /* -- Camera indicator dot ---------------------------------------------- */
+    /* -- Status indicator dot ---------------------------------------------- */
     #camera-dot {
       position: fixed;
       top: 10px;
@@ -148,12 +185,12 @@
       width: 8px;
       height: 8px;
       border-radius: 50%;
-      background: #4caf50;
       z-index: 300;
       opacity: 0;
-      transition: opacity 0.3s;
+      transition: opacity 0.3s, background 0.3s;
     }
-    #camera-dot.active { opacity: 0.7; }
+    #camera-dot.active { opacity: 0.7; background: #4caf50; }
+    #camera-dot.failed { opacity: 0.7; background: #e53935; }
 
     /* -- Greeting overlay (centered card) --------------------------------- */
     #greeting-overlay {
@@ -169,7 +206,7 @@
     }
     #greeting-overlay.visible {
       opacity: 1;
-      pointer-events: auto;
+      pointer-events: none;
     }
 
     #greeting-card {
@@ -191,6 +228,7 @@
     }
     #greeting-overlay.visible #greeting-card {
       transform: scale(1) translateY(0);
+      pointer-events: auto;
     }
 
     /* -- Avatar ----------------------------------------------------------- */
@@ -336,6 +374,12 @@
   <div id="start-overlay">
     <div class="label">Kosketa aloittaaksesi</div>
     <div class="sublabel">Kamera ja puhe aktivoidaan</div>
+    <div id="init-spinner" class="hidden"></div>
+    <div id="init-error">
+      <div class="error-message">Kamera ei käytettävissä</div>
+      <button id="retry-btn">Yritä uudelleen</button>
+      <a id="skip-btn" href="#">Jatka ilman kameraa</a>
+    </div>
   </div>
 
   <!-- Camera active indicator -->
@@ -459,19 +503,48 @@
     const INFLUXDB_ORG   = 'wago';
     const INFLUXDB_BUCKET = 'building_automation';
 
+    // == State Machine =========================================================
+    const STATES = {
+      NOT_STARTED: 'NOT_STARTED',
+      UNLOCKING: 'UNLOCKING',
+      REQUESTING_CAMERA: 'REQUESTING_CAMERA',
+      LOADING_MODEL: 'LOADING_MODEL',
+      READY: 'READY',
+      GREETING: 'GREETING',
+      GREETING_COOLDOWN: 'GREETING_COOLDOWN',
+      CAMERA_FAILED: 'CAMERA_FAILED',
+      DASHBOARD_ONLY: 'DASHBOARD_ONLY'
+    };
+
+    let kioskState = STATES.NOT_STARTED;
+
+    function setState(newState) {
+      console.log(`[kiosk] ${kioskState} → ${newState}`);
+      kioskState = newState;
+      updateStatusIndicator();
+    }
+
+    function updateStatusIndicator() {
+      if (!cameraDot) return;
+      cameraDot.classList.remove('active', 'failed');
+      if ([STATES.READY, STATES.GREETING, STATES.GREETING_COOLDOWN].includes(kioskState)) {
+        cameraDot.classList.add('active');
+      } else if (kioskState === STATES.CAMERA_FAILED) {
+        cameraDot.classList.add('failed');
+      }
+    }
+
     // == State =================================================================
     let current       = 0;
     let carouselTimer = null;
     let pauseTimer    = null;
     let paused        = false;
 
-    let cameraReady      = false;
     let lastGreetingTime = 0;   // set on dismiss, for cooldown
     let overlayStartTime = 0;   // set on trigger, for overlay duration
     let detectInterval   = null;
     let overlayTimeout   = null;
     let jingleTimeout    = null;
-    let greetingActive   = false;
 
     // Voice command state
     let recognition = null;
@@ -574,6 +647,7 @@
     const startOverlay   = document.getElementById('start-overlay');
     const cameraDot      = document.getElementById('camera-dot');
     const greetingOverlay = document.getElementById('greeting-overlay');
+    const greetingCard   = document.getElementById('greeting-card');
     const greetingText   = document.getElementById('greeting-text');
     const reportText     = document.getElementById('report-text');
     const reportSpinner  = document.getElementById('report-spinner');
@@ -581,6 +655,10 @@
     const jingleAudio    = document.getElementById('jingle');
     const userTextEl     = document.getElementById('user-text');
     const listeningIndicator = document.getElementById('listening-indicator');
+    const initSpinner    = document.getElementById('init-spinner');
+    const initError      = document.getElementById('init-error');
+    const startLabel     = startOverlay.querySelector('.label');
+    const startSublabel  = startOverlay.querySelector('.sublabel');
 
     // == Slide switching =======================================================
     function show(idx) {
@@ -719,33 +797,80 @@
     }
 
     // -- Start overlay: unlock camera + audio on iOS --------------------------
-    startOverlay.addEventListener('click', async () => {
-      // Unlock speechSynthesis with a silent utterance
+    startOverlay.addEventListener('click', async function handleStart() {
+      startOverlay.removeEventListener('click', handleStart);
+      setState(STATES.UNLOCKING);
+
+      // Unlock speechSynthesis + audio playback (must be in gesture handler)
       const silentUtterance = new SpeechSynthesisUtterance('');
       silentUtterance.volume = 0;
       speechSynthesis.speak(silentUtterance);
-
-      // Unlock audio playback on iOS (must happen in user gesture handler)
       jingleAudio.muted = true;
       jingleAudio.play().then(() => { jingleAudio.pause(); jingleAudio.currentTime = 0; jingleAudio.muted = false; }).catch(() => { jingleAudio.muted = false; });
 
-      startOverlay.classList.add('hidden');
+      // Show progress
+      startLabel.textContent = 'Aktivoidaan kamera...';
+      startSublabel.textContent = 'Salli kameran ja mikrofonin käyttö';
+      initSpinner.classList.remove('hidden');
+      startOverlay.style.cursor = 'default';
 
-      await loadConfig();
-      await initCamera(); // Requests camera + mic together
-      initSpeechRecognition(); // Safe to init after mic is pre-authorized
+      const [_, cameraOk] = await Promise.all([loadConfig(), initCameraSteps()]);
+
+      if (cameraOk) {
+        initSpinner.classList.add('hidden');
+        startLabel.textContent = 'Valmis!';
+        startSublabel.textContent = '';
+        await new Promise(r => setTimeout(r, 500));
+        startOverlay.classList.add('hidden');
+        initSpeechRecognition();
+      } else {
+        showCameraError();
+      }
     });
 
-    // -- Camera init ----------------------------------------------------------
-    async function initCamera() {
-      // Request camera + mic in one dialog (pre-authorizes mic for speech recognition)
+    function showCameraError() {
+      initSpinner.classList.add('hidden');
+      startLabel.textContent = '';
+      startSublabel.textContent = '';
+      initError.classList.add('visible');
+    }
+
+    document.getElementById('retry-btn').addEventListener('click', async (e) => {
+      e.stopPropagation();
+      initError.classList.remove('visible');
+      startLabel.textContent = 'Aktivoidaan kamera...';
+      startSublabel.textContent = '';
+      initSpinner.classList.remove('hidden');
+      const ok = await initCameraSteps();
+      if (ok) {
+        initSpinner.classList.add('hidden');
+        startLabel.textContent = 'Valmis!';
+        startSublabel.textContent = '';
+        await new Promise(r => setTimeout(r, 500));
+        startOverlay.classList.add('hidden');
+        initSpeechRecognition();
+      } else {
+        showCameraError();
+      }
+    });
+
+    document.getElementById('skip-btn').addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setState(STATES.DASHBOARD_ONLY);
+      startOverlay.classList.add('hidden');
+      initSpeechRecognition();
+    });
+
+    // -- Camera init (stepped) ------------------------------------------------
+    async function initCameraSteps() {
+      setState(STATES.REQUESTING_CAMERA);
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: 'user', width: 320, height: 240 },
           audio: true
         });
         videoEl.srcObject = stream;
-        // Stop audio tracks immediately — only needed to pre-authorize mic
         stream.getAudioTracks().forEach(t => t.stop());
         await videoEl.play();
       } catch (err) {
@@ -758,22 +883,26 @@
           videoEl.srcObject = stream;
           await videoEl.play();
         } catch (err2) {
-          console.warn('Camera init failed, kiosk continues without face detection:', err2);
-          return;
+          console.warn('Camera init failed:', err2);
+          setState(STATES.CAMERA_FAILED);
+          return false;
         }
       }
 
-      // Load face-api.js model (separate try so camera still works if model fails)
+      setState(STATES.LOADING_MODEL);
+      startLabel.textContent = 'Ladataan kasvojentunnistus...';
+      startSublabel.textContent = '';
       try {
         await faceapi.nets.tinyFaceDetector.loadFromUri('/face-api');
       } catch (err) {
         console.warn('Face detection model failed to load:', err);
-        return;
+        setState(STATES.CAMERA_FAILED);
+        return false;
       }
 
-      cameraReady = true;
-      cameraDot.classList.add('active');
+      setState(STATES.READY);
       startFaceDetection();
+      return true;
     }
 
     // -- Face detection loop --------------------------------------------------
@@ -783,7 +912,7 @@
 
     function startFaceDetection() {
       detectInterval = setInterval(async () => {
-        if (!cameraReady || greetingActive) return;
+        if (kioskState !== STATES.READY) return;
         if (Date.now() - lastGreetingTime < GREETING_COOLDOWN) return;
 
         try {
@@ -796,7 +925,7 @@
           if (detection) {
             consecutiveDetections++;
             // Re-check guards after async detection (multiple detections can be in-flight)
-            if (consecutiveDetections >= DETECTIONS_REQUIRED && !greetingActive && faceWasAbsent && Date.now() - lastGreetingTime >= GREETING_COOLDOWN) {
+            if (consecutiveDetections >= DETECTIONS_REQUIRED && kioskState === STATES.READY && faceWasAbsent && Date.now() - lastGreetingTime >= GREETING_COOLDOWN) {
               consecutiveDetections = 0;
               faceWasAbsent = false; // require face to leave before next trigger
               triggerGreeting();
@@ -814,7 +943,7 @@
 
     // -- Trigger greeting sequence --------------------------------------------
     async function triggerGreeting() {
-      greetingActive = true;
+      setState(STATES.GREETING);
       overlayStartTime = Date.now();
       conversationHistory = [];
       buildingContext = '';
@@ -857,10 +986,8 @@
       }
 
       // Enter listening mode (waits for jingle to finish if still playing)
+      // scheduleOverlayDismiss is called inside startListening after mic actually opens
       startListening();
-
-      // Auto-dismiss after LISTEN_TIMEOUT of silence
-      scheduleOverlayDismiss();
     }
 
     // -- Jingle (local MP3) ---------------------------------------------------
@@ -877,8 +1004,8 @@
       jingleAudio.currentTime = 0;
     }
 
-    // -- Dismiss greeting on click/tap ----------------------------------------
-    greetingOverlay.addEventListener('click', () => {
+    // -- Dismiss greeting on card tap (not full overlay, so arrows stay tappable)
+    greetingCard.addEventListener('click', () => {
       dismissOverlay();
     });
 
@@ -908,7 +1035,8 @@
     }
 
     function dismissOverlay() {
-      greetingActive = false; // immediately prevent any new listening/speech
+      if (kioskState !== STATES.GREETING) return;
+      setState(STATES.GREETING_COOLDOWN);
       clearTimeout(overlayTimeout);
       stopJingle();
       stopListening();
@@ -916,7 +1044,10 @@
       avatarEl.classList.remove('speaking');
       avatarEl.classList.remove('listening');
       greetingOverlay.classList.remove('visible');
-      lastGreetingTime = Date.now(); // cooldown starts from dismiss
+      lastGreetingTime = Date.now();
+      setTimeout(() => {
+        if (kioskState === STATES.GREETING_COOLDOWN) setState(STATES.READY);
+      }, GREETING_COOLDOWN);
     }
 
     // -- Text-to-speech -------------------------------------------------------
@@ -1023,14 +1154,14 @@
     }
 
     function startListening() {
-      if (!recognition || !greetingActive) return;
+      if (!recognition || kioskState !== STATES.GREETING) return;
 
       // Wait for jingle to finish before opening mic
       if (!jingleAudio.paused) {
         const onJingleDone = () => {
           jingleAudio.removeEventListener('ended', onJingleDone);
           jingleAudio.removeEventListener('pause', onJingleDone);
-          if (greetingActive) startListening();
+          if (kioskState === STATES.GREETING) startListening();
         };
         jingleAudio.addEventListener('ended', onJingleDone);
         jingleAudio.addEventListener('pause', onJingleDone);
@@ -1041,6 +1172,7 @@
       listeningIndicator.classList.remove('hidden');
       avatarEl.classList.add('listening');
       try { recognition.start(); } catch { /* ignore */ }
+      scheduleOverlayDismiss(); // timer starts when mic ACTUALLY opens
     }
 
     function stopListening() {
@@ -1085,7 +1217,7 @@
       }
 
       // Resume listening if still within max duration
-      if (Date.now() - overlayStartTime < MAX_OVERLAY_DURATION && greetingActive) {
+      if (Date.now() - overlayStartTime < MAX_OVERLAY_DURATION && kioskState === STATES.GREETING) {
         startListening();
         scheduleOverlayDismiss(); // Reset 10s idle timer
       }
@@ -1463,7 +1595,7 @@
         const version = (await res.text()).trim();
         if (knownVersion === null) {
           knownVersion = version;
-        } else if (version !== knownVersion && !greetingActive) {
+        } else if (version !== knownVersion && kioskState !== STATES.GREETING) {
           window.location.reload();
         }
       } catch { /* network error — skip */ }
