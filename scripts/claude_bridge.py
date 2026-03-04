@@ -152,7 +152,8 @@ async def mcp_connection_loop(url: str):
 
 
 async def run_ollama_agentic_loop(messages: list[dict], tools: list[dict]) -> dict:
-    """Run Ollama agentic loop (OpenAI-compatible) with tool execution against MCP servers."""
+    """Run Ollama agentic loop using raw HTTP to handle non-standard response fields (e.g. Qwen 3.5 'reasoning')."""
+    import httpx
     all_tool_calls = []
     openai_tools = _tools_to_openai(tools)
 
@@ -161,52 +162,58 @@ async def run_ollama_agentic_loop(messages: list[dict], tools: list[dict]) -> di
     for m in messages:
         oai_messages.append({"role": m["role"], "content": m["content"]})
 
-    for iteration in range(MAX_TOOL_ITERATIONS):
-        response = await ollama_client.chat.completions.create(
-            model=OLLAMA_MODEL,
-            messages=oai_messages,
-            tools=openai_tools,
-            max_tokens=MAX_TOKENS,
-        )
+    async with httpx.AsyncClient(timeout=120) as client:
+        for iteration in range(MAX_TOOL_ITERATIONS):
+            resp = await client.post(
+                f"{OLLAMA_URL}/v1/chat/completions",
+                json={
+                    "model": OLLAMA_MODEL,
+                    "messages": oai_messages,
+                    "tools": openai_tools,
+                    "max_tokens": MAX_TOKENS,
+                },
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            msg = data["choices"][0]["message"]
+            tool_calls_raw = msg.get("tool_calls") or []
 
-        choice = response.choices[0]
-        msg = choice.message
+            if not tool_calls_raw:
+                text = (msg.get("content") or "").strip()
+                return {"response": text, "model": OLLAMA_MODEL, "tool_calls": all_tool_calls}
 
-        if not msg.tool_calls:
-            return {"response": (msg.content or "").strip(), "model": OLLAMA_MODEL, "tool_calls": all_tool_calls}
+            # Append assistant message (preserve all fields including 'reasoning')
+            oai_messages.append(msg)
 
-        # Append assistant message with tool calls
-        oai_messages.append(msg.model_dump())
-
-        for tc in msg.tool_calls:
-            tool_name = tc.function.name
-            try:
-                tool_input = json.loads(tc.function.arguments)
-            except json.JSONDecodeError:
-                tool_input = {}
-            log.info("Ollama tool call [%d]: %s(%s)", iteration + 1, tool_name, json.dumps(tool_input, ensure_ascii=False))
-            all_tool_calls.append({"tool": tool_name, "input": tool_input})
-
-            session = _find_session(tool_name)
-            if not session:
-                result_text = f"Error: tool '{tool_name}' not available (MCP server offline?)"
-                log.error("Tool routing error: %s", result_text)
-            else:
+            for tc in tool_calls_raw:
+                tool_name = tc["function"]["name"]
                 try:
-                    result = await session.call_tool(tool_name, tool_input)
-                    result_text = "\n".join(
-                        c.text for c in result.content if hasattr(c, "text")
-                    )
-                    log.info("Ollama tool result [%d]: %s → %d chars", iteration + 1, tool_name, len(result_text))
-                except Exception as e:
-                    result_text = f"Error calling {tool_name}: {e}"
-                    log.error("Tool error: %s", result_text)
+                    tool_input = json.loads(tc["function"]["arguments"])
+                except (json.JSONDecodeError, TypeError):
+                    tool_input = {}
+                log.info("Ollama tool call [%d]: %s(%s)", iteration + 1, tool_name, json.dumps(tool_input, ensure_ascii=False))
+                all_tool_calls.append({"tool": tool_name, "input": tool_input})
 
-            oai_messages.append({
-                "role": "tool",
-                "tool_call_id": tc.id,
-                "content": result_text,
-            })
+                session = _find_session(tool_name)
+                if not session:
+                    result_text = f"Error: tool '{tool_name}' not available (MCP server offline?)"
+                    log.error("Tool routing error: %s", result_text)
+                else:
+                    try:
+                        result = await session.call_tool(tool_name, tool_input)
+                        result_text = "\n".join(
+                            c.text for c in result.content if hasattr(c, "text")
+                        )
+                        log.info("Ollama tool result [%d]: %s → %d chars", iteration + 1, tool_name, len(result_text))
+                    except Exception as e:
+                        result_text = f"Error calling {tool_name}: {e}"
+                        log.error("Tool error: %s", result_text)
+
+                oai_messages.append({
+                    "role": "tool",
+                    "tool_call_id": tc["id"],
+                    "content": result_text,
+                })
 
     text = "Anteeksi, en saanut vastausta valmiiksi ajoissa."
     return {"response": text, "model": OLLAMA_MODEL, "tool_calls": all_tool_calls}
