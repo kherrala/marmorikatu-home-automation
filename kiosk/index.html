@@ -704,9 +704,11 @@
 
     window.addEventListener('blur', handleInteraction);
 
-    // Esc key dismisses greeting overlay
+    // Keyboard navigation
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') dismissOverlay();
+      if (e.key === 'ArrowLeft')  { handleInteraction(); show(current - 1); }
+      if (e.key === 'ArrowRight') { handleInteraction(); show(current + 1); }
     });
 
     // == Set iframe sources from origin hostname ===============================
