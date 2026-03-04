@@ -182,8 +182,10 @@ async def run_ollama_agentic_loop(messages: list[dict], tools: list[dict]) -> di
             data = resp.json()
             msg = data["choices"][0]["message"]
             tool_calls_raw = msg.get("tool_calls") or []
-            log.info("Ollama [%d]: tool_calls=%d, content=%d chars, tools_sent=%d",
-                     iteration + 1, len(tool_calls_raw), len(msg.get("content") or ""), len(openai_tools))
+            usage = data.get("usage", {})
+            log.info("Ollama [%d]: tool_calls=%d, content=%d chars, tools_sent=%d, prompt_tokens=%s",
+                     iteration + 1, len(tool_calls_raw), len(msg.get("content") or ""),
+                     len(openai_tools), usage.get("prompt_tokens", "?"))
             if not tool_calls_raw:
                 log.info("Ollama response: %s", (msg.get("content") or "")[:200])
 
@@ -398,11 +400,24 @@ async def lifespan(app):
     await asyncio.gather(*_tasks, return_exceptions=True)
 
 
+async def debug_tools_endpoint(request: Request) -> JSONResponse:
+    """GET /debug/tools — dump aggregated tool definitions (OpenAI format)."""
+    tools = _aggregated_tools()
+    openai_tools = _tools_to_openai(tools)
+    return JSONResponse({
+        "tools_count": len(openai_tools),
+        "tools_json_chars": len(json.dumps(openai_tools)),
+        "tool_names": [t["function"]["name"] for t in openai_tools],
+        "system_prompt": get_system_prompt(),
+    })
+
+
 app = Starlette(
     routes=[
         Route("/chat", chat_endpoint, methods=["POST"]),
         Route("/tts", tts_endpoint, methods=["POST"]),
         Route("/health", health_endpoint),
+        Route("/debug/tools", debug_tools_endpoint),
     ],
     lifespan=lifespan,
 )
