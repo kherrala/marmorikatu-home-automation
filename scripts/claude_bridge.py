@@ -177,6 +177,11 @@ async def run_ollama_agentic_loop(messages: list[dict], tools: list[dict]) -> di
             data = resp.json()
             msg = data["choices"][0]["message"]
             tool_calls_raw = msg.get("tool_calls") or []
+            log.info("Ollama response [%d]: content=%d chars, reasoning=%d chars, tool_calls=%d",
+                     iteration + 1,
+                     len(msg.get("content") or ""),
+                     len(msg.get("reasoning") or ""),
+                     len(tool_calls_raw))
 
             if not tool_calls_raw:
                 text = (msg.get("content") or "").strip()
