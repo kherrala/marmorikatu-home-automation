@@ -3,10 +3,10 @@
 server {
     listen 8888;
 
-    location / {
-        alias /etc/nginx/ssl/kiosk.cer;
+    location = / {
         default_type application/x-x509-ca-cert;
         add_header Content-Disposition 'attachment; filename="kiosk.cer"';
+        alias /etc/nginx/ssl/kiosk.cer;
     }
 }
 
