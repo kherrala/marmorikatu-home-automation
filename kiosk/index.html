@@ -1312,35 +1312,59 @@
     }
 
     // -- Native Web Speech API -----------------------------------------------
+    let nativeSpeechTimer = null;
+    let nativeSpeechText = '';
+    const NATIVE_SPEECH_PAUSE = 2000; // ms of silence after last result before sending
+
     function startNativeRecognition() {
       if (!listeningActive) return;
 
+      nativeSpeechText = '';
+      clearTimeout(nativeSpeechTimer);
+
       nativeRecognizer = new NativeSpeechRecognition();
       nativeRecognizer.lang = 'fi-FI';
-      nativeRecognizer.continuous = false;
+      nativeRecognizer.continuous = true;
       nativeRecognizer.interimResults = false;
       nativeRecognizer.maxAlternatives = 1;
 
       nativeRecognizer.onresult = (event) => {
-        const text = event.results[0]?.[0]?.transcript?.trim();
-        if (text) {
-          console.log('[voice] Native recognition result:', text);
-          handleVoiceResult(text);
-        } else if (listeningActive && kioskState === STATES.GREETING) {
-          startNativeRecognition();
+        // Collect all final results into one string
+        let transcript = '';
+        for (let i = 0; i < event.results.length; i++) {
+          if (event.results[i].isFinal) {
+            transcript += event.results[i][0].transcript;
+          }
         }
+        nativeSpeechText = transcript.trim();
+        console.log('[voice] Native recognition partial:', nativeSpeechText);
+
+        // Reset pause timer — wait for more speech or silence
+        clearTimeout(nativeSpeechTimer);
+        nativeSpeechTimer = setTimeout(() => {
+          if (nativeSpeechText && listeningActive) {
+            console.log('[voice] Native recognition final:', nativeSpeechText);
+            try { nativeRecognizer.stop(); } catch { /* ignore */ }
+            handleVoiceResult(nativeSpeechText);
+          }
+        }, NATIVE_SPEECH_PAUSE);
       };
 
       nativeRecognizer.onerror = (event) => {
         console.warn('[voice] Native recognition error:', event.error);
-        // 'no-speech' is normal — just restart
         if (event.error === 'no-speech' && listeningActive && kioskState === STATES.GREETING) {
           startNativeRecognition();
         }
       };
 
       nativeRecognizer.onend = () => {
-        // Restart if we ended without a result (e.g. silence timeout)
+        // If we have accumulated text, send it (browser may stop on its own)
+        if (nativeSpeechText && listeningActive) {
+          clearTimeout(nativeSpeechTimer);
+          handleVoiceResult(nativeSpeechText);
+          return;
+        }
+        // Otherwise restart if still listening
         if (listeningActive && kioskState === STATES.GREETING) {
           startNativeRecognition();
         }
@@ -1445,6 +1469,7 @@
       listeningIndicator.classList.add('hidden');
       avatarEl.classList.remove('listening');
       clearTimeout(silenceTimer);
+      clearTimeout(nativeSpeechTimer);
       if (nativeRecognizer) {
         try { nativeRecognizer.abort(); } catch { /* ignore */ }
         nativeRecognizer = null;
@@ -1466,6 +1491,7 @@
       listeningIndicator.classList.add('hidden');
       avatarEl.classList.remove('listening');
       clearTimeout(silenceTimer);
+      clearTimeout(nativeSpeechTimer);
       if (nativeRecognizer) {
         try { nativeRecognizer.abort(); } catch { /* ignore */ }
         nativeRecognizer = null;
