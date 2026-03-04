@@ -153,51 +153,51 @@ async def mcp_connection_loop(url: str):
 
 
 async def run_ollama_agentic_loop(messages: list[dict], tools: list[dict]) -> dict:
-    """Run Ollama agentic loop using native /api/chat (supports num_ctx and reasoning models)."""
+    """Run Ollama agentic loop using raw HTTP to OpenAI-compatible endpoint with num_ctx."""
     import httpx
     all_tool_calls = []
     openai_tools = _tools_to_openai(tools)
 
-    # Build messages with system prompt
-    ollama_messages = [{"role": "system", "content": get_system_prompt()}]
+    # Build OpenAI-format messages with system prompt
+    oai_messages = [{"role": "system", "content": get_system_prompt()}]
     for m in messages:
-        ollama_messages.append({"role": m["role"], "content": m["content"]})
+        oai_messages.append({"role": m["role"], "content": m["content"]})
 
     async with httpx.AsyncClient(timeout=120) as client:
         for iteration in range(MAX_TOOL_ITERATIONS):
             resp = await client.post(
-                f"{OLLAMA_URL}/api/chat",
+                f"{OLLAMA_URL}/v1/chat/completions",
                 json={
                     "model": OLLAMA_MODEL,
-                    "messages": ollama_messages,
+                    "messages": oai_messages,
                     "tools": openai_tools,
-                    "stream": False,
-                    "options": {"num_ctx": OLLAMA_NUM_CTX},
+                    # Ollama-specific: set context window size (default 2048 is too small for many tools)
+                    "num_ctx": OLLAMA_NUM_CTX,
                 },
             )
             resp.raise_for_status()
             data = resp.json()
-            msg = data["message"]
+            msg = data["choices"][0]["message"]
             tool_calls_raw = msg.get("tool_calls") or []
-            log.info("Ollama response [%d]: content=%d chars, tool_calls=%d",
-                     iteration + 1, len(msg.get("content") or ""), len(tool_calls_raw))
+            log.info("Ollama response [%d]: content=%d chars, reasoning=%d chars, tool_calls=%d",
+                     iteration + 1,
+                     len(msg.get("content") or ""),
+                     len(msg.get("reasoning") or ""),
+                     len(tool_calls_raw))
 
             if not tool_calls_raw:
                 text = (msg.get("content") or "").strip()
                 return {"response": text, "model": OLLAMA_MODEL, "tool_calls": all_tool_calls}
 
-            # Append assistant message
-            ollama_messages.append(msg)
+            # Append assistant message (preserve all fields including 'reasoning')
+            oai_messages.append(msg)
 
             for tc in tool_calls_raw:
-                func = tc.get("function", {})
-                tool_name = func.get("name", "")
-                tool_input = func.get("arguments", {})
-                if isinstance(tool_input, str):
-                    try:
-                        tool_input = json.loads(tool_input)
-                    except (json.JSONDecodeError, TypeError):
-                        tool_input = {}
+                tool_name = tc["function"]["name"]
+                try:
+                    tool_input = json.loads(tc["function"]["arguments"])
+                except (json.JSONDecodeError, TypeError):
+                    tool_input = {}
                 log.info("Ollama tool call [%d]: %s(%s)", iteration + 1, tool_name, json.dumps(tool_input, ensure_ascii=False))
                 all_tool_calls.append({"tool": tool_name, "input": tool_input})
 
@@ -216,8 +216,9 @@ async def run_ollama_agentic_loop(messages: list[dict], tools: list[dict]) -> di
                         result_text = f"Error calling {tool_name}: {e}"
                         log.error("Tool error: %s", result_text)
 
-                ollama_messages.append({
+                oai_messages.append({
                     "role": "tool",
+                    "tool_call_id": tc["id"],
                     "content": result_text,
                 })
 
