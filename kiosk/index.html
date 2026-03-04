@@ -1214,17 +1214,8 @@
       });
     }
 
-    // -- Speech recognition ---------------------------------------------------
-    // Two modes:
-    //  1. Native Web Speech API (Chrome/Edge) — fast, no server round-trip
-    //  2. MediaRecorder + server-side Whisper — fallback for Safari/iPad
+    // -- Speech recognition (MediaRecorder + server-side Whisper) -------------
 
-    const NativeSpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    const isAppleBrowser = /iPad|iPhone|iPod|Safari/.test(navigator.userAgent)
-                        && !/Chrome/.test(navigator.userAgent);
-    const useNativeSpeech = !!NativeSpeechRecognition && !isAppleBrowser;
-
-    let nativeRecognizer = null;   // native SpeechRecognition instance
     let mediaRecorder = null;
     let audioChunks = [];
     let silenceTimer = null;
@@ -1239,14 +1230,6 @@
     let micReady = false;
 
     function initSpeechRecognition() {
-      if (useNativeSpeech) {
-        console.log('[voice] Using native Web Speech API');
-        micReady = true;
-        recognition = true;
-        return;
-      }
-
-      console.log('[voice] Using MediaRecorder + server transcription');
       // Mic stream was already obtained in initCameraSteps (audio: true).
       // Re-use those audio tracks if available, otherwise request mic now.
       const existingStream = videoEl.srcObject;
@@ -1308,82 +1291,16 @@
         return;
       }
 
+      // Resume AudioContext if suspended (Safari requires user gesture)
+      if (audioContext?.state === 'suspended') audioContext.resume();
+
       listeningActive = true;
       listeningIndicator.classList.remove('hidden');
       avatarEl.classList.add('listening');
       scheduleOverlayDismiss();
 
-      if (useNativeSpeech) {
-        startNativeRecognition();
-      } else {
-        if (audioContext?.state === 'suspended') audioContext.resume();
-        startRecording();
-      }
+      startRecording();
     }
-
-    // -- Native Web Speech API -----------------------------------------------
-    let nativeSpeechTimer = null;
-    let nativeSpeechText = '';
-    const NATIVE_SPEECH_PAUSE = 2000; // ms of silence after last result before sending
-
-    function startNativeRecognition() {
-      if (!listeningActive) return;
-
-      nativeSpeechText = '';
-      clearTimeout(nativeSpeechTimer);
-
-      nativeRecognizer = new NativeSpeechRecognition();
-      nativeRecognizer.lang = 'fi-FI';
-      nativeRecognizer.continuous = true;
-      nativeRecognizer.interimResults = false;
-      nativeRecognizer.maxAlternatives = 1;
-
-      nativeRecognizer.onresult = (event) => {
-        // Collect all final results into one string
-        let transcript = '';
-        for (let i = 0; i < event.results.length; i++) {
-          if (event.results[i].isFinal) {
-            transcript += event.results[i][0].transcript;
-          }
-        }
-        nativeSpeechText = transcript.trim();
-        console.log('[voice] Native recognition partial:', nativeSpeechText);
-
-        // Reset pause timer — wait for more speech or silence
-        clearTimeout(nativeSpeechTimer);
-        nativeSpeechTimer = setTimeout(() => {
-          if (nativeSpeechText && listeningActive) {
-            console.log('[voice] Native recognition final:', nativeSpeechText);
-            try { nativeRecognizer.stop(); } catch { /* ignore */ }
-            handleVoiceResult(nativeSpeechText);
-          }
-        }, NATIVE_SPEECH_PAUSE);
-      };
-
-      nativeRecognizer.onerror = (event) => {
-        console.warn('[voice] Native recognition error:', event.error);
-        if (event.error === 'no-speech' && listeningActive && kioskState === STATES.GREETING) {
-          startNativeRecognition();
-        }
-      };
-
-      nativeRecognizer.onend = () => {
-        // If we have accumulated text, send it (browser may stop on its own)
-        if (nativeSpeechText && listeningActive) {
-          clearTimeout(nativeSpeechTimer);
-          handleVoiceResult(nativeSpeechText);
-          return;
-        }
-        // Otherwise restart if still listening
-        if (listeningActive && kioskState === STATES.GREETING) {
-          startNativeRecognition();
-        }
-      };
-
-      nativeRecognizer.start();
-    }
-
-    // -- MediaRecorder + server transcription (Safari/iPad fallback) ----------
     function startRecording() {
       if (!audioStream || !listeningActive) return;
 
@@ -1479,11 +1396,6 @@
       listeningIndicator.classList.add('hidden');
       avatarEl.classList.remove('listening');
       clearTimeout(silenceTimer);
-      clearTimeout(nativeSpeechTimer);
-      if (nativeRecognizer) {
-        try { nativeRecognizer.abort(); } catch { /* ignore */ }
-        nativeRecognizer = null;
-      }
       if (mediaRecorder && mediaRecorder.state === 'recording') {
         try { mediaRecorder.stop(); } catch { /* ignore */ }
       }
@@ -1501,11 +1413,6 @@
       listeningIndicator.classList.add('hidden');
       avatarEl.classList.remove('listening');
       clearTimeout(silenceTimer);
-      clearTimeout(nativeSpeechTimer);
-      if (nativeRecognizer) {
-        try { nativeRecognizer.abort(); } catch { /* ignore */ }
-        nativeRecognizer = null;
-      }
       if (mediaRecorder && mediaRecorder.state === 'recording') {
         try { mediaRecorder.stop(); } catch { /* ignore */ }
       }
