@@ -27,7 +27,7 @@ from mcp.client.session import ClientSession
 from starlette.applications import Starlette
 from starlette.routing import Route
 from starlette.requests import Request
-from starlette.responses import JSONResponse, Response
+from starlette.responses import JSONResponse, Response, StreamingResponse
 
 # Configuration
 MCP_URLS_RAW = os.environ.get("MCP_URLS", os.environ.get("MCP_URL", "http://localhost:3001/sse"))
@@ -348,16 +348,20 @@ async def tts_endpoint(request: Request) -> Response:
 
     voice = body.get("voice", TTS_VOICE)
 
-    try:
-        communicate = edge_tts.Communicate(text, voice)
-        audio_buf = io.BytesIO()
-        async for chunk in communicate.stream():
-            if chunk["type"] == "audio":
-                audio_buf.write(chunk["data"])
-        return Response(audio_buf.getvalue(), media_type="audio/mpeg")
-    except Exception as e:
-        log.error("TTS error: %s", e)
-        return JSONResponse({"error": str(e)}, status_code=500)
+    async def audio_stream():
+        try:
+            communicate = edge_tts.Communicate(text, voice)
+            async for chunk in communicate.stream():
+                if chunk["type"] == "audio":
+                    yield chunk["data"]
+        except Exception as e:
+            log.error("TTS streaming error: %s", e)
+
+    return StreamingResponse(
+        audio_stream(),
+        media_type="audio/mpeg",
+        headers={"X-Accel-Buffering": "no"},
+    )
 
 
 import threading

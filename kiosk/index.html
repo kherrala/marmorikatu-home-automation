@@ -1204,11 +1204,17 @@
       });
     }
 
-    // -- Speech recognition (MediaRecorder + server-side Whisper) -------------
-    // Uses MediaRecorder to capture audio, sends to /api/chat/transcribe for
-    // server-side transcription via OpenAI Whisper. Works on iPadOS Safari
-    // where the Web Speech API is broken.
+    // -- Speech recognition ---------------------------------------------------
+    // Two modes:
+    //  1. Native Web Speech API (Chrome/Edge) — fast, no server round-trip
+    //  2. MediaRecorder + server-side Whisper — fallback for Safari/iPad
 
+    const NativeSpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const isAppleBrowser = /iPad|iPhone|iPod|Safari/.test(navigator.userAgent)
+                        && !/Chrome/.test(navigator.userAgent);
+    const useNativeSpeech = !!NativeSpeechRecognition && !isAppleBrowser;
+
+    let nativeRecognizer = null;   // native SpeechRecognition instance
     let mediaRecorder = null;
     let audioChunks = [];
     let silenceTimer = null;
@@ -1223,21 +1229,27 @@
     let micReady = false;
 
     function initSpeechRecognition() {
+      if (useNativeSpeech) {
+        console.log('[voice] Using native Web Speech API');
+        micReady = true;
+        recognition = true;
+        return;
+      }
+
+      console.log('[voice] Using MediaRecorder + server transcription');
       // Mic stream was already obtained in initCameraSteps (audio: true).
       // Re-use those audio tracks if available, otherwise request mic now.
       const existingStream = videoEl.srcObject;
       const audioTracks = existingStream?.getAudioTracks() || [];
 
       if (audioTracks.length > 0) {
-        // Re-enable the audio tracks (they were disabled to avoid feedback)
         audioTracks.forEach(t => t.enabled = true);
         audioStream = new MediaStream(audioTracks);
         micReady = true;
         setupAudioAnalyser();
-        recognition = true; // signal that voice is available
+        recognition = true;
         console.log('[voice] Mic ready (reused camera audio tracks)');
       } else {
-        // Request mic separately
         navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
           audioStream = stream;
           micReady = true;
@@ -1286,24 +1298,64 @@
         return;
       }
 
-      // Resume AudioContext if suspended (Safari requires user gesture)
-      if (audioContext?.state === 'suspended') audioContext.resume();
-
       listeningActive = true;
       listeningIndicator.classList.remove('hidden');
       avatarEl.classList.add('listening');
       scheduleOverlayDismiss();
 
-      startRecording();
+      if (useNativeSpeech) {
+        startNativeRecognition();
+      } else {
+        if (audioContext?.state === 'suspended') audioContext.resume();
+        startRecording();
+      }
     }
 
+    // -- Native Web Speech API -----------------------------------------------
+    function startNativeRecognition() {
+      if (!listeningActive) return;
+
+      nativeRecognizer = new NativeSpeechRecognition();
+      nativeRecognizer.lang = 'fi-FI';
+      nativeRecognizer.continuous = false;
+      nativeRecognizer.interimResults = false;
+      nativeRecognizer.maxAlternatives = 1;
+
+      nativeRecognizer.onresult = (event) => {
+        const text = event.results[0]?.[0]?.transcript?.trim();
+        if (text) {
+          console.log('[voice] Native recognition result:', text);
+          handleVoiceResult(text);
+        } else if (listeningActive && kioskState === STATES.GREETING) {
+          startNativeRecognition();
+        }
+      };
+
+      nativeRecognizer.onerror = (event) => {
+        console.warn('[voice] Native recognition error:', event.error);
+        // 'no-speech' is normal — just restart
+        if (event.error === 'no-speech' && listeningActive && kioskState === STATES.GREETING) {
+          startNativeRecognition();
+        }
+      };
+
+      nativeRecognizer.onend = () => {
+        // Restart if we ended without a result (e.g. silence timeout)
+        if (listeningActive && kioskState === STATES.GREETING) {
+          startNativeRecognition();
+        }
+      };
+
+      nativeRecognizer.start();
+    }
+
+    // -- MediaRecorder + server transcription (Safari/iPad fallback) ----------
     function startRecording() {
       if (!audioStream || !listeningActive) return;
 
       audioChunks = [];
       recordingStartTime = Date.now();
 
-      // Pick a supported MIME type
       const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus'
                       : MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm'
                       : MediaRecorder.isTypeSupported('audio/mp4') ? 'audio/mp4'
@@ -1323,7 +1375,6 @@
       mediaRecorder.onstop = async () => {
         const duration = Date.now() - recordingStartTime;
         if (duration < MIN_RECORDING_MS || audioChunks.length === 0) {
-          // Too short — restart recording
           if (listeningActive) startRecording();
           return;
         }
@@ -1332,7 +1383,6 @@
         const blob = new Blob(audioChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
         audioChunks = [];
 
-        // Send to server for transcription
         try {
           const formData = new FormData();
           formData.append('audio', blob, `recording.${ext}`);
@@ -1342,18 +1392,17 @@
             const text = data.text?.trim();
             if (text) {
               handleVoiceResult(text);
-              return; // handleVoiceResult will restart listening after response
+              return;
             }
           }
         } catch (err) {
           console.warn('[voice] Transcription error:', err);
         }
 
-        // No speech detected or error — restart recording
         if (listeningActive && kioskState === STATES.GREETING) startRecording();
       };
 
-      mediaRecorder.start(250); // collect data every 250ms
+      mediaRecorder.start(250);
       startSilenceDetection();
     }
 
@@ -1366,7 +1415,6 @@
 
         const elapsed = Date.now() - recordingStartTime;
 
-        // Hard cap — always stop after MAX_RECORDING_MS
         if (elapsed >= MAX_RECORDING_MS) {
           console.log('[voice] Max recording duration reached, stopping');
           mediaRecorder.stop();
@@ -1397,6 +1445,10 @@
       listeningIndicator.classList.add('hidden');
       avatarEl.classList.remove('listening');
       clearTimeout(silenceTimer);
+      if (nativeRecognizer) {
+        try { nativeRecognizer.abort(); } catch { /* ignore */ }
+        nativeRecognizer = null;
+      }
       if (mediaRecorder && mediaRecorder.state === 'recording') {
         try { mediaRecorder.stop(); } catch { /* ignore */ }
       }
@@ -1414,6 +1466,10 @@
       listeningIndicator.classList.add('hidden');
       avatarEl.classList.remove('listening');
       clearTimeout(silenceTimer);
+      if (nativeRecognizer) {
+        try { nativeRecognizer.abort(); } catch { /* ignore */ }
+        nativeRecognizer = null;
+      }
       if (mediaRecorder && mediaRecorder.state === 'recording') {
         try { mediaRecorder.stop(); } catch { /* ignore */ }
       }
