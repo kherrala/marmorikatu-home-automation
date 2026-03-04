@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-Claude Bridge Service — connects kiosk AI to Claude API with MCP tools.
+Claude Bridge Service — connects kiosk AI to LLM with MCP tools.
 
-Runs as an HTTP server that accepts chat requests, sends them to Claude
-with MCP tool definitions, and executes tool calls against MCP servers.
-Supports multiple MCP servers simultaneously — tools from all connected
-servers are aggregated and presented to Claude. Servers that are offline
-are retried automatically.
+Runs as an HTTP server that accepts chat requests, sends them to a local
+Ollama instance (primary) or Claude API (fallback) with MCP tool definitions,
+and executes tool calls against MCP servers. Supports multiple MCP servers
+simultaneously — tools from all connected servers are aggregated. Servers
+that are offline are retried automatically.
 
 Also provides a /tts endpoint for server-side Finnish speech synthesis
 that respects native device volume (unlike browser speechSynthesis on iOS).
@@ -21,6 +21,7 @@ from contextlib import asynccontextmanager
 
 import anthropic
 import edge_tts
+import openai
 import uvicorn
 from mcp.client.sse import sse_client
 from mcp.client.session import ClientSession
@@ -32,6 +33,8 @@ from starlette.responses import JSONResponse, Response
 # Configuration
 MCP_URLS_RAW = os.environ.get("MCP_URLS", os.environ.get("MCP_URL", "http://localhost:3001/sse"))
 CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", "claude-haiku-4-5-20251001")
+OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://192.168.1.36:11434")
+OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "bazobehram/qwen3.5-flash-27b:latest")
 MAX_TOOL_ITERATIONS = int(os.environ.get("MAX_TOOL_ITERATIONS", "10"))
 MAX_TOKENS = int(os.environ.get("MAX_TOKENS", "300"))
 BRIDGE_PORT = int(os.environ.get("BRIDGE_PORT", "3002"))
@@ -66,6 +69,7 @@ _servers: dict[str, dict] = {}
 _lock = asyncio.Lock()
 _tasks: list[asyncio.Task] = []
 claude_client: anthropic.AsyncAnthropic | None = None
+ollama_client: openai.AsyncOpenAI | None = None
 
 
 def _aggregated_tools() -> list[dict]:
@@ -82,6 +86,21 @@ def _find_session(tool_name: str) -> ClientSession | None:
         if tool_name in info["tool_names"]:
             return info["session"]
     return None
+
+
+def _tools_to_openai(tools: list[dict]) -> list[dict]:
+    """Convert Anthropic-format tool defs to OpenAI function-calling format."""
+    return [
+        {
+            "type": "function",
+            "function": {
+                "name": t["name"],
+                "description": t["description"],
+                "parameters": t["input_schema"],
+            },
+        }
+        for t in tools
+    ]
 
 
 async def mcp_connection_loop(url: str):
@@ -132,7 +151,68 @@ async def mcp_connection_loop(url: str):
             retry_delay = min(retry_delay * 2, 60)  # backoff up to 60s
 
 
-async def run_agentic_loop(messages: list[dict], tools: list[dict]) -> dict:
+async def run_ollama_agentic_loop(messages: list[dict], tools: list[dict]) -> dict:
+    """Run Ollama agentic loop (OpenAI-compatible) with tool execution against MCP servers."""
+    all_tool_calls = []
+    openai_tools = _tools_to_openai(tools)
+
+    # Build OpenAI-format messages with system prompt
+    oai_messages = [{"role": "system", "content": get_system_prompt()}]
+    for m in messages:
+        oai_messages.append({"role": m["role"], "content": m["content"]})
+
+    for iteration in range(MAX_TOOL_ITERATIONS):
+        response = await ollama_client.chat.completions.create(
+            model=OLLAMA_MODEL,
+            messages=oai_messages,
+            tools=openai_tools,
+            max_tokens=MAX_TOKENS,
+        )
+
+        choice = response.choices[0]
+        msg = choice.message
+
+        if not msg.tool_calls:
+            return {"response": (msg.content or "").strip(), "model": OLLAMA_MODEL, "tool_calls": all_tool_calls}
+
+        # Append assistant message with tool calls
+        oai_messages.append(msg.model_dump())
+
+        for tc in msg.tool_calls:
+            tool_name = tc.function.name
+            try:
+                tool_input = json.loads(tc.function.arguments)
+            except json.JSONDecodeError:
+                tool_input = {}
+            log.info("Ollama tool call [%d]: %s(%s)", iteration + 1, tool_name, json.dumps(tool_input, ensure_ascii=False))
+            all_tool_calls.append({"tool": tool_name, "input": tool_input})
+
+            session = _find_session(tool_name)
+            if not session:
+                result_text = f"Error: tool '{tool_name}' not available (MCP server offline?)"
+                log.error("Tool routing error: %s", result_text)
+            else:
+                try:
+                    result = await session.call_tool(tool_name, tool_input)
+                    result_text = "\n".join(
+                        c.text for c in result.content if hasattr(c, "text")
+                    )
+                    log.info("Ollama tool result [%d]: %s → %d chars", iteration + 1, tool_name, len(result_text))
+                except Exception as e:
+                    result_text = f"Error calling {tool_name}: {e}"
+                    log.error("Tool error: %s", result_text)
+
+            oai_messages.append({
+                "role": "tool",
+                "tool_call_id": tc.id,
+                "content": result_text,
+            })
+
+    text = "Anteeksi, en saanut vastausta valmiiksi ajoissa."
+    return {"response": text, "model": OLLAMA_MODEL, "tool_calls": all_tool_calls}
+
+
+async def run_claude_agentic_loop(messages: list[dict], tools: list[dict]) -> dict:
     """Run Claude agentic loop with tool execution against MCP servers."""
     all_tool_calls = []
 
@@ -203,8 +283,17 @@ async def chat_endpoint(request: Request) -> JSONResponse:
     if not messages:
         return JSONResponse({"error": "No messages provided"}, status_code=400)
 
+    # Try Ollama first, fall back to Claude on any error
     try:
-        result = await run_agentic_loop(messages, tools)
+        log.info("Trying Ollama (%s)...", OLLAMA_MODEL)
+        result = await run_ollama_agentic_loop(messages, tools)
+        return JSONResponse(result)
+    except Exception as e:
+        log.warning("Ollama failed (%s), falling back to Claude", e)
+
+    try:
+        log.info("Falling back to Claude (%s)...", CLAUDE_MODEL)
+        result = await run_claude_agentic_loop(messages, tools)
         return JSONResponse(result)
     except anthropic.APIError as e:
         log.error("Claude API error: %s", e)
@@ -244,7 +333,7 @@ async def tts_endpoint(request: Request) -> Response:
 
 
 async def health_endpoint(request: Request) -> JSONResponse:
-    """GET /health — return MCP connection status."""
+    """GET /health — return MCP connection and model status."""
     servers_status = {}
     for url in mcp_urls:
         info = _servers.get(url)
@@ -252,21 +341,35 @@ async def health_endpoint(request: Request) -> JSONResponse:
             "connected": info is not None,
             "tools": len(info["tools_claude"]) if info else 0,
         }
+
+    # Check Ollama connectivity
+    ollama_ok = False
+    try:
+        import httpx
+        async with httpx.AsyncClient(timeout=3) as client:
+            r = await client.get(OLLAMA_URL)
+            ollama_ok = r.status_code == 200
+    except Exception:
+        pass
+
     return JSONResponse({
         "status": "ok",
         "mcp_servers": servers_status,
         "tools_count": len(_aggregated_tools()),
-        "model": CLAUDE_MODEL,
+        "primary_model": {"name": OLLAMA_MODEL, "url": OLLAMA_URL, "available": ollama_ok},
+        "fallback_model": {"name": CLAUDE_MODEL},
     })
 
 
 @asynccontextmanager
 async def lifespan(app):
-    """Start background MCP connections and Claude client."""
-    global claude_client
+    """Start background MCP connections and LLM clients."""
+    global claude_client, ollama_client
 
     claude_client = anthropic.AsyncAnthropic()
-    log.info("Claude client initialized (model: %s)", CLAUDE_MODEL)
+    ollama_client = openai.AsyncOpenAI(base_url=f"{OLLAMA_URL}/v1", api_key="ollama")
+    log.info("Primary model: Ollama %s at %s", OLLAMA_MODEL, OLLAMA_URL)
+    log.info("Fallback model: Claude %s", CLAUDE_MODEL)
     log.info("MCP servers: %s", mcp_urls)
 
     for url in mcp_urls:
