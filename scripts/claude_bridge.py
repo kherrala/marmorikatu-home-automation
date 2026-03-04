@@ -176,8 +176,11 @@ async def run_ollama_agentic_loop(messages: list[dict], tools: list[dict]) -> di
                     "tools": openai_tools,
                     "temperature": 0.3,
                     "presence_penalty": 0,
-                    # Ollama extensions: context window + keep_alive
-                    "options": {"num_ctx": OLLAMA_NUM_CTX},
+                    "options": {
+                        "num_ctx": OLLAMA_NUM_CTX,
+                        "temperature": 0.3,
+                        "presence_penalty": 0,
+                    },
                 },
             )
             resp.raise_for_status()
