@@ -945,12 +945,16 @@
     let consecutiveFaceGone = 0;
     const FACE_GONE_REQUIRED = 4; // require 4 consecutive non-detections (~2s)
 
+    let faceDetectRunning = false; // prevent overlapping async detections
+
     function startFaceDetection() {
       detectInterval = setInterval(async () => {
         if (![STATES.READY, STATES.GREETING].includes(kioskState)) return;
+        if (faceDetectRunning) return; // previous detection still in-flight
+        faceDetectRunning = true;
 
         try {
-          if (!videoEl.videoWidth) return;
+          if (!videoEl.videoWidth) { faceDetectRunning = false; return; }
 
           const detection = await faceapi.detectSingleFace(
             videoEl,
@@ -1014,6 +1018,8 @@
         } catch (err) {
           console.warn('Face detection error:', err);
           consecutiveDetections = 0;
+        } finally {
+          faceDetectRunning = false;
         }
       }, FACE_DETECT_INTERVAL);
     }
@@ -1025,6 +1031,7 @@
       conversationHistory = [];
       buildingContext = '';
       userTextEl.textContent = '';
+      recognitionErrorCount = 0;
 
       // Determine time-appropriate greeting
       const h = new Date().getHours();
@@ -1194,6 +1201,8 @@
 
     // -- Speech recognition (voice commands) ----------------------------------
     let lastRecognitionStart = 0;
+    let recognitionErrorCount = 0;
+    const MAX_RECOGNITION_ERRORS = 5; // stop retrying after this many consecutive errors
 
     function initSpeechRecognition() {
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -1206,16 +1215,31 @@
       recognition.interimResults = false;
       recognition.continuous = false;
 
+      // Warm-start: request mic permission now (during user gesture chain)
+      // so the browser doesn't prompt later during the greeting flow
+      try {
+        recognition.start();
+        recognition.stop();
+      } catch { /* ignore */ }
+
       recognition.onresult = (event) => {
+        recognitionErrorCount = 0; // reset on success
         const transcript = event.results[event.results.length - 1][0].transcript.trim();
         if (transcript) handleVoiceResult(transcript);
       };
 
       recognition.onend = () => {
         if (!listeningActive || Date.now() - overlayStartTime > MAX_OVERLAY_DURATION) return;
+        if (recognitionErrorCount >= MAX_RECOGNITION_ERRORS) {
+          console.warn('Speech recognition: too many errors, stopping');
+          listeningActive = false;
+          listeningIndicator.classList.add('hidden');
+          avatarEl.classList.remove('listening');
+          return;
+        }
         // Throttle restarts — iOS can fire onend immediately after start
         const elapsed = Date.now() - lastRecognitionStart;
-        const delay = elapsed < 1000 ? 1000 : 0;
+        const delay = elapsed < 1000 ? 1500 : 0;
         setTimeout(() => {
           if (listeningActive && Date.now() - overlayStartTime < MAX_OVERLAY_DURATION) {
             lastRecognitionStart = Date.now();
@@ -1227,20 +1251,29 @@
       recognition.onerror = (event) => {
         console.warn('Speech recognition error:', event.error);
         if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
-          // Mic denied or unavailable — stop showing listening indicator
+          // Mic denied or unavailable — stop permanently
           listeningActive = false;
           listeningIndicator.classList.add('hidden');
           avatarEl.classList.remove('listening');
           return;
         }
-        // Restart on recoverable errors with delay
+        recognitionErrorCount++;
+        if (recognitionErrorCount >= MAX_RECOGNITION_ERRORS) {
+          console.warn('Speech recognition: too many consecutive errors, giving up');
+          listeningActive = false;
+          listeningIndicator.classList.add('hidden');
+          avatarEl.classList.remove('listening');
+          return;
+        }
+        // Restart with exponential backoff
         if (listeningActive) {
+          const backoff = Math.min(500 * Math.pow(2, recognitionErrorCount - 1), 5000);
           setTimeout(() => {
             if (listeningActive && Date.now() - overlayStartTime < MAX_OVERLAY_DURATION) {
               lastRecognitionStart = Date.now();
               try { recognition.start(); } catch { /* ignore */ }
             }
-          }, 500);
+          }, backoff);
         }
       };
     }
