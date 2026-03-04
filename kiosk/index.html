@@ -723,6 +723,25 @@
       if (e.key === 'ArrowRight') { handleInteraction(); show(current + 1); }
     });
 
+    // == Bus departure auto-switch =============================================
+    const BUS_CHECK_INTERVAL = 30_000; // check every 30s
+    const BUS_LEAVE_SOON_MS  = 15 * 60_000; // show Nysse when bus leaves within 15 min
+
+    async function checkBusDepartures() {
+      if (paused || kioskState === STATES.GREETING) return; // don't interrupt user
+      try {
+        const res = await fetch('/api/departures');
+        if (!res.ok) return;
+        const departures = await res.json();
+        const soon = departures.some(d => d.departureMs > 0 && d.departureMs <= BUS_LEAVE_SOON_MS);
+        if (soon && current !== NYSSE_IDX) {
+          show(NYSSE_IDX);
+        }
+      } catch { /* network error */ }
+    }
+
+    setInterval(checkBusDepartures, BUS_CHECK_INTERVAL);
+
     // == Init carousel =========================================================
     const hour    = new Date().getHours();
     const initial = (hour >= PEAK_START && hour < PEAK_END) ? NYSSE_IDX : 0;
