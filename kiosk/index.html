@@ -443,31 +443,14 @@
     </div>
   </div>
 
-  <div id="slides">
-    <!-- 0: Home automation dashboard -->
-    <div class="slide" id="slide-0">
-      <iframe title="Kotiautomaatio"></iframe>
-    </div>
-    <!-- 1: Nysse bus schedules -->
-    <div class="slide" id="slide-1">
-      <iframe title="Nysse"></iframe>
-    </div>
-    <!-- 2: WAGO PLC web visualisation -->
-    <div class="slide" id="slide-2">
-      <iframe title="WebVisu"></iframe>
-    </div>
-  </div>
+  <div id="slides"></div>
 
   <!-- Swipe / click zones on left and right edges only -->
   <div class="swipe-edge" id="swipe-left"></div>
   <div class="swipe-edge" id="swipe-right"></div>
 
   <!-- Navigation dots -->
-  <div id="nav">
-    <div class="dot" data-idx="0"></div>
-    <div class="dot" data-idx="1"></div>
-    <div class="dot" data-idx="2"></div>
-  </div>
+  <div id="nav"></div>
 
   <div id="pause-badge">&#x23F8; jatkuu 30 s</div>
 
@@ -484,12 +467,26 @@
   <script>
     // == Config ================================================================
     const WEBVISU_ENABLED = new URLSearchParams(window.location.search).has('webvisu');
-    let   TOTAL       = WEBVISU_ENABLED ? 3 : 2;
     const CAROUSEL_MS = 30_000;
     const PAUSE_MS    = 30_000;
-    const NYSSE_IDX   = 1;
     const PEAK_START  = 6;
     const PEAK_END    = 9;
+
+    // Slide definitions: { title, src } — built dynamically from Grafana dashboards
+    const SLIDE_DEFS = [
+      { title: 'Yleiskatsaus',      src: '/grafana/d/wago-overview/building-overview?kiosk' },
+      { title: 'Huonelämpötilat',   src: '/grafana/d/room-temperatures/room-temperatures?kiosk' },
+      { title: 'Ilmanvaihto',       src: '/grafana/d/wago-hvac/hvac?kiosk' },
+      { title: 'Lämpöpumppu',       src: '/grafana/d/thermia-heatpump/thermia-heatpump?kiosk' },
+      { title: 'Lämmönsäätö',       src: '/grafana/d/heating-control/heating-control?kiosk' },
+      { title: 'Energiakustannus',  src: '/grafana/d/energy-cost/energy-cost?kiosk' },
+      { title: 'Ruuvi-sensorit',    src: '/grafana/d/ruuvi-sensors/ruuvi-sensors?kiosk' },
+      { title: 'Valot',             src: '/grafana/d/wago-lights/lights-status?kiosk' },
+      { title: 'Nysse',             src: '/nysse/' },
+      ...(WEBVISU_ENABLED ? [{ title: 'WebVisu', src: `/webvisu/webvisu.htm` }] : []),
+    ];
+    const NYSSE_IDX = SLIDE_DEFS.findIndex(s => s.title === 'Nysse');
+    let TOTAL = SLIDE_DEFS.length;
 
     const FACE_DETECT_INTERVAL = 500;   // ms between detection attempts
     const GREETING_COOLDOWN    = 30_000; // ms after overlay dismiss before next greeting
@@ -637,11 +634,21 @@
     // Config loaded from server (Ollama model, OpenAI key)
     let appConfig = {};
 
-    // == Conditionally remove WebVisu slide and dot ============================
-    if (!WEBVISU_ENABLED) {
-      document.getElementById('slide-2')?.remove();
-      document.querySelector('.dot[data-idx="2"]')?.remove();
-    }
+    // == Build slides and dots from config ======================================
+    const slidesContainer = document.getElementById('slides');
+    const navContainer    = document.getElementById('nav');
+    SLIDE_DEFS.forEach((def, i) => {
+      const div = document.createElement('div');
+      div.className = 'slide';
+      div.id = `slide-${i}`;
+      div.innerHTML = `<iframe title="${def.title}" src="${def.src}"></iframe>`;
+      slidesContainer.appendChild(div);
+
+      const dot = document.createElement('div');
+      dot.className = 'dot';
+      dot.dataset.idx = i;
+      navContainer.appendChild(dot);
+    });
 
     // == DOM refs ==============================================================
     const slides         = Array.from(document.querySelectorAll('.slide'));
@@ -715,14 +722,6 @@
       if (e.key === 'ArrowLeft')  { handleInteraction(); show(current - 1); }
       if (e.key === 'ArrowRight') { handleInteraction(); show(current + 1); }
     });
-
-    // == Set iframe sources from origin hostname ===============================
-    const host = window.location.hostname;
-    document.querySelector('#slide-0 iframe').src = `/grafana/?kiosk`;
-    document.querySelector('#slide-1 iframe').src = `/nysse/`;
-    if (WEBVISU_ENABLED) {
-      document.querySelector('#slide-2 iframe').src = `https://${host}/webvisu/webvisu.htm`;
-    }
 
     // == Init carousel =========================================================
     const hour    = new Date().getHours();
