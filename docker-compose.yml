@@ -192,11 +192,6 @@ services:
       - "80:80"
       - "443:443"
       - "8888:8888"
-    environment:
-      - OLLAMA_URL=http://192.168.1.36:11434
-      - OLLAMA_MODEL=llama3.1:8b
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped

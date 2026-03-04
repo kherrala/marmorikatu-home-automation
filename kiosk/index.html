@@ -545,11 +545,6 @@
 
     const JINGLE_DURATION     = 30_000; // ms to play the jingle
 
-    const INFLUXDB_URL   = '/api/influxdb';
-    const INFLUXDB_TOKEN = 'wago-secret-token';
-    const INFLUXDB_ORG   = 'wago';
-    const INFLUXDB_BUCKET = 'building_automation';
-
     // == State Machine =========================================================
     const STATES = {
       NOT_STARTED: 'NOT_STARTED',
@@ -597,7 +592,6 @@
     let recognition = null;
     let listeningActive = false;
     let conversationHistory = [];
-    let buildingContext = '';
 
     // Random fallback system when AI is unavailable
     const pick = arr => arr[Math.floor(Math.random() * arr.length)];
@@ -695,7 +689,6 @@
     }
 
     // Config loaded from server (Ollama model, OpenAI key)
-    let appConfig = {};
 
     // == Build slides and dots from config ======================================
     const slidesContainer = document.getElementById('slides');
@@ -815,13 +808,6 @@
     //  FACE DETECTION, GREETING & AI REPORT
     // =========================================================================
 
-    // -- Load server config ---------------------------------------------------
-    async function loadConfig() {
-      try {
-        const res = await fetch('/api/config');
-        appConfig = await res.json();
-      } catch { /* defaults are fine */ }
-    }
 
     // -- Start overlay: unlock camera + audio on iOS --------------------------
     startOverlay.addEventListener('click', async function handleStart() {
@@ -852,7 +838,7 @@
       initSpinner.classList.remove('hidden');
       startOverlay.style.cursor = 'default';
 
-      const [_, cameraOk] = await Promise.all([loadConfig(), initCameraSteps()]);
+      const cameraOk = await initCameraSteps();
 
       if (cameraOk) {
         initSpinner.classList.add('hidden');
@@ -1042,7 +1028,6 @@
       setState(STATES.GREETING);
       overlayStartTime = Date.now();
       conversationHistory = [];
-      buildingContext = '';
       userTextEl.textContent = '';
 
       // Determine time-appropriate greeting
@@ -1546,21 +1531,10 @@
     }
 
     async function generateConversationalResponse() {
-      const systemPrompt = 'Olet kotiautomaatioavustaja. Vastaa lyhyesti suomeksi. K\u00e4yt\u00f6ss\u00e4si on talon sensoritiedot.';
-      const contextMsg = buildingContext ? `Talon sensoritiedot:\n${buildingContext}` : '';
-
-      // Build messages array for chat APIs
-      const messages = [];
-      if (contextMsg) {
-        messages.push({ role: 'user', content: contextMsg });
-        messages.push({ role: 'assistant', content: 'Selvä, minulla on talon tiedot käytössäni.' });
-      }
-      messages.push(...conversationHistory);
-
-      // 1. Try Claude Bridge (MCP-powered, can query live data)
+      // Claude Bridge handles Ollama → Claude fallback internally with MCP tools
       try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 10000);
+        const timeoutId = setTimeout(() => controller.abort(), 15000);
         const res = await fetch('/api/chat/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -1573,336 +1547,7 @@
           const text = data.response?.trim();
           if (text) return stripThinkTags(text);
         }
-      } catch { /* Bridge failed, try Ollama */ }
-
-      // 2. Try Ollama
-      try {
-        const model = appConfig.ollamaModel || 'llama3.1:8b';
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 8000);
-
-        // Ollama chat API supports messages
-        const res = await fetch('/api/ollama/api/chat', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            model,
-            messages: [{ role: 'system', content: systemPrompt }, ...messages],
-            stream: false
-          }),
-          signal: controller.signal
-        });
-        clearTimeout(timeoutId);
-
-        if (res.ok) {
-          const data = await res.json();
-          const text = data.message?.content?.trim();
-          if (text) return stripThinkTags(text);
-        }
-      } catch { /* Ollama failed */ }
-
-      // 3. Try Claude API (direct, no MCP)
-      if (appConfig.anthropicApiKey) {
-        try {
-          const claudeMessages = messages.map(m => ({ role: m.role, content: m.content }));
-          const res = await fetch('https://api.anthropic.com/v1/messages', {
-            method: 'POST',
-            headers: {
-              'x-api-key': appConfig.anthropicApiKey,
-              'anthropic-version': '2023-06-01',
-              'anthropic-dangerous-direct-browser-access': 'true',
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-              model: 'claude-haiku-4-5-20251001',
-              max_tokens: 200,
-              system: systemPrompt,
-              messages: claudeMessages
-            })
-          });
-
-          if (res.ok) {
-            const data = await res.json();
-            const text = data.content?.[0]?.text?.trim();
-            if (text) return stripThinkTags(text);
-          }
-        } catch { /* Claude failed */ }
-      }
-
-      // 4. Fallback to OpenAI
-      if (appConfig.openaiApiKey) {
-        try {
-          const res = await fetch('https://api.openai.com/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${appConfig.openaiApiKey}`,
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-              model: 'gpt-4o-mini',
-              messages: [
-                { role: 'system', content: systemPrompt },
-                ...messages
-              ],
-              max_tokens: 200,
-              temperature: 0.7
-            })
-          });
-
-          if (res.ok) {
-            const data = await res.json();
-            const text = data.choices?.[0]?.message?.content?.trim();
-            if (text) return stripThinkTags(text);
-          }
-        } catch { /* All failed */ }
-      }
-
-      return null;
-    }
-
-    // -- InfluxDB Flux query helper -------------------------------------------
-    async function fluxQuery(query) {
-      const res = await fetch(`${INFLUXDB_URL}/api/v2/query?org=${INFLUXDB_ORG}`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Token ${INFLUXDB_TOKEN}`,
-          'Content-Type': 'application/vnd.flux',
-          'Accept': 'application/csv'
-        },
-        body: query
-      });
-      if (!res.ok) throw new Error(`InfluxDB query failed: ${res.status}`);
-      return parseFluxCSV(await res.text());
-    }
-
-    function parseFluxCSV(csv) {
-      const lines = csv.trim().split('\n').filter(l => l && !l.startsWith('#'));
-      if (lines.length < 2) return [];
-      const headers = lines[0].split(',');
-      return lines.slice(1).map(line => {
-        const vals = line.split(',');
-        const row = {};
-        headers.forEach((h, i) => { row[h.trim()] = vals[i]?.trim(); });
-        return row;
-      });
-    }
-
-    // -- Fetch building data from InfluxDB ------------------------------------
-    async function fetchBuildingData() {
-      const base = `from(bucket: "${INFLUXDB_BUCKET}")`;
-
-      const queries = {
-        outdoor: `${base}
-          |> range(start: -30m)
-          |> filter(fn: (r) => r._measurement == "ruuvi" and r.name == "Ulkolampotila")
-          |> filter(fn: (r) => r._field == "temperature" or r._field == "humidity")
-          |> last()`,
-
-        indoor: `${base}
-          |> range(start: -30m)
-          |> filter(fn: (r) => r._measurement == "ruuvi" and (r.name == "Olohuone" or r.name == "Keittio"))
-          |> filter(fn: (r) => r._field == "temperature")
-          |> last()`,
-
-        heatpump: `${base}
-          |> range(start: -10m)
-          |> filter(fn: (r) => r._measurement == "thermia")
-          |> filter(fn: (r) => r._field == "compressor_on" or r._field == "aux_heater_1" or r._field == "hot_water_temp")
-          |> last()`,
-
-        airquality: `${base}
-          |> range(start: -30m)
-          |> filter(fn: (r) => r._measurement == "ruuvi" and r.name == "Keittio")
-          |> filter(fn: (r) => r._field == "co2" or r._field == "voc_index")
-          |> last()`,
-
-        lights: `${base}
-          |> range(start: -10m)
-          |> filter(fn: (r) => r._measurement == "lights" and r._field == "on")
-          |> filter(fn: (r) => r._value == true)
-          |> group()
-          |> count()`,
-
-        electricity: `${base}
-          |> range(start: -1h)
-          |> filter(fn: (r) => r._measurement == "electricity" and r._field == "price_cents_kwh")
-          |> last()`
-      };
-
-      const results = await Promise.allSettled(
-        Object.entries(queries).map(async ([key, q]) => {
-          const rows = await fluxQuery(q);
-          return [key, rows];
-        })
-      );
-
-      const data = {};
-      for (const result of results) {
-        if (result.status === 'fulfilled') {
-          const [key, rows] = result.value;
-          data[key] = rows;
-        }
-      }
-      return data;
-    }
-
-    // -- Format building data into context string -----------------------------
-    function formatBuildingContext(data) {
-      const parts = [];
-
-      if (data.outdoor?.length) {
-        const temp = data.outdoor.find(r => r._field === 'temperature');
-        const hum  = data.outdoor.find(r => r._field === 'humidity');
-        if (temp) parts.push(`Ulkol\u00e4mp\u00f6tila: ${parseFloat(temp._value).toFixed(1)}\u00b0C`);
-        if (hum) parts.push(`Ulkokosteus: ${parseFloat(hum._value).toFixed(0)}%`);
-      }
-
-      if (data.indoor?.length) {
-        for (const row of data.indoor) {
-          if (row._field === 'temperature') {
-            parts.push(`${row.name}: ${parseFloat(row._value).toFixed(1)}\u00b0C`);
-          }
-        }
-      }
-
-      if (data.heatpump?.length) {
-        const comp = data.heatpump.find(r => r._field === 'compressor_on');
-        const aux  = data.heatpump.find(r => r._field === 'aux_heater_1');
-        const hw   = data.heatpump.find(r => r._field === 'hot_water_temp');
-        if (comp) parts.push(`L\u00e4mp\u00f6pumpun kompressori: ${comp._value === 'true' || comp._value === '1' ? 'p\u00e4\u00e4ll\u00e4' : 'pois'}`);
-        if (aux) parts.push(`Lis\u00e4l\u00e4mmitin: ${aux._value === 'true' || aux._value === '1' ? 'p\u00e4\u00e4ll\u00e4' : 'pois'}`);
-        if (hw) parts.push(`K\u00e4ytt\u00f6vesi: ${parseFloat(hw._value).toFixed(0)}\u00b0C`);
-      }
-
-      if (data.airquality?.length) {
-        const co2 = data.airquality.find(r => r._field === 'co2');
-        const voc = data.airquality.find(r => r._field === 'voc_index');
-        if (co2) parts.push(`Keitti\u00f6n CO2: ${parseFloat(co2._value).toFixed(0)} ppm`);
-        if (voc) parts.push(`Keitti\u00f6n VOC: ${parseFloat(voc._value).toFixed(0)}`);
-      }
-
-      if (data.lights?.length) {
-        const count = data.lights[0]?._value;
-        if (count) parts.push(`Valoja p\u00e4\u00e4ll\u00e4: ${count}`);
-      }
-
-      if (data.electricity?.length) {
-        const price = data.electricity[0]?._value;
-        if (price) parts.push(`S\u00e4hk\u00f6n hinta: ${parseFloat(price).toFixed(2)} c/kWh`);
-      }
-
-      return parts.join('\n');
-    }
-
-    // -- Generate AI report (Ollama -> Claude -> OpenAI fallback) -------------
-    async function generateReport(buildingData) {
-      const context = formatBuildingContext(buildingData);
-      if (!context) return null;
-
-      const systemPrompt = 'Olet kotiautomaatioavustaja. Anna lyhyt 2 lauseen tilannekatsaus suomeksi. \u00c4l\u00e4 toista lukemia sellaisenaan, vaan tiivist\u00e4 oleellinen.';
-      const userPrompt = `Talon tilanne juuri nyt:\n${context}`;
-
-      // 1. Try Claude Bridge (MCP-powered, fetches its own data)
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 15000);
-        const res = await fetch('/api/chat/chat', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            messages: [{ role: 'user', content: 'Anna lyhyt tilannekatsaus talon tämänhetkisestä tilanteesta.' }]
-          }),
-          signal: controller.signal
-        });
-        clearTimeout(timeoutId);
-        if (res.ok) {
-          const data = await res.json();
-          const text = data.response?.trim();
-          if (text) return stripThinkTags(text);
-        }
-      } catch { /* Bridge failed, try Ollama */ }
-
-      // 2. Try Ollama (local, free)
-      try {
-        const model = appConfig.ollamaModel || 'llama3.1:8b';
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 5000);
-
-        const res = await fetch('/api/ollama/api/generate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            model,
-            prompt: `${systemPrompt}\n\n${userPrompt}`,
-            stream: false
-          }),
-          signal: controller.signal
-        });
-        clearTimeout(timeoutId);
-
-        if (res.ok) {
-          const data = await res.json();
-          const text = data.response?.trim();
-          if (text) return stripThinkTags(text);
-        }
-      } catch { /* Ollama failed, try Claude */ }
-
-      // 3. Try Claude API (Haiku — fast and cheap, no MCP)
-      if (appConfig.anthropicApiKey) {
-        try {
-          const res = await fetch('https://api.anthropic.com/v1/messages', {
-            method: 'POST',
-            headers: {
-              'x-api-key': appConfig.anthropicApiKey,
-              'anthropic-version': '2023-06-01',
-              'anthropic-dangerous-direct-browser-access': 'true',
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-              model: 'claude-haiku-4-5-20251001',
-              max_tokens: 150,
-              system: systemPrompt,
-              messages: [
-                { role: 'user', content: userPrompt }
-              ]
-            })
-          });
-
-          if (res.ok) {
-            const data = await res.json();
-            const text = data.content?.[0]?.text?.trim();
-            if (text) return stripThinkTags(text);
-          }
-        } catch { /* Claude failed, try OpenAI */ }
-      }
-
-      // 4. Fallback to OpenAI (gpt-4o-mini — cheap)
-      if (appConfig.openaiApiKey) {
-        try {
-          const res = await fetch('https://api.openai.com/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${appConfig.openaiApiKey}`,
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-              model: 'gpt-4o-mini',
-              messages: [
-                { role: 'system', content: systemPrompt },
-                { role: 'user', content: userPrompt }
-              ],
-              max_tokens: 150,
-              temperature: 0.7
-            })
-          });
-
-          if (res.ok) {
-            const data = await res.json();
-            const text = data.choices?.[0]?.message?.content?.trim();
-            if (text) return stripThinkTags(text);
-          }
-        } catch { /* All failed */ }
-      }
+      } catch { /* Bridge unavailable */ }
 
       return null;
     }
