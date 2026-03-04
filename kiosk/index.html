@@ -556,6 +556,11 @@
     const pick = arr => arr[Math.floor(Math.random() * arr.length)];
     const randInt = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
 
+    // Strip LLM reasoning traces (<think>...</think>) from responses
+    function stripThinkTags(text) {
+      return text.replace(/<think>[\s\S]*?<\/think>/gi, '').replace(/<\/?think\s*\/?>/gi, '').trim();
+    }
+
     function randomFallback() {
       // ~40% chance: generate absurd sentence from vocabulary
       if (Math.random() < 0.4) return generateAbsurd();
@@ -1217,7 +1222,7 @@
         if (res.ok) {
           const data = await res.json();
           const text = data.response?.trim();
-          if (text) return text;
+          if (text) return stripThinkTags(text);
         }
       } catch { /* Bridge failed, try Ollama */ }
 
@@ -1243,7 +1248,7 @@
         if (res.ok) {
           const data = await res.json();
           const text = data.message?.content?.trim();
-          if (text) return text;
+          if (text) return stripThinkTags(text);
         }
       } catch { /* Ollama failed */ }
 
@@ -1270,7 +1275,7 @@
           if (res.ok) {
             const data = await res.json();
             const text = data.content?.[0]?.text?.trim();
-            if (text) return text;
+            if (text) return stripThinkTags(text);
           }
         } catch { /* Claude failed */ }
       }
@@ -1298,7 +1303,7 @@
           if (res.ok) {
             const data = await res.json();
             const text = data.choices?.[0]?.message?.content?.trim();
-            if (text) return text;
+            if (text) return stripThinkTags(text);
           }
         } catch { /* All failed */ }
       }
@@ -1464,7 +1469,7 @@
         if (res.ok) {
           const data = await res.json();
           const text = data.response?.trim();
-          if (text) return text;
+          if (text) return stripThinkTags(text);
         }
       } catch { /* Bridge failed, try Ollama */ }
 
@@ -1489,7 +1494,7 @@
         if (res.ok) {
           const data = await res.json();
           const text = data.response?.trim();
-          if (text) return text;
+          if (text) return stripThinkTags(text);
         }
       } catch { /* Ollama failed, try Claude */ }
 
@@ -1517,7 +1522,7 @@
           if (res.ok) {
             const data = await res.json();
             const text = data.content?.[0]?.text?.trim();
-            if (text) return text;
+            if (text) return stripThinkTags(text);
           }
         } catch { /* Claude failed, try OpenAI */ }
       }
@@ -1545,7 +1550,7 @@
           if (res.ok) {
             const data = await res.json();
             const text = data.choices?.[0]?.message?.content?.trim();
-            if (text) return text;
+            if (text) return stripThinkTags(text);
           }
         } catch { /* All failed */ }
       }
