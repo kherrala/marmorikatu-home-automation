@@ -210,8 +210,8 @@ async def run_ollama_agentic_loop(messages: list[dict], tools: list[dict]) -> di
                         )
                         log.info("Ollama tool result [%d]: %s → %d chars", iteration + 1, tool_name, len(result_text))
                     except Exception as e:
-                        result_text = f"Error calling {tool_name}: {e}"
-                        log.error("Tool error: %s", result_text)
+                        result_text = f"Error calling {tool_name}: {type(e).__name__}: {e}"
+                        log.error("Tool error: %s", result_text, exc_info=True)
 
                 oai_messages.append({
                     "role": "tool",
