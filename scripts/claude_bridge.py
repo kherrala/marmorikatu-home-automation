@@ -360,18 +360,25 @@ async def tts_endpoint(request: Request) -> Response:
         return JSONResponse({"error": str(e)}, status_code=500)
 
 
+import threading
+
 _whisper_model = None
+_whisper_lock = threading.Lock()
 
 
 def _get_whisper_model():
-    """Lazy-load faster-whisper model (downloaded on first use, cached after)."""
+    """Lazy-load faster-whisper model with thread safety."""
     global _whisper_model
-    if _whisper_model is None:
+    if _whisper_model is not None:
+        return _whisper_model
+    with _whisper_lock:
+        if _whisper_model is not None:
+            return _whisper_model  # another thread loaded it while we waited
         from faster_whisper import WhisperModel
         log.info("Loading faster-whisper model (base)...")
         _whisper_model = WhisperModel("base", device="cpu", compute_type="int8")
         log.info("faster-whisper model loaded")
-    return _whisper_model
+        return _whisper_model
 
 
 async def transcribe_endpoint(request: Request) -> JSONResponse:
