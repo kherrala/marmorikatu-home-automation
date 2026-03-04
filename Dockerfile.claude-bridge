@@ -7,7 +7,8 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
 
 # Install dependencies
-RUN pip install --no-cache-dir anthropic mcp uvicorn starlette httpx edge-tts faster-whisper
+RUN pip install --no-cache-dir "numpy<2" && \
+    pip install --no-cache-dir anthropic mcp uvicorn starlette httpx edge-tts faster-whisper
 
 # Copy bridge script
 COPY scripts/claude_bridge.py /app/
