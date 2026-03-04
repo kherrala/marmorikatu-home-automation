@@ -1198,8 +1198,13 @@
 
     let nativeRecognizer = null;
     let nativeSpeechTimer = null;
+    let nativeHardTimer = null;
     let nativeSpeechText = '';
+    let nativeFailCount = 0;
+    let nativeFallenBack = false;      // sticky: once fallen back, stay on MediaRecorder
     const NATIVE_SPEECH_PAUSE = 2000;
+    const NATIVE_HARD_TIMEOUT = 15000; // force-stop after 15s if no final result
+    const NATIVE_MAX_FAILS = 3;        // fall back to MediaRecorder after N failures
 
     let mediaRecorder = null;
     let audioChunks = [];
@@ -1215,37 +1220,33 @@
     let micReady = false;
 
     function initSpeechRecognition() {
-      if (useNativeSpeech) {
-        // Native API manages its own mic — just mark ready
-        micReady = true;
-        recognition = true;
-        console.log('[voice] Using native Web Speech API (fi-FI)');
-        return;
-      }
-
-      // MediaRecorder path: reuse camera audio tracks or request mic
-      console.log('[voice] Using MediaRecorder + server transcription');
+      // Always set up mic stream — needed for MediaRecorder fallback even on native path
       const existingStream = videoEl.srcObject;
       const audioTracks = existingStream?.getAudioTracks() || [];
 
       if (audioTracks.length > 0) {
         audioTracks.forEach(t => t.enabled = true);
         audioStream = new MediaStream(audioTracks);
-        micReady = true;
         setupAudioAnalyser();
-        recognition = true;
-        console.log('[voice] Mic ready (reused camera audio tracks)');
+        console.log('[voice] Mic stream ready (reused camera audio tracks)');
       } else {
         navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
           audioStream = stream;
-          micReady = true;
           setupAudioAnalyser();
-          recognition = true;
-          console.log('[voice] Mic ready (new stream)');
+          console.log('[voice] Mic stream ready (new stream)');
         }).catch(err => {
           console.warn('[voice] Mic not available:', err);
         });
       }
+
+      if (useNativeSpeech) {
+        console.log('[voice] Using native Web Speech API (fi-FI), MediaRecorder as fallback');
+      } else {
+        console.log('[voice] Using MediaRecorder + server transcription');
+      }
+
+      micReady = true;
+      recognition = true;
     }
 
     function setupAudioAnalyser() {
@@ -1292,7 +1293,7 @@
       avatarEl.classList.add('listening');
       scheduleOverlayDismiss();
 
-      if (useNativeSpeech) {
+      if (useNativeSpeech && !nativeFallenBack) {
         startNativeRecognition();
       } else {
         if (audioContext?.state === 'suspended') audioContext.resume();
@@ -1301,63 +1302,121 @@
     }
 
     // -- Native Web Speech API -----------------------------------------------
+    function fallbackToMediaRecorder() {
+      console.warn('[voice] Falling back to MediaRecorder + server transcription');
+      nativeFailCount = 0;
+      nativeFallenBack = true;
+      if (audioStream && listeningActive) {
+        if (audioContext?.state === 'suspended') audioContext.resume();
+        startRecording();
+      }
+    }
+
     function startNativeRecognition() {
       if (!listeningActive) return;
 
       nativeSpeechText = '';
       clearTimeout(nativeSpeechTimer);
+      clearTimeout(nativeHardTimer);
 
       nativeRecognizer = new NativeSpeechRecognition();
       nativeRecognizer.lang = 'fi-FI';
       nativeRecognizer.continuous = true;
-      nativeRecognizer.interimResults = false;
+      nativeRecognizer.interimResults = true;
       nativeRecognizer.maxAlternatives = 1;
 
+      // Hard timeout: if no usable result after 15s, stop and restart/fallback
+      nativeHardTimer = setTimeout(() => {
+        console.warn('[voice] Native hard timeout — no final result in %ds', NATIVE_HARD_TIMEOUT / 1000);
+        try { nativeRecognizer.abort(); } catch {}
+      }, NATIVE_HARD_TIMEOUT);
+
+      let bestInterim = '';
+
       nativeRecognizer.onresult = (event) => {
-        let transcript = '';
+        nativeFailCount = 0; // got a result, reset fail counter
+        let finalText = '';
+        let interimText = '';
         for (let i = 0; i < event.results.length; i++) {
           if (event.results[i].isFinal) {
-            transcript += event.results[i][0].transcript;
+            finalText += event.results[i][0].transcript;
+          } else {
+            interimText += event.results[i][0].transcript;
           }
         }
-        nativeSpeechText = transcript.trim();
-        console.log('[voice] Native partial:', nativeSpeechText);
 
+        if (finalText.trim()) {
+          nativeSpeechText = finalText.trim();
+          console.log('[voice] Native final result:', nativeSpeechText);
+        }
+        if (interimText.trim()) {
+          bestInterim = interimText.trim();
+          console.log('[voice] Native interim:', bestInterim);
+        }
+
+        // Reset pause timer on any result activity
         clearTimeout(nativeSpeechTimer);
         nativeSpeechTimer = setTimeout(() => {
-          if (nativeSpeechText && listeningActive) {
-            console.log('[voice] Native final:', nativeSpeechText);
+          // Prefer final text, fall back to best interim
+          const text = nativeSpeechText || bestInterim;
+          if (text && listeningActive) {
+            clearTimeout(nativeHardTimer);
+            console.log('[voice] Native speech done:', text);
             try { nativeRecognizer.stop(); } catch {}
-            handleVoiceResult(nativeSpeechText);
+            handleVoiceResult(text);
           }
         }, NATIVE_SPEECH_PAUSE);
       };
 
       nativeRecognizer.onerror = (event) => {
         console.warn('[voice] Native error:', event.error);
+        clearTimeout(nativeHardTimer);
+
         if ((event.error === 'no-speech' || event.error === 'aborted') && listeningActive && kioskState === STATES.GREETING) {
-          startNativeRecognition();
+          nativeFailCount++;
+          if (nativeFailCount >= NATIVE_MAX_FAILS && audioStream) {
+            fallbackToMediaRecorder();
+          } else {
+            startNativeRecognition();
+          }
         } else if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
-          console.warn('[voice] Mic permission denied for native speech, cannot listen');
+          console.warn('[voice] Mic permission denied — falling back to MediaRecorder');
+          if (audioStream) fallbackToMediaRecorder();
+        } else if (event.error === 'network') {
+          console.warn('[voice] Network error — falling back to MediaRecorder');
+          if (audioStream) fallbackToMediaRecorder();
+        } else {
+          // audio-capture, language-not-supported, etc.
+          console.warn('[voice] Unrecoverable native error — falling back to MediaRecorder');
+          if (audioStream) fallbackToMediaRecorder();
         }
       };
 
       nativeRecognizer.onend = () => {
-        if (nativeSpeechText && listeningActive) {
+        clearTimeout(nativeHardTimer);
+        // Use whatever text we have (final or interim)
+        const text = nativeSpeechText || bestInterim;
+        if (text && listeningActive) {
           clearTimeout(nativeSpeechTimer);
-          handleVoiceResult(nativeSpeechText);
+          handleVoiceResult(text);
           return;
         }
         if (listeningActive && kioskState === STATES.GREETING) {
-          startNativeRecognition();
+          nativeFailCount++;
+          if (nativeFailCount >= NATIVE_MAX_FAILS && audioStream) {
+            fallbackToMediaRecorder();
+          } else {
+            startNativeRecognition();
+          }
         }
       };
 
       try {
         nativeRecognizer.start();
-        console.log('[voice] Native recognition started');
+        console.log('[voice] Native recognition started (attempt %d)', nativeFailCount + 1);
       } catch (err) {
         console.warn('[voice] Native recognition start failed:', err);
+        if (audioStream) fallbackToMediaRecorder();
       }
     }
     function startRecording() {
@@ -1475,6 +1534,7 @@
       avatarEl.classList.remove('listening');
       clearTimeout(silenceTimer);
       clearTimeout(nativeSpeechTimer);
+      clearTimeout(nativeHardTimer);
       if (nativeRecognizer) {
         try { nativeRecognizer.abort(); } catch {}
         nativeRecognizer = null;
@@ -1497,6 +1557,7 @@
       avatarEl.classList.remove('listening');
       clearTimeout(silenceTimer);
       clearTimeout(nativeSpeechTimer);
+      clearTimeout(nativeHardTimer);
       if (nativeRecognizer) {
         try { nativeRecognizer.abort(); } catch {}
         nativeRecognizer = null;
