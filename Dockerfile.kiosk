@@ -12,7 +12,9 @@ RUN mkdir -p /etc/nginx/ssl && \
       -out    /etc/nginx/ssl/kiosk.crt \
       -subj   "/CN=kiosk.local" \
       -addext "subjectAltName=IP:192.168.1.160,DNS:localhost" && \
-    openssl x509 -in /etc/nginx/ssl/kiosk.crt -outform DER -out /etc/nginx/ssl/kiosk.cer
+    openssl x509 -in /etc/nginx/ssl/kiosk.crt -outform DER -out /etc/nginx/ssl/kiosk.cer && \
+    mkdir -p /usr/share/nginx/cert && \
+    cp /etc/nginx/ssl/kiosk.cer /usr/share/nginx/cert/kiosk.cer
 
 # Download face-api.js and TinyFaceDetector model weights
 RUN mkdir -p /usr/share/nginx/html/face-api && \
