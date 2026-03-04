@@ -39,6 +39,7 @@ MAX_TOKENS = int(os.environ.get("MAX_TOKENS", "300"))
 OLLAMA_NUM_CTX = int(os.environ.get("OLLAMA_NUM_CTX", "16384"))
 BRIDGE_PORT = int(os.environ.get("BRIDGE_PORT", "3002"))
 TTS_VOICE = os.environ.get("TTS_VOICE", "fi-FI-NooraNeural")
+TTS_RATE = os.environ.get("TTS_RATE", "+15%")
 
 WEEKDAYS_FI = ["maanantai", "tiistai", "keskiviikko", "torstai", "perjantai", "lauantai", "sunnuntai"]
 
@@ -347,10 +348,11 @@ async def tts_endpoint(request: Request) -> Response:
         return JSONResponse({"error": "No text provided"}, status_code=400)
 
     voice = body.get("voice", TTS_VOICE)
+    rate = body.get("rate", TTS_RATE)
 
     async def audio_stream():
         try:
-            communicate = edge_tts.Communicate(text, voice)
+            communicate = edge_tts.Communicate(text, voice, rate=rate)
             async for chunk in communicate.stream():
                 if chunk["type"] == "audio":
                     yield chunk["data"]
