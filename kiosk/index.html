@@ -208,7 +208,6 @@
       opacity: 1;
       pointer-events: none;
     }
-
     #greeting-card {
       background: rgba(0,0,0,0.78);
       backdrop-filter: blur(20px);
@@ -224,7 +223,7 @@
       max-width: 460px;
       width: 90%;
       transform: scale(0.92) translateY(12px);
-      transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+      transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
     }
     #greeting-overlay.visible #greeting-card {
       transform: scale(1) translateY(0);
@@ -236,6 +235,8 @@
       flex-shrink: 0;
       width: 160px;
       height: 160px;
+      transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1),
+                  height 0.5s cubic-bezier(0.4, 0, 0.2, 1);
     }
     #avatar {
       width: 100%;
@@ -338,6 +339,59 @@
       transition: opacity 0.3s;
     }
     #user-text:empty { display: none; }
+
+    /* -- Minimized avatar (bottom-right after greeting) -------------------- */
+    #greeting-overlay.minimized #greeting-card {
+      position: fixed;
+      bottom: 64px;
+      right: 20px;
+      max-width: 280px;
+      width: auto;
+      padding: 14px 18px 14px 14px;
+      border-radius: 20px;
+      gap: 10px;
+      flex-direction: row;
+      pointer-events: auto;
+      transform: scale(1) translateY(0);
+      animation: cardMinimize 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    @keyframes cardMinimize {
+      0% { opacity: 0.7; transform: scale(1.4); }
+      100% { opacity: 1; transform: scale(1); }
+    }
+    #greeting-overlay.minimized #avatar-container {
+      width: 52px;
+      height: 52px;
+    }
+    #greeting-overlay.minimized #greeting-content {
+      align-items: flex-start;
+      gap: 4px;
+      max-width: 180px;
+    }
+    #greeting-overlay.minimized #greeting-text { display: none; }
+    #greeting-overlay.minimized #report-row { gap: 6px; }
+    #greeting-overlay.minimized #report-text {
+      font-size: 13px;
+      line-height: 1.35;
+      text-align: left;
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    #greeting-overlay.minimized #user-text {
+      font-size: 12px;
+      text-align: left;
+    }
+    #greeting-overlay.minimized #listening-indicator {
+      margin-top: 2px;
+      gap: 6px;
+    }
+    #greeting-overlay.minimized #listening-indicator span { font-size: 12px; }
+    #greeting-overlay.minimized #mic-pulse { width: 10px; height: 10px; }
+    #greeting-overlay.minimized #report-spinner {
+      width: 14px; height: 14px;
+    }
 
     /* -- Listening indicator ----------------------------------------------- */
     #listening-indicator {
@@ -490,7 +544,6 @@
 
     const FACE_DETECT_INTERVAL = 500;   // ms between detection attempts
     const GREETING_COOLDOWN    = 30_000; // ms after overlay dismiss before next greeting
-    const LISTEN_TIMEOUT       = 10_000; // ms of silence before auto-dismiss
     const MAX_OVERLAY_DURATION = 300_000; // 5 min absolute max to prevent stuck overlay
 
     const JINGLE_DURATION     = 30_000; // ms to play the jingle
@@ -886,11 +939,15 @@
     let consecutiveDetections = 0;
     const DETECTIONS_REQUIRED = 3; // require 3 consecutive detections
     let faceWasAbsent = true; // must be true to allow greeting trigger
+    let faceVisible = false;  // tracks face presence during greeting
+    const FACE_GONE_DISMISS_MS = 5000; // dismiss 5s after face disappears
+    let faceGoneTimeout = null;
+    let consecutiveFaceGone = 0;
+    const FACE_GONE_REQUIRED = 4; // require 4 consecutive non-detections (~2s)
 
     function startFaceDetection() {
       detectInterval = setInterval(async () => {
-        if (kioskState !== STATES.READY) return;
-        if (Date.now() - lastGreetingTime < GREETING_COOLDOWN) return;
+        if (![STATES.READY, STATES.GREETING].includes(kioskState)) return;
 
         try {
           if (!videoEl.videoWidth) return;
@@ -899,17 +956,60 @@
             videoEl,
             new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.35 })
           );
+
+          if (kioskState === STATES.GREETING) {
+            // During greeting: track face to keep conversation alive
+            if (detection) {
+              faceVisible = true;
+              consecutiveFaceGone = 0;
+              // Face returned — cancel pending dismiss
+              if (faceGoneTimeout) {
+                clearTimeout(faceGoneTimeout);
+                faceGoneTimeout = null;
+              }
+            } else {
+              consecutiveFaceGone++;
+              if (consecutiveFaceGone >= FACE_GONE_REQUIRED && faceVisible) {
+                faceVisible = false;
+                // Face left — start dismiss countdown (only if not speaking)
+                if (!faceGoneTimeout) {
+                  faceGoneTimeout = setTimeout(() => {
+                    faceGoneTimeout = null;
+                    if (kioskState === STATES.GREETING && !faceVisible) {
+                      // Wait for speech to finish before dismissing
+                      if (speechSynthesis.speaking) {
+                        const checkDone = setInterval(() => {
+                          if (!speechSynthesis.speaking) {
+                            clearInterval(checkDone);
+                            if (!faceVisible) dismissOverlay();
+                          }
+                        }, 300);
+                      } else {
+                        dismissOverlay();
+                      }
+                    }
+                  }, FACE_GONE_DISMISS_MS);
+                }
+              }
+            }
+            return;
+          }
+
+          // READY state: detect face to trigger greeting
+          if (Date.now() - lastGreetingTime < GREETING_COOLDOWN) return;
+
           if (detection) {
             consecutiveDetections++;
-            // Re-check guards after async detection (multiple detections can be in-flight)
             if (consecutiveDetections >= DETECTIONS_REQUIRED && kioskState === STATES.READY && faceWasAbsent && Date.now() - lastGreetingTime >= GREETING_COOLDOWN) {
               consecutiveDetections = 0;
-              faceWasAbsent = false; // require face to leave before next trigger
+              faceWasAbsent = false;
+              faceVisible = true;
+              consecutiveFaceGone = 0;
               triggerGreeting();
             }
           } else {
             consecutiveDetections = 0;
-            faceWasAbsent = true; // face gone — next appearance can trigger
+            faceWasAbsent = true;
           }
         } catch (err) {
           console.warn('Face detection error:', err);
@@ -962,9 +1062,16 @@
         await speakAndWait(fallback);
       }
 
+      // Minimize avatar to bottom-right before entering listening mode
+      minimizeOverlay();
+
       // Enter listening mode (waits for jingle to finish if still playing)
       // scheduleOverlayDismiss is called inside startListening after mic actually opens
       startListening();
+    }
+
+    function minimizeOverlay() {
+      greetingOverlay.classList.add('minimized');
     }
 
     // -- Jingle (local MP3) ---------------------------------------------------
@@ -990,37 +1097,32 @@
     function scheduleOverlayDismiss() {
       clearTimeout(overlayTimeout);
 
-      // Absolute safety net
+      // Absolute safety net (MAX_OVERLAY_DURATION); normal dismiss is face-based
       if (Date.now() - overlayStartTime > MAX_OVERLAY_DURATION) {
         dismissOverlay();
         return;
       }
 
       overlayTimeout = setTimeout(() => {
-        // Wait for speech to finish if still speaking
-        if (speechSynthesis.speaking) {
-          const checkDone = setInterval(() => {
-            if (!speechSynthesis.speaking) {
-              clearInterval(checkDone);
-              dismissOverlay();
-            }
-          }, 300);
-        } else {
-          dismissOverlay();
-        }
-      }, LISTEN_TIMEOUT);
+        dismissOverlay();
+      }, MAX_OVERLAY_DURATION - (Date.now() - overlayStartTime));
     }
 
     function dismissOverlay() {
       if (kioskState !== STATES.GREETING) return;
       setState(STATES.GREETING_COOLDOWN);
       clearTimeout(overlayTimeout);
+      clearTimeout(faceGoneTimeout);
+      faceGoneTimeout = null;
+      faceVisible = false;
+      consecutiveFaceGone = 0;
       stopJingle();
       stopListening();
       speechSynthesis.cancel();
       avatarEl.classList.remove('speaking');
       avatarEl.classList.remove('listening');
       greetingOverlay.classList.remove('visible');
+      greetingOverlay.classList.remove('minimized');
       lastGreetingTime = Date.now();
       setTimeout(() => {
         if (kioskState === STATES.GREETING_COOLDOWN) setState(STATES.READY);
@@ -1207,10 +1309,9 @@
         await speakAndWait(fallback);
       }
 
-      // Resume listening if still within max duration
+      // Resume listening if still within max duration and face is present
       if (Date.now() - overlayStartTime < MAX_OVERLAY_DURATION && kioskState === STATES.GREETING) {
         startListening();
-        scheduleOverlayDismiss(); // Reset 10s idle timer
       }
     }
 

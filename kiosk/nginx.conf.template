@@ -1,3 +1,15 @@
+# Plain HTTP certificate server on port 8888 (no HSTS, no redirects)
+# iOS: browse to http://192.168.1.160:8888 in Safari to install the cert
+server {
+    listen 8888;
+
+    location / {
+        alias /etc/nginx/ssl/kiosk.cer;
+        default_type application/x-x509-ca-cert;
+        add_header Content-Disposition 'attachment; filename="kiosk.cer"';
+    }
+}
+
 server {
     listen 80;
     return 301 https://$host$request_uri;
@@ -11,6 +23,15 @@ server {
 
     root /usr/share/nginx/html;
     index index.html;
+
+    # Serve the self-signed certificate for easy iOS trust installation
+    # On iOS Safari: browse to http://<ip>/cert → Settings > Profiles > Install,
+    # then Settings > General > About > Certificate Trust Settings > enable full trust
+    location = /cert {
+        alias /etc/nginx/ssl/kiosk.cer;
+        default_type application/x-x509-ca-cert;
+        add_header Content-Disposition 'attachment; filename="kiosk.cer"';
+    }
 
     location / {
         try_files $uri $uri/ /index.html;
