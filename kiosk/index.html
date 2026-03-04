@@ -1066,6 +1066,8 @@
     }
 
     // -- Speech recognition (voice commands) ----------------------------------
+    let lastRecognitionStart = 0;
+
     function initSpeechRecognition() {
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       if (!SpeechRecognition) {
@@ -1083,18 +1085,32 @@
       };
 
       recognition.onend = () => {
-        // Auto-restart if still in listening mode and within max duration
-        if (listeningActive && Date.now() - overlayStartTime < MAX_OVERLAY_DURATION) {
-          try { recognition.start(); } catch { /* already started */ }
-        }
+        if (!listeningActive || Date.now() - overlayStartTime > MAX_OVERLAY_DURATION) return;
+        // Throttle restarts — iOS can fire onend immediately after start
+        const elapsed = Date.now() - lastRecognitionStart;
+        const delay = elapsed < 1000 ? 1000 : 0;
+        setTimeout(() => {
+          if (listeningActive && Date.now() - overlayStartTime < MAX_OVERLAY_DURATION) {
+            lastRecognitionStart = Date.now();
+            try { recognition.start(); } catch { /* already started */ }
+          }
+        }, delay);
       };
 
       recognition.onerror = (event) => {
         console.warn('Speech recognition error:', event.error);
-        // Restart on recoverable errors
-        if (listeningActive && event.error !== 'not-allowed' && event.error !== 'service-not-allowed') {
+        if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+          // Mic denied or unavailable — stop showing listening indicator
+          listeningActive = false;
+          listeningIndicator.classList.add('hidden');
+          avatarEl.classList.remove('listening');
+          return;
+        }
+        // Restart on recoverable errors with delay
+        if (listeningActive) {
           setTimeout(() => {
             if (listeningActive && Date.now() - overlayStartTime < MAX_OVERLAY_DURATION) {
+              lastRecognitionStart = Date.now();
               try { recognition.start(); } catch { /* ignore */ }
             }
           }, 500);
@@ -1120,8 +1136,25 @@
       listeningActive = true;
       listeningIndicator.classList.remove('hidden');
       avatarEl.classList.add('listening');
-      try { recognition.start(); } catch { /* ignore */ }
-      scheduleOverlayDismiss(); // timer starts when mic ACTUALLY opens
+
+      // On iOS Safari, re-acquire mic to switch audio session from playback → record
+      // mode after TTS, then start recognition
+      const doStart = () => {
+        lastRecognitionStart = Date.now();
+        try { recognition.start(); } catch { /* ignore */ }
+        scheduleOverlayDismiss();
+      };
+
+      if (navigator.mediaDevices?.getUserMedia) {
+        navigator.mediaDevices.getUserMedia({ audio: true })
+          .then(stream => {
+            stream.getAudioTracks().forEach(t => t.stop());
+            doStart();
+          })
+          .catch(() => doStart()); // try recognition anyway
+      } else {
+        doStart();
+      }
     }
 
     function stopListening() {
