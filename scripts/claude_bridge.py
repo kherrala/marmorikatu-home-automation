@@ -56,7 +56,10 @@ def get_system_prompt() -> str:
         f"Nyt on {date_str}, kello {time_str}. "
         f"Vastaa aina lyhyesti suomeksi (1–3 lausetta). "
         f"Vastauksesi luetaan ääneen, joten älä käytä markdown-muotoilua, listoja tai erikoismerkkejä. "
-        f"Käytä työkaluja hakeaksesi ajantasaiset tiedot ennen vastaamista."
+        f"Käytä AINA työkaluja hakeaksesi ajantasaiset tiedot ennen vastaamista. "
+        f"ÄLÄ KOSKAAN keksi tietoja itse — käytä työkalua jokaiseen kysymykseen. "
+        f"Bussit: käytä get_bus_departures. Lämpötilat: käytä get_latest tai get_room_temperatures. "
+        f"Sauna: käytä get_sauna_status. Sähkö: käytä get_energy_consumption."
     )
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
