@@ -1276,7 +1276,10 @@
     }
 
     function startListening() {
-      if (!micReady || kioskState !== STATES.GREETING) return;
+      if (!micReady || kioskState !== STATES.GREETING) {
+        console.log('[voice] startListening skipped: micReady=%s, state=%s', micReady, kioskState);
+        return;
+      }
 
       // Wait for jingle to finish before opening mic
       if (!jingleAudio.paused) {
@@ -1301,7 +1304,10 @@
       startRecording();
     }
     function startRecording() {
-      if (!audioStream || !listeningActive) return;
+      if (!audioStream || !listeningActive) {
+        console.log('[voice] startRecording skipped: audioStream=%s, listeningActive=%s', !!audioStream, listeningActive);
+        return;
+      }
 
       audioChunks = [];
       recordingStartTime = Date.now();
@@ -1360,6 +1366,8 @@
       clearTimeout(silenceTimer);
       let silenceStart = null;
 
+      let speechDetected = false;
+
       const check = () => {
         if (!listeningActive || !mediaRecorder || mediaRecorder.state !== 'recording') return;
 
@@ -1372,16 +1380,30 @@
         }
 
         const rms = getRMS();
-        if (rms < SILENCE_THRESHOLD) {
+
+        // If analyser isn't working (rms always 0), fall back to duration-based cutoff
+        if (!analyserNode) {
+          if (elapsed >= 5000) {
+            console.log('[voice] No analyser, stopping after 5s');
+            mediaRecorder.stop();
+          } else {
+            silenceTimer = setTimeout(check, 150);
+          }
+          return;
+        }
+
+        if (rms >= SILENCE_THRESHOLD) {
+          speechDetected = true;
+          silenceStart = null;
+        } else if (speechDetected) {
+          // Only start counting silence after speech was detected
           if (!silenceStart) silenceStart = Date.now();
           const silentFor = Date.now() - silenceStart;
-          if (silentFor >= SILENCE_DURATION && elapsed > MIN_RECORDING_MS + SILENCE_DURATION) {
-            console.log('[voice] Silence detected, stopping recording');
+          if (silentFor >= SILENCE_DURATION) {
+            console.log('[voice] Silence after speech, stopping recording');
             mediaRecorder.stop();
             return;
           }
-        } else {
-          silenceStart = null;
         }
 
         silenceTimer = setTimeout(check, 150);
