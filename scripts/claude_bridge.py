@@ -170,7 +170,7 @@ async def run_ollama_agentic_loop(messages: list[dict], tools: list[dict]) -> di
                     "model": OLLAMA_MODEL,
                     "messages": oai_messages,
                     "tools": openai_tools,
-                    "max_tokens": MAX_TOKENS + 1024,  # extra headroom for reasoning tokens
+                    "max_tokens": MAX_TOKENS + 4096,  # extra headroom for reasoning tokens + tool call JSON
                 },
             )
             resp.raise_for_status()
