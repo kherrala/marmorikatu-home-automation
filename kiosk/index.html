@@ -1350,8 +1350,10 @@
 
       nativeRecognizer.onerror = (event) => {
         console.warn('[voice] Native error:', event.error);
-        if (event.error === 'no-speech' && listeningActive && kioskState === STATES.GREETING) {
+        if ((event.error === 'no-speech' || event.error === 'aborted') && listeningActive && kioskState === STATES.GREETING) {
           startNativeRecognition();
+        } else if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+          console.warn('[voice] Mic permission denied for native speech, cannot listen');
         }
       };
 
@@ -1366,7 +1368,12 @@
         }
       };
 
-      nativeRecognizer.start();
+      try {
+        nativeRecognizer.start();
+        console.log('[voice] Native recognition started');
+      } catch (err) {
+        console.warn('[voice] Native recognition start failed:', err);
+      }
     }
     function startRecording() {
       if (!audioStream || !listeningActive) {
