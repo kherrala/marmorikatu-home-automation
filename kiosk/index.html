@@ -940,10 +940,11 @@
     const DETECTIONS_REQUIRED = 3; // require 3 consecutive detections
     let faceWasAbsent = true; // must be true to allow greeting trigger
     let faceVisible = false;  // tracks face presence during greeting
-    const FACE_GONE_DISMISS_MS = 5000; // dismiss 5s after face disappears
+    const FACE_GONE_DISMISS_MS = 15_000; // dismiss 15s after face disappears
+    const MIN_GREETING_ALIVE_MS = 30_000; // never dismiss within first 30s
     let faceGoneTimeout = null;
     let consecutiveFaceGone = 0;
-    const FACE_GONE_REQUIRED = 4; // require 4 consecutive non-detections (~2s)
+    const FACE_GONE_REQUIRED = 8; // require 8 consecutive non-detections (~4s)
 
     let faceDetectRunning = false; // prevent overlapping async detections
 
@@ -975,8 +976,8 @@
               consecutiveFaceGone++;
               if (consecutiveFaceGone >= FACE_GONE_REQUIRED && faceVisible) {
                 faceVisible = false;
-                // Face left — start dismiss countdown (only if not speaking)
-                if (!faceGoneTimeout) {
+                // Face left — start dismiss countdown (skip if too early or already pending)
+                if (!faceGoneTimeout && Date.now() - overlayStartTime > MIN_GREETING_ALIVE_MS) {
                   faceGoneTimeout = setTimeout(() => {
                     faceGoneTimeout = null;
                     if (kioskState === STATES.GREETING && !faceVisible) {
