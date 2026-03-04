@@ -51,14 +51,9 @@ def get_system_prompt() -> str:
     date_str = f"{weekday} {now.day}.{now.month}.{now.year}"
     time_str = f"{now.hour}:{now.minute:02d}"
     return (
-        f"Olet kotiautomaatioavustaja Marmorikadun omakotitalossa. "
-        f"Nyt on {date_str}, kello {time_str}. "
-        f"Vastaa aina lyhyesti suomeksi (1–3 lausetta). "
-        f"Vastauksesi luetaan ääneen, joten älä käytä markdown-muotoilua, listoja tai erikoismerkkejä. "
-        f"Käytä AINA työkaluja hakeaksesi ajantasaiset tiedot ennen vastaamista. "
-        f"ÄLÄ KOSKAAN keksi tietoja itse — käytä työkalua jokaiseen kysymykseen. "
-        f"Bussit: käytä get_bus_departures. Lämpötilat: käytä get_latest tai get_room_temperatures. "
-        f"Sauna: käytä get_sauna_status. Sähkö: käytä get_energy_consumption."
+        f"Käytä AINA työkaluja. ÄLÄ keksi tietoja.\n"
+        f"Nyt on {date_str}, kello {time_str}.\n"
+        f"Vastaa lyhyesti suomeksi ilman muotoilua."
     )
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -190,7 +185,7 @@ async def run_ollama_agentic_loop(messages: list[dict], tools: list[dict]) -> di
                     "stream": False,
                     "options": {
                         "num_ctx": OLLAMA_NUM_CTX,
-                        "temperature": 0.3,
+                        "temperature": 0.1,
                         "repeat_penalty": 1.0,
                     },
                 },
@@ -365,14 +360,27 @@ async def tts_endpoint(request: Request) -> Response:
         return JSONResponse({"error": str(e)}, status_code=500)
 
 
+_whisper_model = None
+
+
+def _get_whisper_model():
+    """Lazy-load faster-whisper model (downloaded on first use, cached after)."""
+    global _whisper_model
+    if _whisper_model is None:
+        from faster_whisper import WhisperModel
+        log.info("Loading faster-whisper model (base)...")
+        _whisper_model = WhisperModel("base", device="cpu", compute_type="int8")
+        log.info("faster-whisper model loaded")
+    return _whisper_model
+
+
 async def transcribe_endpoint(request: Request) -> JSONResponse:
-    """POST /transcribe — server-side speech-to-text using OpenAI Whisper API.
+    """POST /transcribe — server-side speech-to-text using local faster-whisper.
 
     Accepts audio as multipart form data (field "audio") or raw body.
     Returns {"text": "transcribed text"}.
-    Falls back to Ollama whisper if OpenAI key is not available.
     """
-    import httpx
+    import tempfile
 
     # Get audio bytes from request
     content_type = request.headers.get("content-type", "")
@@ -392,25 +400,22 @@ async def transcribe_endpoint(request: Request) -> JSONResponse:
 
     log.info("Transcribe: received %d bytes (%s)", len(audio_bytes), filename)
 
-    # Try OpenAI Whisper API
-    openai_key = os.environ.get("OPENAI_API_KEY", "")
-    if openai_key:
-        try:
-            async with httpx.AsyncClient(timeout=30) as client:
-                resp = await client.post(
-                    "https://api.openai.com/v1/audio/transcriptions",
-                    headers={"Authorization": f"Bearer {openai_key}"},
-                    files={"file": (filename, audio_bytes, "audio/webm")},
-                    data={"model": "whisper-1", "language": "fi"},
-                )
-                resp.raise_for_status()
-                text = resp.json().get("text", "").strip()
-                log.info("Transcribe (OpenAI): '%s'", text)
-                return JSONResponse({"text": text})
-        except Exception as e:
-            log.warning("OpenAI transcription failed: %s", e)
-
-    return JSONResponse({"error": "No transcription service available"}, status_code=503)
+    try:
+        ext = filename.rsplit(".", 1)[-1] if "." in filename else "webm"
+        with tempfile.NamedTemporaryFile(suffix=f".{ext}", delete=True) as tmp:
+            tmp.write(audio_bytes)
+            tmp.flush()
+            loop = asyncio.get_event_loop()
+            model = await loop.run_in_executor(None, _get_whisper_model)
+            segments, _info = await loop.run_in_executor(
+                None, lambda: model.transcribe(tmp.name, language="fi", beam_size=3)
+            )
+            text = " ".join(s.text.strip() for s in segments).strip()
+        log.info("Transcribe: '%s'", text)
+        return JSONResponse({"text": text})
+    except Exception as e:
+        log.error("Transcription failed: %s", e)
+        return JSONResponse({"error": str(e)}, status_code=500)
 
 
 async def health_endpoint(request: Request) -> JSONResponse:
