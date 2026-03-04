@@ -21,7 +21,6 @@ from contextlib import asynccontextmanager
 
 import anthropic
 import edge_tts
-import openai
 import uvicorn
 from mcp.client.sse import sse_client
 from mcp.client.session import ClientSession
@@ -73,14 +72,24 @@ _servers: dict[str, dict] = {}
 _lock = asyncio.Lock()
 _tasks: list[asyncio.Task] = []
 claude_client: anthropic.AsyncAnthropic | None = None
-ollama_client: openai.AsyncOpenAI | None = None
 
 
-def _aggregated_tools() -> list[dict]:
+# Tools excluded from Ollama — too low-level or technical for a voice kiosk.
+# Claude fallback still gets the full set.
+_OLLAMA_EXCLUDED_TOOLS = {
+    "describe_schema", "list_measurements", "describe_measurement",
+    "query_data", "get_time_range", "get_statistics",
+    "get_thermia_register_data",
+}
+
+
+def _aggregated_tools(for_ollama: bool = False) -> list[dict]:
     """Return combined Claude-format tools from all connected servers."""
     tools = []
     for info in _servers.values():
         tools.extend(info["tools_claude"])
+    if for_ollama:
+        tools = [t for t in tools if t["name"] not in _OLLAMA_EXCLUDED_TOOLS]
     return tools
 
 
@@ -168,24 +177,20 @@ async def run_ollama_agentic_loop(messages: list[dict], tools: list[dict]) -> di
 
     async with httpx.AsyncClient(timeout=120) as client:
         for iteration in range(MAX_TOOL_ITERATIONS):
-            request_body = {
-                "model": OLLAMA_MODEL,
-                "messages": oai_messages,
-                "tools": openai_tools,
-                "temperature": 0.3,
-                "presence_penalty": 0,
-                "options": {
-                    "num_ctx": OLLAMA_NUM_CTX,
-                    "temperature": 0.3,
-                    "presence_penalty": 0,
-                },
-            }
-            if iteration == 0:
-                with open("/tmp/ollama_request.json", "w") as f:
-                    json.dump(request_body, f, ensure_ascii=False)
             resp = await client.post(
                 f"{OLLAMA_URL}/v1/chat/completions",
-                json=request_body,
+                json={
+                    "model": OLLAMA_MODEL,
+                    "messages": oai_messages,
+                    "tools": openai_tools,
+                    "temperature": 0.3,
+                    "presence_penalty": 0,
+                    "options": {
+                        "num_ctx": OLLAMA_NUM_CTX,
+                        "temperature": 0.3,
+                        "repeat_penalty": 1.0,
+                    },
+                },
             )
             resp.raise_for_status()
             data = resp.json()
@@ -292,9 +297,10 @@ async def run_claude_agentic_loop(messages: list[dict], tools: list[dict]) -> di
 
 async def chat_endpoint(request: Request) -> JSONResponse:
     """POST /chat — run Claude agentic loop with MCP tools."""
-    tools = _aggregated_tools()
+    all_tools = _aggregated_tools()
+    ollama_tools = _aggregated_tools(for_ollama=True)
 
-    if not tools:
+    if not all_tools:
         return JSONResponse({"error": "No MCP servers connected"}, status_code=503)
 
     try:
@@ -306,17 +312,17 @@ async def chat_endpoint(request: Request) -> JSONResponse:
     if not messages:
         return JSONResponse({"error": "No messages provided"}, status_code=400)
 
-    # Try Ollama first, fall back to Claude on any error
+    # Try Ollama first (with reduced tool set), fall back to Claude (full tools)
     try:
-        log.info("Trying Ollama (%s)...", OLLAMA_MODEL)
-        result = await run_ollama_agentic_loop(messages, tools)
+        log.info("Trying Ollama (%s) with %d tools...", OLLAMA_MODEL, len(ollama_tools))
+        result = await run_ollama_agentic_loop(messages, ollama_tools)
         return JSONResponse(result)
     except Exception as e:
         log.warning("Ollama failed (%s), falling back to Claude", e)
 
     try:
-        log.info("Falling back to Claude (%s)...", CLAUDE_MODEL)
-        result = await run_claude_agentic_loop(messages, tools)
+        log.info("Falling back to Claude (%s) with %d tools...", CLAUDE_MODEL, len(all_tools))
+        result = await run_claude_agentic_loop(messages, all_tools)
         return JSONResponse(result)
     except anthropic.APIError as e:
         log.error("Claude API error: %s", e)
@@ -387,10 +393,9 @@ async def health_endpoint(request: Request) -> JSONResponse:
 @asynccontextmanager
 async def lifespan(app):
     """Start background MCP connections and LLM clients."""
-    global claude_client, ollama_client
+    global claude_client
 
     claude_client = anthropic.AsyncAnthropic()
-    ollama_client = openai.AsyncOpenAI(base_url=f"{OLLAMA_URL}/v1", api_key="ollama")
     log.info("Primary model: Ollama %s at %s", OLLAMA_MODEL, OLLAMA_URL)
     log.info("Fallback model: Claude %s", CLAUDE_MODEL)
     log.info("MCP servers: %s", mcp_urls)

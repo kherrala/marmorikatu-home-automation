@@ -4,7 +4,7 @@ FROM python:3.12-slim
 WORKDIR /app
 
 # Install dependencies
-RUN pip install --no-cache-dir anthropic mcp uvicorn starlette httpx edge-tts openai
+RUN pip install --no-cache-dir anthropic mcp uvicorn starlette httpx edge-tts
 
 # Copy bridge script
 COPY scripts/claude_bridge.py /app/
