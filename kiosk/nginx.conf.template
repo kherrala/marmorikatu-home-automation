@@ -60,11 +60,12 @@ server {
         proxy_set_header Host influxdb;
     }
 
-    # Claude Bridge proxy (MCP-powered AI)
+    # Claude Bridge proxy (MCP-powered AI + transcription)
     location /api/chat/ {
         proxy_pass http://claude-bridge:3002/;
         proxy_read_timeout 30s;
         proxy_connect_timeout 5s;
+        client_max_body_size 10m;
     }
 
     # Ollama proxy (URL injected via envsubst)

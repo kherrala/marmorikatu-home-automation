@@ -1199,87 +1199,74 @@
       });
     }
 
-    // -- Speech recognition (voice commands) ----------------------------------
-    let lastRecognitionStart = 0;
-    let recognitionErrorCount = 0;
-    const MAX_RECOGNITION_ERRORS = 5; // stop retrying after this many consecutive errors
+    // -- Speech recognition (MediaRecorder + server-side Whisper) -------------
+    // Uses MediaRecorder to capture audio, sends to /api/chat/transcribe for
+    // server-side transcription via OpenAI Whisper. Works on iPadOS Safari
+    // where the Web Speech API is broken.
+
+    let mediaRecorder = null;
+    let audioChunks = [];
+    let silenceTimer = null;
+    let audioStream = null;       // mic stream obtained during init
+    let audioContext = null;
+    let analyserNode = null;
+    const SILENCE_THRESHOLD = 0.01;  // RMS below this = silence
+    const SILENCE_DURATION = 2000;   // ms of silence before sending
+    const MIN_RECORDING_MS = 500;    // ignore very short recordings
+    let recordingStartTime = 0;
+    let micReady = false;
 
     function initSpeechRecognition() {
-      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (!SpeechRecognition) {
-        console.warn('SpeechRecognition not available');
-        return;
+      // Mic stream was already obtained in initCameraSteps (audio: true).
+      // Re-use those audio tracks if available, otherwise request mic now.
+      const existingStream = videoEl.srcObject;
+      const audioTracks = existingStream?.getAudioTracks() || [];
+
+      if (audioTracks.length > 0) {
+        // Re-enable the audio tracks (they were disabled to avoid feedback)
+        audioTracks.forEach(t => t.enabled = true);
+        audioStream = new MediaStream(audioTracks);
+        micReady = true;
+        setupAudioAnalyser();
+        recognition = true; // signal that voice is available
+        console.log('[voice] Mic ready (reused camera audio tracks)');
+      } else {
+        // Request mic separately
+        navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
+          audioStream = stream;
+          micReady = true;
+          setupAudioAnalyser();
+          recognition = true;
+          console.log('[voice] Mic ready (new stream)');
+        }).catch(err => {
+          console.warn('[voice] Mic not available:', err);
+        });
       }
-      recognition = new SpeechRecognition();
-      recognition.lang = 'fi-FI';
-      recognition.interimResults = false;
-      recognition.continuous = false;
+    }
 
-      // Warm-start: request mic permission now (during user gesture chain)
-      // so the browser doesn't prompt later during the greeting flow
+    function setupAudioAnalyser() {
       try {
-        recognition.start();
-        recognition.stop();
-      } catch { /* ignore */ }
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const source = audioContext.createMediaStreamSource(audioStream);
+        analyserNode = audioContext.createAnalyser();
+        analyserNode.fftSize = 512;
+        source.connect(analyserNode);
+      } catch (err) {
+        console.warn('[voice] AudioContext setup failed:', err);
+      }
+    }
 
-      recognition.onresult = (event) => {
-        recognitionErrorCount = 0; // reset on success
-        const transcript = event.results[event.results.length - 1][0].transcript.trim();
-        if (transcript) handleVoiceResult(transcript);
-      };
-
-      recognition.onend = () => {
-        if (!listeningActive || Date.now() - overlayStartTime > MAX_OVERLAY_DURATION) return;
-        if (recognitionErrorCount >= MAX_RECOGNITION_ERRORS) {
-          console.warn('Speech recognition: too many errors, stopping');
-          listeningActive = false;
-          listeningIndicator.classList.add('hidden');
-          avatarEl.classList.remove('listening');
-          return;
-        }
-        // Throttle restarts — iOS can fire onend immediately after start
-        const elapsed = Date.now() - lastRecognitionStart;
-        const delay = elapsed < 1000 ? 1500 : 0;
-        setTimeout(() => {
-          if (listeningActive && Date.now() - overlayStartTime < MAX_OVERLAY_DURATION) {
-            lastRecognitionStart = Date.now();
-            try { recognition.start(); } catch { /* already started */ }
-          }
-        }, delay);
-      };
-
-      recognition.onerror = (event) => {
-        console.warn('Speech recognition error:', event.error);
-        if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
-          // Mic denied or unavailable — stop permanently
-          listeningActive = false;
-          listeningIndicator.classList.add('hidden');
-          avatarEl.classList.remove('listening');
-          return;
-        }
-        recognitionErrorCount++;
-        if (recognitionErrorCount >= MAX_RECOGNITION_ERRORS) {
-          console.warn('Speech recognition: too many consecutive errors, giving up');
-          listeningActive = false;
-          listeningIndicator.classList.add('hidden');
-          avatarEl.classList.remove('listening');
-          return;
-        }
-        // Restart with exponential backoff
-        if (listeningActive) {
-          const backoff = Math.min(500 * Math.pow(2, recognitionErrorCount - 1), 5000);
-          setTimeout(() => {
-            if (listeningActive && Date.now() - overlayStartTime < MAX_OVERLAY_DURATION) {
-              lastRecognitionStart = Date.now();
-              try { recognition.start(); } catch { /* ignore */ }
-            }
-          }, backoff);
-        }
-      };
+    function getRMS() {
+      if (!analyserNode) return 0;
+      const data = new Float32Array(analyserNode.fftSize);
+      analyserNode.getFloatTimeDomainData(data);
+      let sum = 0;
+      for (let i = 0; i < data.length; i++) sum += data[i] * data[i];
+      return Math.sqrt(sum / data.length);
     }
 
     function startListening() {
-      if (!recognition || kioskState !== STATES.GREETING) return;
+      if (!micReady || kioskState !== STATES.GREETING) return;
 
       // Wait for jingle to finish before opening mic
       if (!jingleAudio.paused) {
@@ -1293,20 +1280,111 @@
         return;
       }
 
+      // Resume AudioContext if suspended (Safari requires user gesture)
+      if (audioContext?.state === 'suspended') audioContext.resume();
+
       listeningActive = true;
       listeningIndicator.classList.remove('hidden');
       avatarEl.classList.add('listening');
-      lastRecognitionStart = Date.now();
-      try { recognition.start(); } catch { /* ignore */ }
       scheduleOverlayDismiss();
+
+      startRecording();
+    }
+
+    function startRecording() {
+      if (!audioStream || !listeningActive) return;
+
+      audioChunks = [];
+      recordingStartTime = Date.now();
+
+      // Pick a supported MIME type
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus'
+                      : MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm'
+                      : MediaRecorder.isTypeSupported('audio/mp4') ? 'audio/mp4'
+                      : '';
+
+      try {
+        mediaRecorder = new MediaRecorder(audioStream, mimeType ? { mimeType } : {});
+      } catch (err) {
+        console.warn('[voice] MediaRecorder failed:', err);
+        return;
+      }
+
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) audioChunks.push(e.data);
+      };
+
+      mediaRecorder.onstop = async () => {
+        const duration = Date.now() - recordingStartTime;
+        if (duration < MIN_RECORDING_MS || audioChunks.length === 0) {
+          // Too short — restart recording
+          if (listeningActive) startRecording();
+          return;
+        }
+
+        const ext = (mediaRecorder.mimeType || '').includes('mp4') ? 'mp4' : 'webm';
+        const blob = new Blob(audioChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
+        audioChunks = [];
+
+        // Send to server for transcription
+        try {
+          const formData = new FormData();
+          formData.append('audio', blob, `recording.${ext}`);
+          const res = await fetch('/api/chat/transcribe', { method: 'POST', body: formData });
+          if (res.ok) {
+            const data = await res.json();
+            const text = data.text?.trim();
+            if (text) {
+              handleVoiceResult(text);
+              return; // handleVoiceResult will restart listening after response
+            }
+          }
+        } catch (err) {
+          console.warn('[voice] Transcription error:', err);
+        }
+
+        // No speech detected or error — restart recording
+        if (listeningActive && kioskState === STATES.GREETING) startRecording();
+      };
+
+      mediaRecorder.start(250); // collect data every 250ms
+      startSilenceDetection();
+    }
+
+    function startSilenceDetection() {
+      clearTimeout(silenceTimer);
+      let silenceStart = null;
+
+      const check = () => {
+        if (!listeningActive || !mediaRecorder || mediaRecorder.state !== 'recording') return;
+
+        const rms = getRMS();
+        if (rms < SILENCE_THRESHOLD) {
+          if (!silenceStart) silenceStart = Date.now();
+          const silentFor = Date.now() - silenceStart;
+          const elapsed = Date.now() - recordingStartTime;
+          // Only stop if we've been recording for a bit and silence is long enough
+          if (silentFor >= SILENCE_DURATION && elapsed > MIN_RECORDING_MS + SILENCE_DURATION) {
+            mediaRecorder.stop();
+            return;
+          }
+        } else {
+          silenceStart = null;
+        }
+
+        silenceTimer = setTimeout(check, 150);
+      };
+
+      silenceTimer = setTimeout(check, 500); // initial delay before checking
     }
 
     function stopListening() {
       listeningActive = false;
       listeningIndicator.classList.add('hidden');
       avatarEl.classList.remove('listening');
-      if (recognition) {
-        try { recognition.stop(); } catch { /* ignore */ }
+      clearTimeout(silenceTimer);
+      if (mediaRecorder && mediaRecorder.state === 'recording') {
+        try { mediaRecorder.stop(); } catch { /* ignore */ }
       }
     }
 
@@ -1321,7 +1399,10 @@
       listeningActive = false;
       listeningIndicator.classList.add('hidden');
       avatarEl.classList.remove('listening');
-      try { recognition.stop(); } catch { /* ignore */ }
+      clearTimeout(silenceTimer);
+      if (mediaRecorder && mediaRecorder.state === 'recording') {
+        try { mediaRecorder.stop(); } catch { /* ignore */ }
+      }
 
       // Add to conversation history
       conversationHistory.push({ role: 'user', content: transcript });

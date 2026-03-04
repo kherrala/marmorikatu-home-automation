@@ -151,6 +151,7 @@ services:
     environment:
       - MCP_URLS=http://mcp:3001/sse,http://host.docker.internal:3003/sse,http://host.docker.internal:3010/sse
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - CLAUDE_MODEL=claude-haiku-4-5-20251001
       - OLLAMA_URL=http://192.168.1.36:11434
       - OLLAMA_MODEL=qwen3.5:9b

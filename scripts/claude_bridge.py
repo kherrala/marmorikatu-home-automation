@@ -365,6 +365,54 @@ async def tts_endpoint(request: Request) -> Response:
         return JSONResponse({"error": str(e)}, status_code=500)
 
 
+async def transcribe_endpoint(request: Request) -> JSONResponse:
+    """POST /transcribe — server-side speech-to-text using OpenAI Whisper API.
+
+    Accepts audio as multipart form data (field "audio") or raw body.
+    Returns {"text": "transcribed text"}.
+    Falls back to Ollama whisper if OpenAI key is not available.
+    """
+    import httpx
+
+    # Get audio bytes from request
+    content_type = request.headers.get("content-type", "")
+    if "multipart/form-data" in content_type:
+        form = await request.form()
+        audio_file = form.get("audio")
+        if not audio_file:
+            return JSONResponse({"error": "No audio field in form"}, status_code=400)
+        audio_bytes = await audio_file.read()
+        filename = getattr(audio_file, "filename", "audio.webm") or "audio.webm"
+    else:
+        audio_bytes = await request.body()
+        filename = "audio.webm"
+
+    if not audio_bytes:
+        return JSONResponse({"error": "Empty audio data"}, status_code=400)
+
+    log.info("Transcribe: received %d bytes (%s)", len(audio_bytes), filename)
+
+    # Try OpenAI Whisper API
+    openai_key = os.environ.get("OPENAI_API_KEY", "")
+    if openai_key:
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                resp = await client.post(
+                    "https://api.openai.com/v1/audio/transcriptions",
+                    headers={"Authorization": f"Bearer {openai_key}"},
+                    files={"file": (filename, audio_bytes, "audio/webm")},
+                    data={"model": "whisper-1", "language": "fi"},
+                )
+                resp.raise_for_status()
+                text = resp.json().get("text", "").strip()
+                log.info("Transcribe (OpenAI): '%s'", text)
+                return JSONResponse({"text": text})
+        except Exception as e:
+            log.warning("OpenAI transcription failed: %s", e)
+
+    return JSONResponse({"error": "No transcription service available"}, status_code=503)
+
+
 async def health_endpoint(request: Request) -> JSONResponse:
     """GET /health — return MCP connection and model status."""
     servers_status = {}
@@ -418,6 +466,7 @@ app = Starlette(
     routes=[
         Route("/chat", chat_endpoint, methods=["POST"]),
         Route("/tts", tts_endpoint, methods=["POST"]),
+        Route("/transcribe", transcribe_endpoint, methods=["POST"]),
         Route("/health", health_endpoint),
     ],
     lifespan=lifespan,
