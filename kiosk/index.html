@@ -689,75 +689,9 @@
       }, PAUSE_MS);
     }
 
-    // == Swipe + click detection ===============================================
-    let startX = 0, startY = 0, tracking = false, didSwipe = false;
-
-    function onTouchStart(e) {
-      startX   = e.touches[0].clientX;
-      startY   = e.touches[0].clientY;
-      tracking = true;
-      didSwipe = false;
-    }
-
-    function onTouchMove(e) {
-      if (!tracking) return;
-      const dx = e.touches[0].clientX - startX;
-      const dy = e.touches[0].clientY - startY;
-      if (Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy)) {
-        didSwipe = true;
-        e.preventDefault();
-      }
-    }
-
-    function onTouchEnd(e, isLeft) {
-      if (!tracking) return;
-      tracking = false;
-      handleInteraction();
-      const dx = e.changedTouches[0].clientX - startX;
-      if (didSwipe && Math.abs(dx) > 40) {
-        show(dx < 0 ? current + 1 : current - 1);
-      } else if (!didSwipe) {
-        show(isLeft ? current - 1 : current + 1);
-      }
-    }
-
-    function onMouseDown(e) {
-      startX   = e.clientX;
-      startY   = e.clientY;
-      tracking = true;
-      didSwipe = false;
-    }
-
-    function onMouseMove(e) {
-      if (!tracking) return;
-      if (Math.abs(e.clientX - startX) > 12) didSwipe = true;
-    }
-
-    function onMouseUp(e, isLeft) {
-      if (!tracking) return;
-      tracking = false;
-      handleInteraction();
-      const dx = e.clientX - startX;
-      if (didSwipe && Math.abs(dx) > 40) {
-        show(dx < 0 ? current + 1 : current - 1);
-      } else if (!didSwipe) {
-        show(isLeft ? current - 1 : current + 1);
-      }
-    }
-
-    [
-      [edgeLeft,  true ],
-      [edgeRight, false],
-    ].forEach(([el, isLeft]) => {
-      el.addEventListener('touchstart', onTouchStart,              { passive: true  });
-      el.addEventListener('touchmove',  onTouchMove,               { passive: false });
-      el.addEventListener('touchend',   e => onTouchEnd(e, isLeft),{ passive: true  });
-      el.addEventListener('mousedown',  onMouseDown);
-      el.addEventListener('mousemove',  onMouseMove);
-      el.addEventListener('mouseup',    e => onMouseUp(e, isLeft));
-    });
-
-    document.addEventListener('mouseleave', () => { tracking = false; });
+    // == Edge click navigation (click only — swipes pass through to iframe) ====
+    edgeLeft.addEventListener('click', () => { handleInteraction(); show(current - 1); });
+    edgeRight.addEventListener('click', () => { handleInteraction(); show(current + 1); });
 
     let lastMoveReset = 0;
     document.addEventListener('mousemove', () => {
@@ -769,6 +703,11 @@
     });
 
     window.addEventListener('blur', handleInteraction);
+
+    // Esc key dismisses greeting overlay
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') dismissOverlay();
+    });
 
     // == Set iframe sources from origin hostname ===============================
     const host = window.location.hostname;
@@ -807,6 +746,17 @@
       speechSynthesis.speak(silentUtterance);
       jingleAudio.muted = true;
       jingleAudio.play().then(() => { jingleAudio.pause(); jingleAudio.currentTime = 0; jingleAudio.muted = false; }).catch(() => { jingleAudio.muted = false; });
+
+      // Unlock AudioContext for programmatic Audio() playback on iOS
+      try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const buf = ctx.createBuffer(1, 1, 22050);
+        const src = ctx.createBufferSource();
+        src.buffer = buf;
+        src.connect(ctx.destination);
+        src.start(0);
+        ctx.resume();
+      } catch {}
 
       // Show progress
       startLabel.textContent = 'Aktivoidaan kamera...';
@@ -1069,29 +1019,26 @@
           const blob = await res.blob();
           const url = URL.createObjectURL(blob);
           const audio = new Audio(url);
-          avatarEl.classList.add('speaking');
-          avatarEl.classList.remove('listening');
-          return new Promise(resolve => {
-            audio.onended = () => {
-              avatarEl.classList.remove('speaking');
-              URL.revokeObjectURL(url);
-              resolve();
-            };
-            audio.onerror = () => {
-              avatarEl.classList.remove('speaking');
-              URL.revokeObjectURL(url);
-              resolve();
-            };
-            audio.play().catch(() => {
-              avatarEl.classList.remove('speaking');
-              URL.revokeObjectURL(url);
-              resolve();
+          try {
+            await audio.play();
+            avatarEl.classList.add('speaking');
+            avatarEl.classList.remove('listening');
+            await new Promise(resolve => {
+              audio.onended = () => resolve();
+              audio.onerror = () => resolve();
             });
-          });
+            avatarEl.classList.remove('speaking');
+            URL.revokeObjectURL(url);
+            return;
+          } catch {
+            URL.revokeObjectURL(url);
+            // audio.play() failed on iOS — fall through to browser TTS
+          }
         }
       } catch { /* server TTS failed, fall back to browser */ }
 
       // Fallback: browser speechSynthesis
+      speechSynthesis.cancel(); // iOS fix: clear any stuck queue
       return new Promise(resolve => {
         const utterance = new SpeechSynthesisUtterance(text);
         utterance.lang = 'fi-FI';
