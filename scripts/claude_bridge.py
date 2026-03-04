@@ -168,33 +168,24 @@ async def run_ollama_agentic_loop(messages: list[dict], tools: list[dict]) -> di
 
     async with httpx.AsyncClient(timeout=120) as client:
         for iteration in range(MAX_TOOL_ITERATIONS):
-            request_body = {
-                "model": OLLAMA_MODEL,
-                "messages": oai_messages,
-                "tools": openai_tools,
-                "temperature": 0.7,
-                # Ollama extensions: context window + keep_alive
-                "options": {"num_ctx": OLLAMA_NUM_CTX},
-            }
-            if iteration == 0:
-                # Dump first request for debugging
-                import tempfile
-                with open("/tmp/ollama_request.json", "w") as f:
-                    json.dump(request_body, f, ensure_ascii=False)
-                log.info("Ollama request dumped to /tmp/ollama_request.json (%d bytes)",
-                         len(json.dumps(request_body)))
             resp = await client.post(
                 f"{OLLAMA_URL}/v1/chat/completions",
-                json=request_body,
+                json={
+                    "model": OLLAMA_MODEL,
+                    "messages": oai_messages,
+                    "tools": openai_tools,
+                    "temperature": 0.3,
+                    "presence_penalty": 0,
+                    # Ollama extensions: context window + keep_alive
+                    "options": {"num_ctx": OLLAMA_NUM_CTX},
+                },
             )
             resp.raise_for_status()
             data = resp.json()
             msg = data["choices"][0]["message"]
             tool_calls_raw = msg.get("tool_calls") or []
-            usage = data.get("usage", {})
-            log.info("Ollama [%d]: tool_calls=%d, content=%d chars, prompt_tokens=%s, tools=%d",
-                     iteration + 1, len(tool_calls_raw), len(msg.get("content") or ""),
-                     usage.get("prompt_tokens", "?"), len(openai_tools))
+            log.info("Ollama [%d]: tool_calls=%d, content=%d chars",
+                     iteration + 1, len(tool_calls_raw), len(msg.get("content") or ""))
 
             if not tool_calls_raw:
                 text = (msg.get("content") or "").strip()
