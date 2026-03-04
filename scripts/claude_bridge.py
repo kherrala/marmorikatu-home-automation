@@ -171,8 +171,8 @@ async def run_ollama_agentic_loop(messages: list[dict], tools: list[dict]) -> di
                     "model": OLLAMA_MODEL,
                     "messages": oai_messages,
                     "tools": openai_tools,
-                    # Ollama-specific: set context window size (default 2048 is too small for many tools)
-                    "num_ctx": OLLAMA_NUM_CTX,
+                    # Ollama extensions: context window + keep_alive
+                    "options": {"num_ctx": OLLAMA_NUM_CTX},
                 },
             )
             resp.raise_for_status()
