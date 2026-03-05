@@ -42,7 +42,7 @@
       position: fixed;
       top: 20%;
       height: 60%;
-      width: 56px;
+      width: 120px;
       z-index: 100;
       cursor: pointer;
       display: flex;
@@ -756,9 +756,34 @@
       }, PAUSE_MS);
     }
 
-    // == Edge click navigation (click only — swipes pass through to iframe) ====
+    // == Edge click navigation ================================================
     edgeLeft.addEventListener('click', () => { handleInteraction(); show(current - 1); });
     edgeRight.addEventListener('click', () => { handleInteraction(); show(current + 1); });
+
+    // == Swipe navigation =====================================================
+    let swipeStartX = 0;
+    let swipeStartY = 0;
+    const SWIPE_THRESHOLD = 50;
+
+    function handleSwipeStart(e) {
+      const t = e.touches[0];
+      swipeStartX = t.clientX;
+      swipeStartY = t.clientY;
+    }
+    function handleSwipeEnd(e) {
+      const t = e.changedTouches[0];
+      const dx = t.clientX - swipeStartX;
+      const dy = t.clientY - swipeStartY;
+      if (Math.abs(dx) > SWIPE_THRESHOLD && Math.abs(dx) > Math.abs(dy)) {
+        handleInteraction();
+        show(dx < 0 ? current + 1 : current - 1);
+      }
+    }
+    // Listen on edge zones (always above iframes) and document
+    [edgeLeft, edgeRight, document].forEach(el => {
+      el.addEventListener('touchstart', handleSwipeStart, { passive: true });
+      el.addEventListener('touchend', handleSwipeEnd, { passive: true });
+    });
 
     let lastMoveReset = 0;
     document.addEventListener('mousemove', () => {

@@ -36,6 +36,7 @@ INFLUXDB_ORG = os.environ.get("INFLUXDB_ORG", "wago")
 INFLUXDB_BUCKET = os.environ.get("INFLUXDB_BUCKET", "building_automation")
 WEATHER_API_URL = os.environ.get("WEATHER_API_URL", "http://weather:3020/api/weather")
 NEWS_API_URL = os.environ.get("NEWS_API_URL", "http://news:3021/api/news")
+BUS_API_URL = os.environ.get("BUS_API_URL", "http://host.docker.internal:3010/api/departures")
 
 # Schema documentation
 SCHEMA = {
@@ -790,6 +791,21 @@ spot price + 0.49 c/kWh margin + 6.09 c/kWh transfer fee.""",
                     "count": {
                         "type": "integer",
                         "description": "Number of headlines to return (default 5, max 20)",
+                        "default": 5
+                    }
+                },
+                "required": []
+            }
+        ),
+        Tool(
+            name="get_bus_departures",
+            description="Get upcoming bus departures from nearby stops (Kaipanen and Pitkäniitynkatu) towards Tampere city centre. Returns real-time departure times, line numbers, destinations, delays, and when to leave home.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum number of departures to return (default 5)",
                         "default": 5
                     }
                 },
@@ -2412,6 +2428,45 @@ from(bucket: "{INFLUXDB_BUCKET}")
         except Exception as e:
             log.error("get_news_headlines error: %s\n%s", e, traceback.format_exc())
             return [TextContent(type="text", text=f"Error fetching news: {str(e)}")]
+
+    elif name == "get_bus_departures":
+        try:
+            limit = int(arguments.get("limit", 5))
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.get(BUS_API_URL)
+                resp.raise_for_status()
+                data = resp.json()
+
+            departures = data.get("departures", [])
+            now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+
+            # Only include departures the user can still catch
+            catchable = [d for d in departures if d.get("leaveByMs", 0) > now_ms]
+            formatted = []
+            for d in catchable[:limit]:
+                mins_departure = round((d["departureTimeMs"] - now_ms) / 60000)
+                mins_leave = round((d["leaveByMs"] - now_ms) / 60000)
+                entry = {
+                    "line": d.get("lineRef"),
+                    "destination": d.get("destinationName"),
+                    "stop": d.get("stopName"),
+                    "departure_minutes": mins_departure,
+                    "leave_home_minutes": mins_leave,
+                    "source": d.get("source"),
+                }
+                if d.get("delaySeconds"):
+                    entry["delay_seconds"] = d["delaySeconds"]
+                if d.get("vehicleAtStop"):
+                    entry["vehicle_at_stop"] = True
+                if d.get("arrivalTimeMs"):
+                    entry["city_arrival_minutes"] = round((d["arrivalTimeMs"] - now_ms) / 60000)
+                formatted.append(entry)
+
+            result = {"departures": formatted, "fetched_at": data.get("fetchedAt")}
+            return [TextContent(type="text", text=json.dumps(result, indent=2, ensure_ascii=False, default=str))]
+        except Exception as e:
+            log.error("get_bus_departures error: %s\n%s", e, traceback.format_exc())
+            return [TextContent(type="text", text=f"Error fetching bus departures: {str(e)}")]
 
     return [TextContent(type="text", text=f"Unknown tool: {name}")]
 

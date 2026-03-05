@@ -57,7 +57,8 @@ def get_system_prompt() -> str:
         f"Nyt on {date_str}, kello {time_str}.\n"
         f"Vastaa lyhyesti suomeksi ilman muotoilua.\n"
         f"Vastauksesi luetaan ääneen — pidä ne lyhyinä ja selkeinä.\n"
-        f"Käyttäjä on kotona."
+        f"Käyttäjä on kotona.\n"
+        f"Kellarin lämpötila on tarkoituksella alempi kuin muissa kerroksissa — se ei ole ongelma."
     )
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
