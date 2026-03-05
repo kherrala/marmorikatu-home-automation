@@ -145,11 +145,18 @@ WEATHER_HTML = r"""<!DOCTYPE html>
   .container {
     width: 100%; height: 100%;
     display: grid;
-    grid-template-rows: 1fr auto auto;
+    grid-template-columns: 1fr 1fr;
     padding: 3vh 3vw 2.5vh;
-    gap: 2.5vh;
+    gap: 3vw;
     position: relative;
     z-index: 2;
+  }
+
+  .forecast {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 2.5vh;
   }
 
   /* -- Animated background scene -------------------------------------------- */
@@ -193,11 +200,13 @@ WEATHER_HTML = r"""<!DOCTYPE html>
 
   .current-details {
     display: flex;
-    gap: 4vw;
+    gap: 3vw;
     font-size: 2.8vh;
     font-weight: 300;
     color: var(--text-dim);
     margin-top: 0.5vh;
+    flex-wrap: wrap;
+    justify-content: center;
   }
 
   .current-details span {
@@ -233,61 +242,68 @@ WEATHER_HTML = r"""<!DOCTYPE html>
 
   .hourly-row {
     display: flex;
-    justify-content: space-around;
-    overflow-x: auto;
+    flex-direction: column;
+    gap: 1.2vh;
   }
 
   .hourly-item {
     display: flex;
-    flex-direction: column;
     align-items: center;
-    gap: 1vh;
-    min-width: 10vw;
+    gap: 2vw;
   }
 
   .hourly-time {
     font-size: 2.6vh;
     font-weight: 400;
     color: var(--text-dim);
+    width: 7ch;
+    flex-shrink: 0;
   }
 
   .hourly-icon {
-    width: 6.5vh; height: 6.5vh;
+    width: 5vh; height: 5vh;
     position: relative;
+    flex-shrink: 0;
   }
 
   .hourly-temp {
-    font-size: 3.2vh;
+    font-size: 3vh;
     font-weight: 300;
+    width: 5ch;
+    text-align: right;
+    flex-shrink: 0;
   }
 
   .hourly-precip {
     font-size: 2vh;
     color: var(--text-muted);
+    margin-left: auto;
   }
 
   /* -- Daily forecast ------------------------------------------------------ */
   .daily-row {
     display: flex;
-    justify-content: space-around;
+    flex-direction: column;
+    gap: 1.2vh;
   }
 
   .daily-item {
     display: flex;
-    flex-direction: column;
     align-items: center;
-    gap: 1vh;
-    min-width: 14vw;
+    gap: 2vw;
   }
 
   .daily-day {
     font-size: 2.8vh;
     font-weight: 500;
+    width: 4ch;
+    flex-shrink: 0;
   }
 
   .daily-icon {
-    width: 7vh; height: 7vh;
+    width: 5vh; height: 5vh;
     position: relative;
+    flex-shrink: 0;
   }
 
   .daily-temps {
@@ -302,6 +318,7 @@ WEATHER_HTML = r"""<!DOCTYPE html>
   .daily-precip {
     font-size: 2vh;
     color: var(--text-muted);
+    margin-left: auto;
   }
 
   /* == Weather icon animations ============================================= */
@@ -383,14 +400,16 @@ WEATHER_HTML = r"""<!DOCTYPE html>
   }
   .wi-partly-cloudy-night .wi-moon {
     position: absolute;
-    top: 0; left: 0;
+    top: -5%; right: 0;
     width: 60%; height: 60%;
+    z-index: 2;
   }
   .wi-partly-cloudy-night .wi-cloud {
     position: absolute;
-    bottom: 5%; right: 0;
-    width: 75%; height: 60%;
+    bottom: 0; left: 0;
+    width: 85%; height: 50%;
     animation: cloud-pass 10s ease-in-out infinite alternate;
+    z-index: 1;
   }
 
   /* --- Cloud --- */
@@ -897,7 +916,7 @@ function render(data) {
     }
     const sr = window._sunrise ? new Date(window._sunrise) : null;
     const ss = window._sunset ? new Date(window._sunset) : null;
-    for (let i = startIdx; i < Math.min(startIdx + 8, times.length); i++) {
+    for (let i = startIdx; i < Math.min(startIdx + 6, times.length); i++) {
       const t = new Date(times[i]);
       const h = t.getHours().toString().padStart(2, '0') + ':00';
       const temp = Math.round(data.hourly.temperature_2m[i]);
@@ -945,17 +964,21 @@ function render(data) {
       <div class="current-details">
         <span><span class="detail-label">Tuntuu</span>${feelsLike}°</span>
         <span><span class="detail-label">↑</span>${hi}° <span class="detail-label">↓</span>${lo}°</span>
+      </div>
+      <div class="current-details">
         <span><span class="detail-label">💧</span>${humidity}%</span>
         <span><span class="detail-label">💨</span>${wind} m/s</span>
       </div>
     </div>
-    <div class="section">
-      <div class="section-title">Seuraavat tunnit</div>
-      <div class="hourly-row">${hourlyHTML}</div>
-    </div>
-    <div class="section">
-      <div class="section-title">Ennuste</div>
-      <div class="daily-row">${dailyHTML}</div>
+    <div class="forecast">
+      <div class="section">
+        <div class="section-title">Seuraavat tunnit</div>
+        <div class="hourly-row">${hourlyHTML}</div>
+      </div>
+      <div class="section">
+        <div class="section-title">Ennuste</div>
+        <div class="daily-row">${dailyHTML}</div>
+      </div>
     </div>
   `;
 
