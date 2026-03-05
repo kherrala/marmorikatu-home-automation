@@ -1112,7 +1112,7 @@
 
         reportSpinner.classList.remove('hidden');
         try {
-          conversationHistory.push({ role: 'user', content: 'Hae tiedot eri ty\u00f6kaluilla ja anna lyhyt analyysi. \u00c4l\u00e4 luettele lukemia, vaan kerro olennainen: onko jotain poikkeavaa tai pit\u00e4isik\u00f6 jotain huomioida.' });
+          conversationHistory.push({ role: 'user', content: 'Aloita p\u00e4iv\u00e4n t\u00e4rkein uutinen, sitten s\u00e4\u00e4tilanne ja lopuksi kodin tilanne. Hae tiedot ty\u00f6kaluilla. \u00c4l\u00e4 luettele lukemia, vaan kerro olennainen lyhyesti.' });
           const summary = await generateConversationalResponse();
           reportSpinner.classList.add('hidden');
           if (summary) {
