@@ -1027,7 +1027,7 @@
 
     // -- Trigger greeting sequence --------------------------------------------
     let silenceAutoSummaryTimer = null;
-    const SILENCE_AUTO_SUMMARY_MS = 15_000; // generate summary if no speech in 15s
+    const SILENCE_AUTO_SUMMARY_MS = 5_000; // generate summary if no speech in 5s
 
     async function triggerGreeting() {
       setState(STATES.GREETING);
@@ -1088,7 +1088,7 @@
 
         reportSpinner.classList.remove('hidden');
         try {
-          conversationHistory.push({ role: 'user', content: 'Anna lyhyt tilannekatsaus talon tilanteesta ja seuraavista bussil\u00e4hd\u00f6ist\u00e4. Kerro milloin pit\u00e4isi l\u00e4hte\u00e4 kotoa ehti\u00e4kseen bussiin.' });
+          conversationHistory.push({ role: 'user', content: 'Hae tiedot eri ty\u00f6kaluilla ja anna lyhyt analyysi. \u00c4l\u00e4 luettele lukemia, vaan kerro olennainen: onko jotain poikkeavaa, pit\u00e4isik\u00f6 jotain huomioida, ja milloin seuraava bussi l\u00e4htee ja milloin pit\u00e4isi l\u00e4hte\u00e4 kotoa.' });
           const summary = await generateConversationalResponse();
           reportSpinner.classList.add('hidden');
           if (summary) {
