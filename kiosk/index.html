@@ -534,6 +534,7 @@
       { title: 'Nysse',             src: '/nysse/' },
     ];
     const NYSSE_IDX = SLIDE_DEFS.findIndex(s => s.title === 'Nysse');
+    const NEWS_IDX  = SLIDE_DEFS.findIndex(s => s.title === 'Uutiset');
     let TOTAL = SLIDE_DEFS.length;
 
     const FACE_DETECT_INTERVAL = 500;   // ms between detection attempts
@@ -1055,6 +1056,20 @@
     async function triggerGreeting() {
       setState(STATES.GREETING);
       overlayStartTime = Date.now();
+
+      // Switch to news slide, or Nysse if a bus is leaving soon
+      try {
+        const res = await fetch('/api/departures');
+        if (res.ok) {
+          const departures = await res.json();
+          const busSoon = departures.some(d => d.departureMs > 0 && d.departureMs <= BUS_LEAVE_SOON_MS);
+          show(busSoon && NYSSE_IDX >= 0 ? NYSSE_IDX : NEWS_IDX);
+        } else {
+          show(NEWS_IDX);
+        }
+      } catch {
+        show(NEWS_IDX);
+      }
       conversationHistory = [];
       autoSummaryGiven = false;
       userTextEl.textContent = '';
