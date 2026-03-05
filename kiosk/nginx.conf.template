@@ -76,6 +76,12 @@ server {
         proxy_set_header Host $host;
     }
 
+    # News headlines widget
+    location /news/ {
+        proxy_pass http://news:3021/;
+        proxy_set_header Host $host;
+    }
+
     # Nysse bus timetables SPA (same-origin proxy to avoid cross-origin issues)
     location /nysse/ {
         proxy_pass http://host.docker.internal:3010/;

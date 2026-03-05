@@ -183,6 +183,17 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  news:
+    build:
+      context: .
+      dockerfile: Dockerfile.news
+    container_name: marmorikatu-news
+    environment:
+      - NEWS_FEEDS=https://yle.fi/rss/uutiset/tuoreimmat,https://yle.fi/rss/t/18-146831/fi
+      - NEWS_CACHE_TTL=900
+      - NEWS_PORT=3021
+    restart: unless-stopped
+
   weather:
     build:
       context: .
