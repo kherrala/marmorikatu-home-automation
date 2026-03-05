@@ -146,8 +146,8 @@ WEATHER_HTML = r"""<!DOCTYPE html>
     width: 100%; height: 100%;
     display: grid;
     grid-template-rows: 1fr auto auto;
-    padding: 3vh 4vw 2vh;
-    gap: 2vh;
+    padding: 3vh 3vw 2.5vh;
+    gap: 2.5vh;
     position: relative;
     z-index: 2;
   }
@@ -193,8 +193,8 @@ WEATHER_HTML = r"""<!DOCTYPE html>
 
   .current-details {
     display: flex;
-    gap: 3vw;
-    font-size: 2.2vh;
+    gap: 4vw;
+    font-size: 2.8vh;
     font-weight: 300;
     color: var(--text-dim);
     margin-top: 0.5vh;
@@ -203,11 +203,11 @@ WEATHER_HTML = r"""<!DOCTYPE html>
   .current-details span {
     display: flex;
     align-items: center;
-    gap: 0.5vw;
+    gap: 0.8vw;
   }
 
   .detail-label {
-    font-size: 1.8vh;
+    font-size: 2.4vh;
     color: var(--text-muted);
     margin-right: 0.3vw;
   }
@@ -217,18 +217,18 @@ WEATHER_HTML = r"""<!DOCTYPE html>
     background: var(--glass);
     border: 1px solid var(--glass-border);
     border-radius: 2vh;
-    padding: 2vh 3vw;
+    padding: 2.5vh 3vw;
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
   }
 
   .section-title {
-    font-size: 1.6vh;
+    font-size: 2.2vh;
     font-weight: 600;
     letter-spacing: 0.15em;
     text-transform: uppercase;
     color: var(--text-muted);
-    margin-bottom: 1.5vh;
+    margin-bottom: 2vh;
   }
 
   .hourly-row {
@@ -241,28 +241,28 @@ WEATHER_HTML = r"""<!DOCTYPE html>
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 0.8vh;
-    min-width: 9vw;
+    gap: 1vh;
+    min-width: 10vw;
   }
 
   .hourly-time {
-    font-size: 1.8vh;
+    font-size: 2.6vh;
     font-weight: 400;
     color: var(--text-dim);
   }
 
   .hourly-icon {
-    width: 5vh; height: 5vh;
+    width: 6.5vh; height: 6.5vh;
     position: relative;
   }
 
   .hourly-temp {
-    font-size: 2.4vh;
+    font-size: 3.2vh;
     font-weight: 300;
   }
 
   .hourly-precip {
-    font-size: 1.5vh;
+    font-size: 2vh;
     color: var(--text-muted);
   }
 
@@ -276,22 +276,22 @@ WEATHER_HTML = r"""<!DOCTYPE html>
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 0.8vh;
-    min-width: 12vw;
+    gap: 1vh;
+    min-width: 14vw;
   }
 
   .daily-day {
-    font-size: 2vh;
+    font-size: 2.8vh;
     font-weight: 500;
   }
 
   .daily-icon {
-    width: 5.5vh; height: 5.5vh;
+    width: 7vh; height: 7vh;
     position: relative;
   }
 
   .daily-temps {
-    font-size: 2.2vh;
+    font-size: 3vh;
     font-weight: 300;
   }
 
@@ -300,7 +300,7 @@ WEATHER_HTML = r"""<!DOCTYPE html>
   }
 
   .daily-precip {
-    font-size: 1.5vh;
+    font-size: 2vh;
     color: var(--text-muted);
   }
 
@@ -335,6 +335,62 @@ WEATHER_HTML = r"""<!DOCTYPE html>
   @keyframes ray-rotate {
     from { transform: rotate(var(--r)) translateY(-130%); }
     to { transform: rotate(calc(var(--r) + 360deg)) translateY(-130%); }
+  }
+
+  /* --- Moon --- */
+  .wi-moon {
+    width: 100%; height: 100%;
+    position: relative;
+  }
+  .wi-moon .crescent {
+    position: absolute;
+    inset: 15%;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 40%, #e8e4d4 0%, #d4cfb8 60%, #c8c0a0 100%);
+    box-shadow: 0 0 30px rgba(232,228,212,0.4), 0 0 60px rgba(232,228,212,0.15);
+    animation: moon-glow 4s ease-in-out infinite;
+  }
+  .wi-moon .crescent-shadow {
+    position: absolute;
+    top: 10%; right: 15%;
+    width: 50%; height: 60%;
+    border-radius: 50%;
+    background: var(--bg-night);
+    filter: blur(2px);
+  }
+  .wi-moon .star {
+    position: absolute;
+    width: var(--s, 3px); height: var(--s, 3px);
+    background: #fff;
+    border-radius: 50%;
+    animation: star-twinkle var(--dur, 3s) ease-in-out infinite;
+    animation-delay: var(--delay, 0s);
+    top: var(--ty); left: var(--tx);
+  }
+  @keyframes moon-glow {
+    0%, 100% { box-shadow: 0 0 30px rgba(232,228,212,0.4), 0 0 60px rgba(232,228,212,0.15); }
+    50% { box-shadow: 0 0 40px rgba(232,228,212,0.55), 0 0 80px rgba(232,228,212,0.25); }
+  }
+  @keyframes star-twinkle {
+    0%, 100% { opacity: 0.4; transform: scale(1); }
+    50% { opacity: 1; transform: scale(1.3); }
+  }
+
+  /* --- Partly cloudy night (moon + cloud) --- */
+  .wi-partly-cloudy-night {
+    width: 100%; height: 100%;
+    position: relative;
+  }
+  .wi-partly-cloudy-night .wi-moon {
+    position: absolute;
+    top: 0; left: 0;
+    width: 60%; height: 60%;
+  }
+  .wi-partly-cloudy-night .wi-cloud {
+    position: absolute;
+    bottom: 5%; right: 0;
+    width: 75%; height: 60%;
+    animation: cloud-pass 10s ease-in-out infinite alternate;
   }
 
   /* --- Cloud --- */
@@ -549,6 +605,17 @@ WEATHER_HTML = r"""<!DOCTYPE html>
     to { left: calc(100vw + 250px); }
   }
 
+  .scene-star {
+    position: absolute;
+    width: var(--s, 2px); height: var(--s, 2px);
+    background: #fff;
+    border-radius: 50%;
+    animation: star-twinkle var(--dur) ease-in-out infinite;
+    animation-delay: var(--delay);
+    top: var(--y);
+    left: var(--x);
+  }
+
   /* -- Fade-in animation for data refresh --------------------------------- */
   .fade-in {
     animation: fadeIn 0.6s ease-out;
@@ -560,7 +627,7 @@ WEATHER_HTML = r"""<!DOCTYPE html>
 
   /* -- Location label ------------------------------------------------------- */
   .location {
-    font-size: 2vh;
+    font-size: 2.5vh;
     font-weight: 400;
     color: var(--text-muted);
     letter-spacing: 0.1em;
@@ -592,7 +659,7 @@ WEATHER_HTML = r"""<!DOCTYPE html>
     position: fixed;
     bottom: 1.5vh;
     right: 2vw;
-    font-size: 1.4vh;
+    font-size: 1.8vh;
     color: var(--text-muted);
     z-index: 10;
   }
@@ -642,17 +709,37 @@ function wmoGroup(code) {
   return 'cloudy';
 }
 
+// == Moon HTML helper ==
+function moonHTML(cls) {
+  const stars = Array.from({length:5}, (_,i) => {
+    const tx = [5,75,85,15,60][i], ty = [10,5,45,55,20][i];
+    const s = 2 + Math.random()*2;
+    return `<div class="star" style="--tx:${tx}%;--ty:${ty}%;--s:${s}px;--dur:${2+Math.random()*3}s;--delay:${Math.random()*2}s"></div>`;
+  }).join('');
+  return `<div class="${cls} wi-moon">
+    <div class="crescent"></div><div class="crescent-shadow"></div>${stars}
+  </div>`;
+}
+
 // == Build icon HTML ==
-function iconHTML(code, sizeClass) {
+function iconHTML(code, sizeClass, night) {
   const g = wmoGroup(code);
   const cls = sizeClass || '';
+  const isNight = night != null ? night : window._isNight || false;
   switch (g) {
     case 'clear':
+      if (isNight) return moonHTML(cls);
       return `<div class="${cls} wi-sun">
         <div class="core"></div>
         ${Array.from({length:8}, (_,i) => `<div class="ray" style="--r:${i*45}deg"></div>`).join('')}
       </div>`;
     case 'partly-cloudy':
+      if (isNight) return `<div class="${cls} wi-partly-cloudy-night">
+        ${moonHTML('')}
+        <div class="wi-cloud wi-cloud-drift">
+          <div class="cloud-body c1"></div><div class="cloud-body c2"></div><div class="cloud-body c3"></div>
+        </div>
+      </div>`;
       return `<div class="${cls} wi-partly-cloudy">
         <div class="wi-sun"><div class="core"></div>
           ${Array.from({length:6}, (_,i) => `<div class="ray" style="--r:${i*60}deg"></div>`).join('')}
@@ -705,21 +792,22 @@ function setScene(code) {
   const g = wmoGroup(code);
   const body = document.body;
 
-  // Set background gradient
-  if (g === 'rain' || g === 'thunder') body.style.background = 'var(--bg-rain)';
-  else if (g === 'snow') body.style.background = 'var(--bg-snow)';
-  else if (g === 'cloudy' || g === 'fog' || g === 'drizzle') body.style.background = 'var(--bg-overcast)';
-  else body.style.background = 'var(--bg-day)';
-
   // Determine if night time
+  let isNight = false;
   if (window._sunrise && window._sunset) {
     const now = new Date();
     const sr = new Date(window._sunrise);
     const ss = new Date(window._sunset);
-    if (now < sr || now > ss) {
-      body.style.background = 'var(--bg-night)';
-    }
+    isNight = (now < sr || now > ss);
   }
+  window._isNight = isNight;
+
+  // Set background gradient
+  if (isNight) body.style.background = 'var(--bg-night)';
+  else if (g === 'rain' || g === 'thunder') body.style.background = 'var(--bg-rain)';
+  else if (g === 'snow') body.style.background = 'var(--bg-snow)';
+  else if (g === 'cloudy' || g === 'fog' || g === 'drizzle') body.style.background = 'var(--bg-overcast)';
+  else body.style.background = 'var(--bg-day)';
 
   // Add scene particles
   if (g === 'rain' || g === 'thunder') {
@@ -741,6 +829,16 @@ function setScene(code) {
       const el = document.createElement('div');
       el.className = 'scene-rain';
       el.style.cssText = `--x:${Math.random()*100}vw;--dur:${1.2+Math.random()*0.8}s;--delay:${Math.random()*3}s;opacity:0.3`;
+      scene.appendChild(el);
+    }
+  }
+
+  // Add twinkling stars at night
+  if (isNight) {
+    for (let i = 0; i < 40; i++) {
+      const el = document.createElement('div');
+      el.className = 'scene-star';
+      el.style.cssText = `--x:${Math.random()*100}vw;--y:${Math.random()*60}vh;--s:${1+Math.random()*2.5}px;--dur:${2+Math.random()*4}s;--delay:${Math.random()*5}s`;
       scene.appendChild(el);
     }
   }
@@ -797,16 +895,19 @@ function render(data) {
     for (let i = 0; i < times.length; i++) {
       if (new Date(times[i]) >= now) { startIdx = i; break; }
     }
+    const sr = window._sunrise ? new Date(window._sunrise) : null;
+    const ss = window._sunset ? new Date(window._sunset) : null;
     for (let i = startIdx; i < Math.min(startIdx + 8, times.length); i++) {
       const t = new Date(times[i]);
       const h = t.getHours().toString().padStart(2, '0') + ':00';
       const temp = Math.round(data.hourly.temperature_2m[i]);
       const code = data.hourly.weather_code[i];
       const precip = data.hourly.precipitation_probability ? data.hourly.precipitation_probability[i] : null;
+      const hourNight = sr && ss ? (t < sr || t > ss) : false;
       hourlyHTML += `
         <div class="hourly-item">
           <span class="hourly-time">${h}</span>
-          <div class="hourly-icon">${iconHTML(code)}</div>
+          <div class="hourly-icon">${iconHTML(code, '', hourNight)}</div>
           <span class="hourly-temp">${temp}°</span>
           ${precip != null && precip > 0 ? `<span class="hourly-precip">${precip}%</span>` : ''}
         </div>`;
