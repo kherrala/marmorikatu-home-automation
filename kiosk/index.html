@@ -1214,7 +1214,7 @@
         const fiFemale = voices.find(v => v.lang.startsWith('fi') && /female|satu|marjut/i.test(v.name));
         const fiVoice = fiFemale || voices.find(v => v.lang.startsWith('fi'));
         if (fiVoice) utterance.voice = fiVoice;
-        utterance.rate = 1.15;
+        utterance.rate = 1.0;
         utterance.onstart = () => {
           avatarEl.classList.add('speaking');
           avatarEl.classList.remove('listening');
