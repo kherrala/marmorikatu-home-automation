@@ -583,6 +583,8 @@
     let paused        = false;
 
     let lastGreetingTime = 0;   // set on dismiss, for cooldown
+    let lastQuoteTime = 0;      // throttle random quotes to once per 3h
+    const QUOTE_COOLDOWN = 3 * 60 * 60 * 1000;
     let overlayStartTime = 0;   // set on trigger, for overlay duration
     let detectInterval   = null;
     let overlayTimeout   = null;
@@ -1024,19 +1026,22 @@
     }
 
     // -- Trigger greeting sequence --------------------------------------------
+    let silenceAutoSummaryTimer = null;
+    const SILENCE_AUTO_SUMMARY_MS = 15_000; // generate summary if no speech in 15s
+
     async function triggerGreeting() {
       setState(STATES.GREETING);
       overlayStartTime = Date.now();
       conversationHistory = [];
       userTextEl.textContent = '';
 
-      // Determine time-appropriate greeting
+      // Determine time-appropriate greeting (short form)
       const h = new Date().getHours();
       let greeting;
-      if (h >= 5 && h < 10)       greeting = 'Hyv\u00e4\u00e4 huomenta!';
-      else if (h >= 10 && h < 17)  greeting = 'Hyv\u00e4\u00e4 p\u00e4iv\u00e4\u00e4!';
-      else if (h >= 17 && h < 22)  greeting = 'Hyv\u00e4\u00e4 iltaa!';
-      else                          greeting = 'Hyv\u00e4\u00e4 y\u00f6t\u00e4!';
+      if (h >= 5 && h < 10)       greeting = 'Huomenta!';
+      else if (h >= 10 && h < 17)  greeting = 'P\u00e4iv\u00e4\u00e4!';
+      else if (h >= 17 && h < 22)  greeting = 'Iltaa!';
+      else                          greeting = 'Y\u00f6t\u00e4!';
 
       // Start background jingle (morning only)
       if (h >= 5 && h < 10) startJingle();
@@ -1044,17 +1049,20 @@
       // Show overlay with greeting
       greetingText.textContent = greeting;
       reportText.textContent = '';
-      reportSpinner.classList.remove('hidden');
       greetingOverlay.classList.add('visible');
 
-      // Speak greeting, then show a random quote
-      reportSpinner.classList.add('hidden');
-      const quote = randomFallback();
-      reportText.textContent = quote;
-      conversationHistory.push({ role: 'assistant', content: quote });
-
-      await speakAndWait(greeting);
-      await speakAndWait(quote);
+      // Random quote only once every 3 hours
+      const now = Date.now();
+      if (now - lastQuoteTime >= QUOTE_COOLDOWN) {
+        lastQuoteTime = now;
+        const quote = randomFallback();
+        reportText.textContent = quote;
+        conversationHistory.push({ role: 'assistant', content: quote });
+        await speakAndWait(greeting);
+        await speakAndWait(quote);
+      } else {
+        await speakAndWait(greeting);
+      }
 
       // Minimize avatar to bottom-right before entering listening mode
       minimizeOverlay();
@@ -1062,6 +1070,41 @@
       // Enter listening mode (waits for jingle to finish if still playing)
       // scheduleOverlayDismiss is called inside startListening after mic actually opens
       startListening();
+
+      // If no speech input within 15s, generate a building status summary
+      clearTimeout(silenceAutoSummaryTimer);
+      silenceAutoSummaryTimer = setTimeout(async () => {
+        if (kioskState !== STATES.GREETING || !listeningActive) return;
+
+        // Pause listening while generating summary
+        listeningActive = false;
+        listeningIndicator.classList.add('hidden');
+        avatarEl.classList.remove('listening');
+        clearTimeout(silenceTimer);
+        clearTimeout(nativeSpeechTimer);
+        clearTimeout(nativeHardTimer);
+        if (nativeRecognizer) { try { nativeRecognizer.abort(); } catch {} nativeRecognizer = null; }
+        if (mediaRecorder && mediaRecorder.state === 'recording') { try { mediaRecorder.stop(); } catch {} }
+
+        reportSpinner.classList.remove('hidden');
+        try {
+          conversationHistory.push({ role: 'user', content: 'Anna lyhyt tilannekatsaus talon tilanteesta ja seuraavista bussil\u00e4hd\u00f6ist\u00e4. Kerro milloin pit\u00e4isi l\u00e4hte\u00e4 kotoa ehti\u00e4kseen bussiin.' });
+          const summary = await generateConversationalResponse();
+          reportSpinner.classList.add('hidden');
+          if (summary) {
+            reportText.textContent = summary;
+            conversationHistory.push({ role: 'assistant', content: summary });
+            await speakAndWait(summary);
+          }
+        } catch {
+          reportSpinner.classList.add('hidden');
+        }
+
+        // Resume listening after summary
+        if (kioskState === STATES.GREETING && Date.now() - overlayStartTime < MAX_OVERLAY_DURATION) {
+          startListening();
+        }
+      }, SILENCE_AUTO_SUMMARY_MS);
     }
 
     function minimizeOverlay() {
@@ -1535,6 +1578,7 @@
       clearTimeout(silenceTimer);
       clearTimeout(nativeSpeechTimer);
       clearTimeout(nativeHardTimer);
+      clearTimeout(silenceAutoSummaryTimer);
       if (nativeRecognizer) {
         try { nativeRecognizer.abort(); } catch {}
         nativeRecognizer = null;
@@ -1544,12 +1588,19 @@
       }
     }
 
+    const FAREWELL_PATTERNS = /\b(heippa|heihei|hei\s*hei|näkemiin|nähdään|moi\s*moi|moikka|kiitos\s+siitä|kiitos\s+paljon|selvä\s+homma|hyvää\s+päivän\s*jatkoa|hyvää\s+yötä|hyvää\s+iltaa|bye|goodbye|see\s*you)\b/i;
+
+    function isFarewell(text) {
+      return FAREWELL_PATTERNS.test(text);
+    }
+
     async function handleVoiceResult(transcript) {
       // Show what the user said
       userTextEl.textContent = `"${transcript}"`;
 
-      // Cancel idle dismiss timer while processing
+      // Cancel idle dismiss / auto-summary timers while processing
       clearTimeout(overlayTimeout);
+      clearTimeout(silenceAutoSummaryTimer);
 
       // Pause listening while processing + speaking
       listeningActive = false;
@@ -1564,6 +1615,16 @@
       }
       if (mediaRecorder && mediaRecorder.state === 'recording') {
         try { mediaRecorder.stop(); } catch { /* ignore */ }
+      }
+
+      // Detect farewell — say goodbye and dismiss
+      if (isFarewell(transcript)) {
+        const goodbye = pick(['Heippa!', 'Nähdään!', 'Moikka!', 'Hei hei!']);
+        reportSpinner.classList.add('hidden');
+        reportText.textContent = goodbye;
+        await speakAndWait(goodbye);
+        dismissOverlay();
+        return;
       }
 
       // Add to conversation history
@@ -1595,7 +1656,7 @@
       // Claude Bridge handles Ollama → Claude fallback internally with MCP tools
       try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 15000);
+        const timeoutId = setTimeout(() => controller.abort(), 30000);
         const res = await fetch('/api/chat/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
