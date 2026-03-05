@@ -19,6 +19,7 @@ import logging
 import asyncio
 from contextlib import asynccontextmanager
 
+import anyio
 import anthropic
 import edge_tts
 import uvicorn
@@ -97,6 +98,57 @@ def _find_session(tool_name: str) -> ClientSession | None:
     return None
 
 
+# Per-URL events signalling that the connection loop should reconnect now
+_reconnect_events: dict[str, asyncio.Event] = {}
+
+# Exception types that indicate a dead MCP session
+_DEAD_SESSION_ERRORS = (anyio.ClosedResourceError, anyio.EndOfStream, ConnectionError, BrokenPipeError)
+
+TOOL_CALL_TIMEOUT = 15  # seconds — max time for a single MCP tool call
+
+
+def _invalidate_session(session: ClientSession):
+    """Remove a dead session and signal its connection loop to reconnect."""
+    for url, info in list(_servers.items()):
+        if info["session"] is session:
+            _servers.pop(url, None)
+            log.warning("Invalidated dead MCP session for %s", url)
+            ev = _reconnect_events.get(url)
+            if ev:
+                ev.set()
+            break
+
+
+async def _call_tool_safe(tool_name: str, tool_input: dict, iteration: int, caller: str) -> str:
+    """Call an MCP tool with timeout, dead-session detection, and error handling."""
+    session = _find_session(tool_name)
+    if not session:
+        msg = f"Error: tool '{tool_name}' not available (MCP server offline?)"
+        log.error("[%s] Tool routing error: %s", caller, msg)
+        return msg
+    try:
+        result = await asyncio.wait_for(
+            session.call_tool(tool_name, tool_input),
+            timeout=TOOL_CALL_TIMEOUT,
+        )
+        text = "\n".join(c.text for c in result.content if hasattr(c, "text"))
+        log.info("[%s] Tool result [%d]: %s → %d chars", caller, iteration, tool_name, len(text))
+        return text
+    except _DEAD_SESSION_ERRORS:
+        _invalidate_session(session)
+        msg = f"Error: MCP connection lost, tool '{tool_name}' unavailable"
+        log.error("[%s] Dead session: %s", caller, msg)
+        return msg
+    except asyncio.TimeoutError:
+        msg = f"Error: tool '{tool_name}' timed out after {TOOL_CALL_TIMEOUT}s"
+        log.error("[%s] Tool timeout: %s", caller, msg)
+        return msg
+    except Exception as e:
+        msg = f"Error calling {tool_name}: {type(e).__name__}: {e}"
+        log.error("[%s] Tool error: %s", caller, msg)
+        return msg
+
+
 def _tools_to_openai(tools: list[dict]) -> list[dict]:
     """Convert Anthropic-format tool defs to OpenAI function-calling format."""
     return [
@@ -115,9 +167,11 @@ def _tools_to_openai(tools: list[dict]) -> list[dict]:
 async def mcp_connection_loop(url: str):
     """Background task: maintain persistent connection to one MCP server."""
     retry_delay = 5  # seconds, grows with backoff
+    _reconnect_events[url] = asyncio.Event()
 
     while True:
         try:
+            _reconnect_events[url].clear()
             log.info("Connecting to MCP server at %s ...", url)
             async with sse_client(url) as (read_stream, write_stream):
                 async with ClientSession(read_stream, write_stream) as session:
@@ -147,15 +201,27 @@ async def mcp_connection_loop(url: str):
 
                     retry_delay = 5  # reset on successful connection
 
-                    # Keep alive until connection drops
-                    while True:
-                        await asyncio.sleep(60)
+                    # Keep alive: periodically ping and watch for forced reconnect
+                    while not _reconnect_events[url].is_set():
+                        try:
+                            await asyncio.wait_for(
+                                _reconnect_events[url].wait(), timeout=300
+                            )
+                        except asyncio.TimeoutError:
+                            # Periodic health check — verify session is still alive
+                            try:
+                                await asyncio.wait_for(session.list_tools(), timeout=10)
+                            except Exception:
+                                log.warning("MCP %s — health check failed, reconnecting", url)
+                                _servers.pop(url, None)
+                                break
+                    else:
+                        log.info("MCP %s — forced reconnect requested", url)
         except asyncio.CancelledError:
             break
         except Exception as e:
             log.warning("MCP %s lost (%s), reconnecting in %ds...", url, e, retry_delay)
-            async with _lock:
-                _servers.pop(url, None)
+            _servers.pop(url, None)
             await asyncio.sleep(retry_delay)
             retry_delay = min(retry_delay * 2, 60)  # backoff up to 60s
 
@@ -216,20 +282,7 @@ async def run_ollama_agentic_loop(messages: list[dict], tools: list[dict]) -> di
                 log.info("Ollama tool call [%d]: %s(%s)", iteration + 1, tool_name, json.dumps(tool_input, ensure_ascii=False))
                 all_tool_calls.append({"tool": tool_name, "input": tool_input})
 
-                session = _find_session(tool_name)
-                if not session:
-                    result_text = f"Error: tool '{tool_name}' not available (MCP server offline?)"
-                    log.error("Tool routing error: %s", result_text)
-                else:
-                    try:
-                        result = await session.call_tool(tool_name, tool_input)
-                        result_text = "\n".join(
-                            c.text for c in result.content if hasattr(c, "text")
-                        )
-                        log.info("Ollama tool result [%d]: %s → %d chars", iteration + 1, tool_name, len(result_text))
-                    except Exception as e:
-                        result_text = f"Error calling {tool_name}: {type(e).__name__}: {e}"
-                        log.error("Tool error: %s", result_text, exc_info=True)
+                result_text = await _call_tool_safe(tool_name, tool_input, iteration + 1, "Ollama")
 
                 ollama_messages.append({
                     "role": "tool",
@@ -268,20 +321,7 @@ async def run_claude_agentic_loop(messages: list[dict], tools: list[dict]) -> di
             log.info("Tool call [%d]: %s(%s)", iteration + 1, tool_name, json.dumps(tool_input, ensure_ascii=False))
             all_tool_calls.append({"tool": tool_name, "input": tool_input})
 
-            session = _find_session(tool_name)
-            if not session:
-                result_text = f"Error: tool '{tool_name}' not available (MCP server offline?)"
-                log.error("Tool routing error: %s", result_text)
-            else:
-                try:
-                    result = await session.call_tool(tool_name, tool_input)
-                    result_text = "\n".join(
-                        c.text for c in result.content if hasattr(c, "text")
-                    )
-                    log.info("Tool result [%d]: %s → %d chars", iteration + 1, tool_name, len(result_text))
-                except Exception as e:
-                    result_text = f"Error calling {tool_name}: {e}"
-                    log.error("Tool error: %s", result_text)
+            result_text = await _call_tool_safe(tool_name, tool_input, iteration + 1, "Claude")
 
             tool_results.append({
                 "type": "tool_result",
