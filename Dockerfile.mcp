@@ -5,7 +5,7 @@ WORKDIR /app
 
 # Install dependencies
 COPY scripts/requirements.txt /app/
-RUN pip install --no-cache-dir -r requirements.txt mcp uvicorn starlette
+RUN pip install --no-cache-dir -r requirements.txt mcp uvicorn starlette httpx
 
 # Copy server script
 COPY scripts/mcp_server.py /app/

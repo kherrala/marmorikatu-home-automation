@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 from typing import Any
 import asyncio
 import uvicorn
+import httpx
 
 from mcp.server import Server
 from mcp.server.sse import SseServerTransport
@@ -33,6 +34,8 @@ INFLUXDB_URL = os.environ.get("INFLUXDB_URL", "http://localhost:8086")
 INFLUXDB_TOKEN = os.environ.get("INFLUXDB_TOKEN", "wago-secret-token")
 INFLUXDB_ORG = os.environ.get("INFLUXDB_ORG", "wago")
 INFLUXDB_BUCKET = os.environ.get("INFLUXDB_BUCKET", "building_automation")
+WEATHER_API_URL = os.environ.get("WEATHER_API_URL", "http://weather:3020/api/weather")
+NEWS_API_URL = os.environ.get("NEWS_API_URL", "http://news:3021/api/news")
 
 # Schema documentation
 SCHEMA = {
@@ -764,6 +767,30 @@ spot price + 0.49 c/kWh margin + 6.09 c/kWh transfer fee.""",
                         "type": "string",
                         "description": "Time range (e.g., '-24h', '-7d', '-1d')",
                         "default": "-24h"
+                    }
+                },
+                "required": []
+            }
+        ),
+        Tool(
+            name="get_weather_forecast",
+            description="Get current weather and forecast for Tampere. Returns temperature, conditions, wind, humidity, hourly and daily forecast.",
+            inputSchema={
+                "type": "object",
+                "properties": {},
+                "required": []
+            }
+        ),
+        Tool(
+            name="get_news_headlines",
+            description="Get latest Finnish news headlines from Yle (national + Pirkanmaa regional). Returns titles, descriptions, sources and publish times.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "count": {
+                        "type": "integer",
+                        "description": "Number of headlines to return (default 5, max 20)",
+                        "default": 5
                     }
                 },
                 "required": []
@@ -2275,6 +2302,116 @@ from(bucket: "{INFLUXDB_BUCKET}")
         except Exception as e:
             log.error("get_energy_cost error: %s\n%s", e, traceback.format_exc())
             return [TextContent(type="text", text=f"Error: {str(e)}")]
+
+    elif name == "get_weather_forecast":
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.get(WEATHER_API_URL)
+                resp.raise_for_status()
+                data = resp.json()
+
+            WMO_CODES = {
+                0: "Selkeää", 1: "Enimmäkseen selkeää", 2: "Puolipilvistä", 3: "Pilvistä",
+                45: "Sumua", 48: "Huurretta", 51: "Kevyttä tihkua", 53: "Tihkua",
+                55: "Tiheää tihkua", 61: "Kevyttä sadetta", 63: "Sadetta", 65: "Rankkasadetta",
+                66: "Jäätävää tihkua", 67: "Jäätävää sadetta",
+                71: "Kevyttä lumisadetta", 73: "Lumisadetta", 75: "Tiheää lumisadetta",
+                77: "Lumijyväsiä", 80: "Kevyitä sadekuuroja", 81: "Sadekuuroja",
+                82: "Rankkoja sadekuuroja", 85: "Lumikuuroja", 86: "Rankkoja lumikuuroja",
+                95: "Ukkosta", 96: "Ukkosta ja rakeita", 99: "Ukkosta ja rankkoja rakeita",
+            }
+
+            current = data.get("current", {})
+            hourly = data.get("hourly", {})
+            daily = data.get("daily", {})
+
+            result = {
+                "current": {
+                    "temperature": current.get("temperature_2m"),
+                    "feels_like": current.get("apparent_temperature"),
+                    "humidity": current.get("relative_humidity_2m"),
+                    "wind_speed_ms": current.get("wind_speed_10m"),
+                    "wind_direction": current.get("wind_direction_10m"),
+                    "condition": WMO_CODES.get(current.get("weather_code", -1), "Tuntematon"),
+                    "weather_code": current.get("weather_code"),
+                },
+                "hourly_next_4h": [],
+                "daily_forecast": [],
+            }
+
+            times = hourly.get("time", [])
+            temps = hourly.get("temperature_2m", [])
+            codes = hourly.get("weather_code", [])
+            precip = hourly.get("precipitation_probability", [])
+            now = datetime.now(timezone.utc).isoformat()
+            count = 0
+            for i, t in enumerate(times):
+                if t >= now and count < 4:
+                    result["hourly_next_4h"].append({
+                        "time": t,
+                        "temperature": temps[i] if i < len(temps) else None,
+                        "condition": WMO_CODES.get(codes[i] if i < len(codes) else -1, "?"),
+                        "precipitation_probability": precip[i] if i < len(precip) else None,
+                    })
+                    count += 1
+
+            d_times = daily.get("time", [])
+            d_codes = daily.get("weather_code", [])
+            d_max = daily.get("temperature_2m_max", [])
+            d_min = daily.get("temperature_2m_min", [])
+            d_precip = daily.get("precipitation_probability_max", [])
+            for i in range(min(4, len(d_times))):
+                result["daily_forecast"].append({
+                    "date": d_times[i],
+                    "condition": WMO_CODES.get(d_codes[i] if i < len(d_codes) else -1, "?"),
+                    "temp_max": d_max[i] if i < len(d_max) else None,
+                    "temp_min": d_min[i] if i < len(d_min) else None,
+                    "precipitation_probability": d_precip[i] if i < len(d_precip) else None,
+                })
+
+            return [TextContent(type="text", text=json.dumps(result, indent=2, ensure_ascii=False, default=str))]
+        except Exception as e:
+            log.error("get_weather_forecast error: %s\n%s", e, traceback.format_exc())
+            return [TextContent(type="text", text=f"Error fetching weather: {str(e)}")]
+
+    elif name == "get_news_headlines":
+        try:
+            count = min(int(arguments.get("count", 5)), 20)
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.get(NEWS_API_URL)
+                resp.raise_for_status()
+                items = resp.json()
+
+            items = items[:count]
+            now = datetime.now(timezone.utc)
+            headlines = []
+            for item in items:
+                pub = item.get("pubDate", "")
+                age = ""
+                if pub:
+                    try:
+                        pub_dt = datetime.fromisoformat(pub)
+                        delta = now - pub_dt.astimezone(timezone.utc)
+                        mins = int(delta.total_seconds() / 60)
+                        if mins < 60:
+                            age = f"{mins} min sitten"
+                        elif mins < 1440:
+                            age = f"{mins // 60} h sitten"
+                        else:
+                            age = f"{mins // 1440} pv sitten"
+                    except (ValueError, TypeError):
+                        age = pub
+                headlines.append({
+                    "title": item.get("title", ""),
+                    "description": item.get("description", ""),
+                    "source": item.get("source", ""),
+                    "published": age or pub,
+                })
+
+            return [TextContent(type="text", text=json.dumps(headlines, indent=2, ensure_ascii=False, default=str))]
+        except Exception as e:
+            log.error("get_news_headlines error: %s\n%s", e, traceback.format_exc())
+            return [TextContent(type="text", text=f"Error fetching news: {str(e)}")]
 
     return [TextContent(type="text", text=f"Unknown tool: {name}")]
 

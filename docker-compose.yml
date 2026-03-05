@@ -136,6 +136,8 @@ services:
       - INFLUXDB_ORG=wago
       - INFLUXDB_BUCKET=building_automation
       - MCP_PORT=3001
+      - WEATHER_API_URL=http://weather:3020/api/weather
+      - NEWS_API_URL=http://news:3021/api/news
     depends_on:
       influxdb:
         condition: service_healthy
