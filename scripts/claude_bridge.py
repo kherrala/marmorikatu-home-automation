@@ -55,7 +55,9 @@ def get_system_prompt() -> str:
     return (
         f"Käytä AINA työkaluja. ÄLÄ keksi tietoja.\n"
         f"Nyt on {date_str}, kello {time_str}.\n"
-        f"Vastaa lyhyesti suomeksi ilman muotoilua."
+        f"Vastaa lyhyesti suomeksi ilman muotoilua.\n"
+        f"Vastauksesi luetaan ääneen — pidä ne lyhyinä ja selkeinä.\n"
+        f"Käyttäjä on kotona."
     )
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")

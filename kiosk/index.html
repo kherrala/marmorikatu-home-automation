@@ -1027,12 +1027,14 @@
 
     // -- Trigger greeting sequence --------------------------------------------
     let silenceAutoSummaryTimer = null;
+    let autoSummaryGiven = false;
     const SILENCE_AUTO_SUMMARY_MS = 5_000; // generate summary if no speech in 5s
 
     async function triggerGreeting() {
       setState(STATES.GREETING);
       overlayStartTime = Date.now();
       conversationHistory = [];
+      autoSummaryGiven = false;
       userTextEl.textContent = '';
 
       // Determine time-appropriate greeting (short form)
@@ -1074,7 +1076,7 @@
       // If no speech input within 15s, generate a building status summary
       clearTimeout(silenceAutoSummaryTimer);
       silenceAutoSummaryTimer = setTimeout(async () => {
-        if (kioskState !== STATES.GREETING || !listeningActive) return;
+        if (kioskState !== STATES.GREETING || !listeningActive || autoSummaryGiven) return;
 
         // Pause listening while generating summary
         listeningActive = false;
@@ -1092,6 +1094,7 @@
           const summary = await generateConversationalResponse();
           reportSpinner.classList.add('hidden');
           if (summary) {
+            autoSummaryGiven = true;
             reportText.textContent = summary;
             conversationHistory.push({ role: 'assistant', content: summary });
             await speakAndWait(summary);
