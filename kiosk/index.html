@@ -1412,7 +1412,11 @@
       };
 
       nativeRecognizer.onerror = (event) => {
-        console.warn('[voice] Native error:', event.error);
+        console.warn('[voice] Native error:', event.error, 'listeningActive=', listeningActive);
+
+        // 'aborted' when not listening is expected — we called .stop() ourselves
+        if (event.error === 'aborted' && !listeningActive) return;
+
         clearTimeout(nativeHardTimer);
 
         if ((event.error === 'no-speech' || event.error === 'aborted') && listeningActive && kioskState === STATES.GREETING) {
@@ -1428,8 +1432,8 @@
         } else if (event.error === 'network') {
           console.warn('[voice] Network error — falling back to MediaRecorder');
           if (audioStream) fallbackToMediaRecorder();
-        } else {
-          // audio-capture, language-not-supported, etc.
+        } else if (listeningActive) {
+          // Only fall back on truly unrecoverable errors while actively listening
           console.warn('[voice] Unrecoverable native error — falling back to MediaRecorder');
           if (audioStream) fallbackToMediaRecorder();
         }
