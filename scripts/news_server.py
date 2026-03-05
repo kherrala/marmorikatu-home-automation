@@ -89,7 +89,7 @@ async def fetch_news() -> list[dict]:
 
     all_items: list[dict] = []
     try:
-        async with httpx.AsyncClient(timeout=15) as client:
+        async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
             tasks = []
             for url in FEEDS:
                 tasks.append(client.get(url.strip()))
