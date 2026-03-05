@@ -183,6 +183,18 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  weather:
+    build:
+      context: .
+      dockerfile: Dockerfile.weather
+    container_name: marmorikatu-weather
+    environment:
+      - WEATHER_LAT=61.4978
+      - WEATHER_LON=23.7610
+      - WEATHER_CACHE_TTL=600
+      - WEATHER_PORT=3020
+    restart: unless-stopped
+
   kiosk:
     build:
       context: .
