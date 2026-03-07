@@ -20,6 +20,10 @@ server {
     ssl_certificate     /etc/nginx/ssl/kiosk.crt;
     ssl_certificate_key /etc/nginx/ssl/kiosk.key;
 
+    # Re-resolve Docker service hostnames every 10s so container IP changes
+    # (from restarts/rebuilds) are picked up without restarting nginx.
+    resolver 127.0.0.11 valid=10s;
+
     root /usr/share/nginx/html;
     index index.html;
 
@@ -38,7 +42,8 @@ server {
 
     # Grafana proxy (serves Grafana over HTTPS so session cookies work)
     location /grafana/ {
-        proxy_pass http://grafana:3000;
+        set $backend_grafana grafana:3000;
+        proxy_pass http://$backend_grafana;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -47,7 +52,8 @@ server {
 
     # Grafana WebSocket (live dashboard updates)
     location /grafana/api/live/ws {
-        proxy_pass http://grafana:3000;
+        set $backend_grafana_ws grafana:3000;
+        proxy_pass http://$backend_grafana_ws;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
@@ -56,13 +62,17 @@ server {
 
     # InfluxDB proxy (avoids CORS from browser)
     location /api/influxdb/ {
-        proxy_pass http://influxdb:8086/;
+        set $backend_influxdb influxdb:8086;
+        rewrite ^/api/influxdb(/.*)$ $1 break;
+        proxy_pass http://$backend_influxdb;
         proxy_set_header Host influxdb;
     }
 
     # Claude Bridge proxy (MCP-powered AI + transcription + TTS)
     location /api/chat/ {
-        proxy_pass http://claude-bridge:3002/;
+        set $backend_bridge claude-bridge:3002;
+        rewrite ^/api/chat(/.*)$ $1 break;
+        proxy_pass http://$backend_bridge;
         proxy_read_timeout 120s;
         proxy_connect_timeout 10s;
         proxy_send_timeout 120s;
@@ -72,19 +82,25 @@ server {
 
     # Weather widget
     location /weather/ {
-        proxy_pass http://weather:3020/;
+        set $backend_weather weather:3020;
+        rewrite ^/weather(/.*)$ $1 break;
+        proxy_pass http://$backend_weather;
         proxy_set_header Host $host;
     }
 
     # News headlines widget
     location /news/ {
-        proxy_pass http://news:3021/;
+        set $backend_news news:3021;
+        rewrite ^/news(/.*)$ $1 break;
+        proxy_pass http://$backend_news;
         proxy_set_header Host $host;
     }
 
     # Family calendar widget
     location /calendar/ {
-        proxy_pass http://calendar:3022/;
+        set $backend_calendar calendar:3022;
+        rewrite ^/calendar(/.*)$ $1 break;
+        proxy_pass http://$backend_calendar;
         proxy_set_header Host $host;
     }
 
