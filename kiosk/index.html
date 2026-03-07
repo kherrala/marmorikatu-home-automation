@@ -1121,6 +1121,7 @@
     // -- Trigger greeting sequence --------------------------------------------
     let silenceAutoSummaryTimer = null;
     let autoSummaryGiven = false;
+    let lastReportDate = '';  // YYYY-MM-DD of last daily report
     const SILENCE_AUTO_SUMMARY_MS = 5_000; // generate summary if no speech in 5s
 
     async function triggerGreeting() {
@@ -1180,41 +1181,46 @@
       // scheduleOverlayDismiss is called inside startListening after mic actually opens
       startListening();
 
-      // If no speech input within 15s, generate a building status summary
+      // If no speech input within 5s, generate a daily report (once per day)
+      const todayDate = new Date().toISOString().slice(0, 10);
+      const dailyReportDue = lastReportDate !== todayDate;
       clearTimeout(silenceAutoSummaryTimer);
-      silenceAutoSummaryTimer = setTimeout(async () => {
-        if (kioskState !== STATES.GREETING || !listeningActive || autoSummaryGiven) return;
+      if (dailyReportDue) {
+        silenceAutoSummaryTimer = setTimeout(async () => {
+          if (kioskState !== STATES.GREETING || !listeningActive || autoSummaryGiven) return;
 
-        // Pause listening while generating summary
-        listeningActive = false;
-        listeningIndicator.classList.add('hidden');
-        avatarEl.classList.remove('listening');
-        clearTimeout(silenceTimer);
-        clearTimeout(nativeSpeechTimer);
-        clearTimeout(nativeHardTimer);
-        if (nativeRecognizer) { try { nativeRecognizer.abort(); } catch {} nativeRecognizer = null; }
-        if (mediaRecorder && mediaRecorder.state === 'recording') { try { mediaRecorder.stop(); } catch {} }
+          // Pause listening while generating summary
+          listeningActive = false;
+          listeningIndicator.classList.add('hidden');
+          avatarEl.classList.remove('listening');
+          clearTimeout(silenceTimer);
+          clearTimeout(nativeSpeechTimer);
+          clearTimeout(nativeHardTimer);
+          if (nativeRecognizer) { try { nativeRecognizer.abort(); } catch {} nativeRecognizer = null; }
+          if (mediaRecorder && mediaRecorder.state === 'recording') { try { mediaRecorder.stop(); } catch {} }
 
-        reportSpinner.classList.remove('hidden');
-        try {
-          conversationHistory.push({ role: 'user', content: 'Aloita p\u00e4iv\u00e4n t\u00e4rkein uutinen, sitten s\u00e4\u00e4tilanne ja lopuksi kodin tilanne. Hae tiedot ty\u00f6kaluilla. \u00c4l\u00e4 luettele lukemia, vaan kerro olennainen lyhyesti.' });
-          const summary = await generateConversationalResponse();
-          reportSpinner.classList.add('hidden');
-          if (summary) {
-            autoSummaryGiven = true;
-            reportText.textContent = summary;
-            conversationHistory.push({ role: 'assistant', content: summary });
-            await speakAndWait(summary);
+          reportSpinner.classList.remove('hidden');
+          try {
+            conversationHistory.push({ role: 'user', content: 'Anna p\u00e4iv\u00e4n raportti: aloita p\u00e4iv\u00e4n t\u00e4rkein uutinen, sitten s\u00e4\u00e4tilanne ja kodin tilanne. Tarkista my\u00f6s kalenteri ja kerro jos t\u00e4n\u00e4\u00e4n tai huomenna on j\u00e4teastioidenty\u00f6hjennys (sek\u00e4j\u00e4te, bioj\u00e4te, kartonki, muovi jne). Hae tiedot ty\u00f6kaluilla. \u00c4l\u00e4 luettele lukemia, vaan kerro olennainen lyhyesti.' });
+            const summary = await generateConversationalResponse();
+            reportSpinner.classList.add('hidden');
+            if (summary) {
+              autoSummaryGiven = true;
+              lastReportDate = todayDate;
+              reportText.textContent = summary;
+              conversationHistory.push({ role: 'assistant', content: summary });
+              await speakAndWait(summary);
+            }
+          } catch {
+            reportSpinner.classList.add('hidden');
           }
-        } catch {
-          reportSpinner.classList.add('hidden');
-        }
 
-        // Resume listening after summary
-        if (kioskState === STATES.GREETING && Date.now() - overlayStartTime < MAX_OVERLAY_DURATION) {
-          startListening();
-        }
-      }, SILENCE_AUTO_SUMMARY_MS);
+          // Resume listening after summary
+          if (kioskState === STATES.GREETING && Date.now() - overlayStartTime < MAX_OVERLAY_DURATION) {
+            startListening();
+          }
+        }, SILENCE_AUTO_SUMMARY_MS);
+      }
     }
 
     function minimizeOverlay() {
