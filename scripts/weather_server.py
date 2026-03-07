@@ -31,7 +31,8 @@ OPEN_METEO_URL = (
     f"weather_code,wind_speed_10m,wind_direction_10m"
     f"&hourly=temperature_2m,weather_code,precipitation_probability"
     f"&daily=weather_code,temperature_2m_max,temperature_2m_min,"
-    f"sunrise,sunset,precipitation_probability_max"
+    f"sunrise,sunset,precipitation_probability_max,"
+    f"precipitation_sum,wind_speed_10m_max,sunshine_duration"
     f"&timezone=Europe%2FHelsinki&forecast_days=5"
 )
 
@@ -317,7 +318,7 @@ WEATHER_HTML = r"""<!DOCTYPE html>
     flex-shrink: 0;
   }
 
-  .hourly-row, .daily-row {
+  .hourly-row {
     display: flex;
     flex-direction: column;
     gap: 0;
@@ -325,7 +326,14 @@ WEATHER_HTML = r"""<!DOCTYPE html>
     justify-content: space-evenly;
   }
 
-  .hourly-item, .daily-item {
+  .daily-row {
+    display: grid;
+    grid-template-rows: 1fr 1fr 1fr 1fr;
+    gap: 1.2vh;
+    flex: 1;
+  }
+
+  .hourly-item {
     display: flex;
     align-items: center;
     gap: 1.5vw;
@@ -334,9 +342,19 @@ WEATHER_HTML = r"""<!DOCTYPE html>
     transition: background 0.3s ease;
   }
 
-  .hourly-item:not(:last-child),
-  .daily-item:not(:last-child) {
+  .hourly-item:not(:last-child) {
     border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .daily-item {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    grid-template-rows: auto auto auto;
+    gap: 0.3vh 1.2vw;
+    padding: 1.2vh 1.2vw;
+    border-radius: 1.5vh;
+    background: var(--highlight);
+    align-items: center;
   }
 
   .hourly-time {
@@ -363,7 +381,7 @@ WEATHER_HTML = r"""<!DOCTYPE html>
     flex-shrink: 0;
   }
 
-  .hourly-precip, .daily-precip {
+  .hourly-precip {
     font-size: 2.4vh;
     color: var(--accent);
     opacity: 0.8;
@@ -372,21 +390,30 @@ WEATHER_HTML = r"""<!DOCTYPE html>
     font-variant-numeric: tabular-nums;
   }
 
+  .daily-header {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: baseline;
+    gap: 0.8vw;
+  }
+
   .daily-day {
-    font-size: 3vh;
-    font-weight: 500;
-    width: 3ch;
-    flex-shrink: 0;
+    font-size: 2.8vh;
+    font-weight: 600;
     text-transform: capitalize;
+  }
+
+  .daily-date {
+    font-size: 2.2vh;
+    color: var(--text-muted);
+    font-weight: 400;
   }
 
   .daily-temps {
     font-family: 'DM Serif Display', serif;
-    font-size: 3.4vh;
+    font-size: 3.2vh;
     font-weight: 400;
-    display: flex;
-    gap: 0.5vw;
-    align-items: baseline;
+    margin-left: auto;
   }
 
   .daily-temps .hi {
@@ -395,7 +422,36 @@ WEATHER_HTML = r"""<!DOCTYPE html>
 
   .daily-temps .lo {
     color: var(--text-muted);
-    font-size: 2.8vh;
+    font-size: 2.6vh;
+  }
+
+  .daily-desc {
+    font-size: 2.2vh;
+    font-weight: 400;
+    color: var(--text-dim);
+    font-style: italic;
+  }
+
+  .daily-details {
+    grid-column: 1 / -1;
+    display: flex;
+    gap: 1.2vw;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+
+  .daily-detail {
+    font-size: 2vh;
+    color: var(--text-dim);
+    display: flex;
+    align-items: center;
+    gap: 0.3vw;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .daily-detail .val {
+    color: var(--text);
+    font-weight: 500;
   }
 
   /* == Weather icon animations ============================================= */
@@ -801,13 +857,34 @@ function render(data) {
   if (data.daily) {
     const dLen = Math.min(5, data.daily.time.length);
     for (let i = 1; i < dLen; i++) {
-      const d = new Date(data.daily.time[i]);
+      const d = new Date(data.daily.time[i] + 'T00:00:00');
       const dayName = FI_DAYS[d.getDay()];
+      const dateStr = d.getDate() + '.' + (d.getMonth() + 1) + '.';
       const code = data.daily.weather_code[i];
+      const desc = WMO_FI[code] || '';
       const dhi = Math.round(data.daily.temperature_2m_max[i]);
       const dlo = Math.round(data.daily.temperature_2m_min[i]);
-      const precip = data.daily.precipitation_probability_max ? data.daily.precipitation_probability_max[i] : null;
-      dailyHTML += `<div class="daily-item"><span class="daily-day">${dayName}</span><div class="daily-icon">${iconHTML(code)}</div><span class="daily-temps"><span class="hi">${dhi}\u00b0</span> <span class="lo">${dlo}\u00b0</span></span>${precip != null && precip > 0 ? `<span class="daily-precip">${precip}%</span>` : ''}</div>`;
+      const precProb = data.daily.precipitation_probability_max ? data.daily.precipitation_probability_max[i] : null;
+      const precSum = data.daily.precipitation_sum ? data.daily.precipitation_sum[i] : null;
+      const wind = data.daily.wind_speed_10m_max ? Math.round(data.daily.wind_speed_10m_max[i]) : null;
+      const sunshine = data.daily.sunshine_duration ? Math.round(data.daily.sunshine_duration[i] / 3600) : null;
+
+      let detailsHTML = '';
+      if (precProb != null && precProb > 0) {
+        detailsHTML += `<span class="daily-detail">\ud83d\udca7 <span class="val">${precProb}%</span>`;
+        if (precSum != null && precSum > 0) detailsHTML += ` ${precSum.toFixed(1)}mm`;
+        detailsHTML += '</span>';
+      }
+      if (wind != null) detailsHTML += `<span class="daily-detail">\ud83c\udf2c\ufe0f <span class="val">${wind} m/s</span></span>`;
+      if (sunshine != null && sunshine > 0) detailsHTML += `<span class="daily-detail">\u2600\ufe0f <span class="val">${sunshine}h</span></span>`;
+
+      dailyHTML += `<div class="daily-item">` +
+        `<div class="daily-header"><span class="daily-day">${dayName}</span><span class="daily-date">${dateStr}</span>` +
+        `<span class="daily-temps"><span class="hi">${dhi}\u00b0</span> <span class="lo">${dlo}\u00b0</span></span></div>` +
+        `<div class="daily-icon">${iconHTML(code)}</div>` +
+        `<div class="daily-desc">${desc}</div>` +
+        `<div class="daily-details">${detailsHTML}</div>` +
+        `</div>`;
     }
   }
 
