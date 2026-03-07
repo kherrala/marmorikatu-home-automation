@@ -7,43 +7,36 @@ A building automation data collection and visualization system. Collects data fr
 Sixteen Docker services orchestrate data collection, storage, visualization, and smart control.
 
 ```
-┌─────────────────────┐                    ┌───────────────────────────────────────────┐
-│  WAGO Controller    │    SSH/SCP         │            Docker Compose                 │
-│  CSV files          │◄───────────────────┤  sync ─────────────┐                      │
-└─────────────────────┘    (every 5 min)   │                    │                      │
-┌─────────────────────┐                    │                    │                      │
-│  Ruuvi Gateway      │    MQTT            │  ruuvi ────────────┤                      │
-│  7 BLE sensors      │◄───────────────────┤                    │                      │
-└─────────────────────┘                    │                    │                      │
-┌─────────────────────┐                    │                    ▼                      │
-│  Thermia Heat Pump  │    MQTT            │  thermia ───▶ InfluxDB 2.7 ◀── backup    │
-│  ThermIQ-ROOM2      │◄──────────────┬────┤                    │                      │
-└─────────────────────┘               │    │  lights ───────────┤                      │
-┌─────────────────────┐               │    │                    │                      │
-│  Light Switch API   │    HTTP       │    │  electricity ──────┘                      │
-│  Building switches  │◄──────────────┼────┤                                           │
-└─────────────────────┘               │    │         ┌──────────┴──────────┐            │
-┌─────────────────────┐               │    │         ▼                    ▼            │
-│  spot-hinta.fi      │    HTTP       │    │  ┌────────────┐     ┌────────────┐        │
-│  Electricity prices │◄──────────────┼────┤  │  Grafana   │     │ MCP Server │        │
-└─────────────────────┘               │    │  │  :3000     │     │ :3001 (SSE)│        │
-                                      │    │  └────────────┘     └─────┬──────┘        │
-┌─────────────────────┐               │    │                           │               │
-│  FMI Open Data      │◄──────────────┼────┤  weather :3020 ──┐       ▼               │
-└─────────────────────┘               │    │                   │  Claude Desktop       │
-┌─────────────────────┐               │    │  news :3021 ──────┤                       │
-│  YLE RSS            │◄──────────────┼────┤                   │                       │
-└─────────────────────┘               │    │  calendar :3022 ──┤                       │
-┌─────────────────────┐               │    │                   ▼                       │
-│  iCal + PJHOY       │◄──────────────┼────┤  ┌──────────────────────────┐             │
-└─────────────────────┘               │    │  │  kiosk (nginx :80/443)   │             │
-                                      │    │  │  weather│news│calendar   │             │
-                                      │    │  │  claude-bridge :3002     │             │
-                                      │    │  └──────────────────────────┘             │
-                                      │    │                                           │
-                                      │    │  heating ─── price-aware optimizer        │
-                                      └────┤  indoor ──── room temp → ThermIQ          │
-                                           └───────────────────────────────────────────┘
+  Data Sources                                Docker Compose
+┌─────────────────────┐                  ┌──────────────────────────────────────────────┐
+│  WAGO Controller    │── SSH/SCP ─────▶ │  sync ──────────────┐                        │
+│  Ruuvi Gateway      │── MQTT ────────▶ │  ruuvi ─────────────┤                        │
+│  Thermia Heat Pump  │── MQTT ────────▶ │  thermia ───────────┤                        │
+│  Light Switch API   │── HTTP ────────▶ │  lights ────────────┼───▶ InfluxDB 2.7       │
+│  spot-hinta.fi      │── HTTP ────────▶ │  electricity ───────┘        │               │
+└─────────────────────┘                  │                        ┌─────┴──────┐        │
+                                         │                        ▼            ▼        │
+                                         │                 ┌──────────┐  ┌──────────┐   │
+                                         │                 │ Grafana  │  │   MCP    │   │
+                                         │                 │  :3000   │  │  :3001   │   │
+                                         │                 └──────────┘  └────┬─────┘   │
+                                         │                                    │         │
+                                         │                                    ▼         │
+                                         │                             Claude Desktop   │
+                                         │                                              │
+┌─────────────────────┐                  │  weather :3020 ─────┐                        │
+│  FMI Open Data      │── HTTP ────────▶ │                     │                        │
+│  YLE RSS            │── HTTP ────────▶ │  news :3021 ────────┼──▶ kiosk :80/443       │
+│  iCal + PJHOY       │── HTTP ────────▶ │                     │        │               │
+└─────────────────────┘                  │  calendar :3022 ────┘        ▼               │
+                                         │                     claude-bridge :3002       │
+                                         │                        │                     │
+                                         │                        └──▶ MCP :3001        │
+                                         │                                              │
+                                         │  heating ─── price optimizer ──▶ ThermIQ     │
+                                         │  indoor ──── room temp ────────▶ ThermIQ     │
+                                         │  backup ──── InfluxDB snapshots              │
+                                         └──────────────────────────────────────────────┘
 ```
 
 ### Services
