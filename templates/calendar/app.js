@@ -332,10 +332,8 @@ function renderGarbageCountdown(allEvents) {
     if (match && match[0]) { icon = match[0]; label = ev.summary.substring(match[0].length).trim(); }
 
     html += '<div class="gc-card gc-' + urgency + '" style="animation-delay:' + (i * 0.06) + 's">';
-    html += '<div class="gc-icon-wrap">' + icon + '</div>';
-    html += '<div class="gc-category">' + label + '</div>';
-    html += '<div class="gc-days">' + countText + '</div>';
-    html += '<div class="gc-date">' + dateLabel + '</div>';
+    html += '<div class="gc-left"><div class="gc-icon-wrap">' + icon + '</div><div class="gc-category">' + label + '</div></div>';
+    html += '<div class="gc-right"><div class="gc-days">' + countText + '</div><div class="gc-date">' + dateLabel + '</div></div>';
     html += '</div>';
   });
 

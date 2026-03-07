@@ -396,11 +396,9 @@ body::after {
 
 .gc-card {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  text-align: center;
-  gap: 0.4vh;
-  padding: 1vh 1vw;
+  gap: 1vw;
+  padding: 1vh 1.2vw;
   border-radius: 1.5vh;
   background: var(--highlight);
   flex: 1 1 0;
@@ -416,30 +414,40 @@ body::after {
   background: rgba(255,167,38,0.10);
 }
 
+.gc-left {
+  display: flex;
+  align-items: center;
+  gap: 0.6vw;
+  flex-shrink: 0;
+}
+
 .gc-icon-wrap {
   font-size: 4.5vh;
   line-height: 1;
 }
 
 .gc-category {
-  font-size: 1.6vh;
-  font-weight: 500;
+  font-size: 2vh;
+  font-weight: 600;
   color: var(--text);
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 100%;
 }
 
-.gc-date {
-  font-size: 1.4vh;
-  color: var(--text-muted);
+.gc-right {
+  margin-left: auto;
+  text-align: right;
+  flex-shrink: 0;
 }
 
 .gc-days {
   font-family: 'DM Serif Display', serif;
-  font-size: 2.4vh;
+  font-size: 3vh;
   font-weight: 400;
+  color: var(--text);
+}
+
+.gc-date {
+  font-size: 2vh;
   color: var(--text-dim);
 }
 
