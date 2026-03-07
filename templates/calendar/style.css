@@ -109,10 +109,10 @@ body::after {
   flex-shrink: 0;
 }
 
-.header-icon { font-size: 3.5vh; opacity: 0.7; }
+.header-icon { font-size: 4vh; opacity: 0.7; }
 
 .header-label {
-  font-size: 1.8vh;
+  font-size: 2.2vh;
   font-weight: 600;
   letter-spacing: 0.25em;
   text-transform: uppercase;
@@ -185,7 +185,7 @@ body::after {
 }
 
 .day-col-label {
-  font-size: 1.4vh;
+  font-size: 1.8vh;
   font-weight: 600;
   letter-spacing: 0.15em;
   text-transform: uppercase;
@@ -205,13 +205,13 @@ body::after {
 
 .day-col-weekday {
   font-family: 'DM Serif Display', serif;
-  font-size: 2.5vh;
+  font-size: 3vh;
   font-weight: 400;
   color: var(--text);
 }
 
 .day-col-date {
-  font-size: 1.8vh;
+  font-size: 2.2vh;
   font-weight: 300;
   color: var(--text-dim);
 }
@@ -232,7 +232,7 @@ body::after {
 }
 
 .allday-pill {
-  font-size: 1.3vh;
+  font-size: 1.8vh;
   font-weight: 500;
   padding: 0.4vh 0.8vw;
   border-radius: 10vh;
@@ -283,7 +283,7 @@ body::after {
 }
 
 .hour-label {
-  font-size: 1.1vh;
+  font-size: 1.5vh;
   font-weight: 400;
   color: var(--text-muted);
   padding: 0.2vh 0.5vw;
@@ -327,7 +327,7 @@ body::after {
 }
 
 .grid-event-summary {
-  font-size: 1.2vh;
+  font-size: 1.7vh;
   font-weight: 500;
   color: var(--text);
   white-space: nowrap;
@@ -345,7 +345,7 @@ body::after {
 }
 
 .grid-event-time {
-  font-size: 1vh;
+  font-size: 1.4vh;
   font-weight: 400;
   color: var(--text-dim);
   font-variant-numeric: tabular-nums;
@@ -402,7 +402,7 @@ body::after {
 }
 
 .day-label {
-  font-size: 1.3vh;
+  font-size: 1.8vh;
   font-weight: 600;
   letter-spacing: 0.15em;
   text-transform: uppercase;
@@ -426,13 +426,13 @@ body::after {
 
 .day-name {
   font-family: 'DM Serif Display', serif;
-  font-size: 2.2vh;
+  font-size: 2.8vh;
   font-weight: 400;
   color: var(--text);
 }
 
 .day-date {
-  font-size: 1.6vh;
+  font-size: 2vh;
   font-weight: 300;
   color: var(--text-dim);
 }
@@ -481,7 +481,7 @@ body::after {
 }
 
 .event-time-text {
-  font-size: 2.2vh;
+  font-size: 2.8vh;
   font-weight: 500;
   color: var(--accent);
   font-variant-numeric: tabular-nums;
@@ -496,14 +496,14 @@ body::after {
 }
 
 .event-time-end {
-  font-size: 1.5vh;
+  font-size: 2vh;
   font-weight: 300;
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
 }
 
 .event-allday {
-  font-size: 1.4vh;
+  font-size: 1.8vh;
   font-weight: 600;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -544,7 +544,7 @@ body::after {
 
 .event-summary {
   font-family: 'DM Serif Display', serif;
-  font-size: 2.2vh;
+  font-size: 2.8vh;
   font-weight: 400;
   line-height: 1.25;
   color: var(--text);
@@ -562,7 +562,7 @@ body::after {
 }
 
 .event-location {
-  font-size: 1.5vh;
+  font-size: 2vh;
   font-weight: 300;
   color: var(--text-dim);
   margin-top: 0.2vh;

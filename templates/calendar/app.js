@@ -38,9 +38,8 @@ const WEEKDAYS = ['sunnuntai','maanantai','tiistai','keskiviikko','torstai','per
 const GRID_START = 6;  // 06:00
 const GRID_END = 23;   // 23:00
 const GRID_HOURS = GRID_END - GRID_START;
-const VIEW_START = 8;  // default visible window start
-const VIEW_END = 18;   // default visible window end
-const VIEW_HOURS = VIEW_END - VIEW_START;
+const DEFAULT_VIEW_START = 9;
+const DEFAULT_VIEW_END = 15;
 
 let dayOffset = 0;  // 0 = today+tomorrow, 1 = tomorrow+day-after, etc.
 
@@ -96,6 +95,26 @@ function eventTypeClass(ev) {
   return '';
 }
 
+function computeViewWindow(events1, events2) {
+  var earliest = DEFAULT_VIEW_START;
+  var latest = DEFAULT_VIEW_END;
+  var allTimed = events1.concat(events2).filter(function(e) { return !e.allDay; });
+  for (var i = 0; i < allTimed.length; i++) {
+    var s = new Date(allTimed[i].start);
+    var sh = s.getHours();
+    if (sh < earliest) earliest = sh;
+    if (allTimed[i].end) {
+      var e = new Date(allTimed[i].end);
+      var eh = e.getHours() + (e.getMinutes() > 0 ? 1 : 0);
+      if (eh > latest) latest = eh;
+    }
+  }
+  earliest = Math.max(GRID_START, earliest);
+  latest = Math.min(GRID_END, latest);
+  if (latest <= earliest) latest = earliest + 1;
+  return { start: earliest, end: latest, hours: latest - earliest };
+}
+
 function timeToGridPercent(isoStr) {
   const d = new Date(isoStr);
   const hours = d.getHours() + d.getMinutes() / 60;
@@ -121,7 +140,7 @@ function detectOverlaps(events) {
   return result;
 }
 
-function renderDayColumn(dateStr, events, labelText, labelCls) {
+function renderDayColumn(dateStr, events, labelText, labelCls, viewWindow) {
   const d = new Date(dateStr + 'T00:00:00');
   const weekday = WEEKDAYS[d.getDay()];
 
@@ -147,8 +166,9 @@ function renderDayColumn(dateStr, events, labelText, labelCls) {
   html += '</div>';
 
   // Time grid (scrollable container → inner tall div)
-  var innerHeightPct = (GRID_HOURS / VIEW_HOURS) * 100;
-  html += '<div class="time-grid" data-date="' + dateStr + '">';
+  var vw = viewWindow || { start: DEFAULT_VIEW_START, end: DEFAULT_VIEW_END, hours: DEFAULT_VIEW_END - DEFAULT_VIEW_START };
+  var innerHeightPct = (GRID_HOURS / vw.hours) * 100;
+  html += '<div class="time-grid" data-date="' + dateStr + '" data-view-start="' + vw.start + '">';
   html += '<div class="time-grid-inner" style="height:' + innerHeightPct + '%">';
 
   // Hour lines
@@ -302,10 +322,13 @@ function render(data) {
     '</span>' +
     '</div>';
 
+  // Compute shared view window from both columns' events
+  const viewWindow = computeViewWindow(col1Events, col2Events);
+
   // Day columns
   html += '<div class="day-columns">';
-  html += renderDayColumn(col1Date, col1Events, col1Label.text, col1Label.cls);
-  html += renderDayColumn(col2Date, col2Events, col2Label.text, col2Label.cls);
+  html += renderDayColumn(col1Date, col1Events, col1Label.text, col1Label.cls, viewWindow);
+  html += renderDayColumn(col2Date, col2Events, col2Label.text, col2Label.cls, viewWindow);
   html += renderAgenda(restEvents);
   html += '</div>';
 
@@ -328,7 +351,8 @@ function scrollGridsToView() {
   document.querySelectorAll('.time-grid').forEach(function(grid) {
     var inner = grid.querySelector('.time-grid-inner');
     if (!inner) return;
-    var scrollPct = (VIEW_START - GRID_START) / GRID_HOURS;
+    var viewStart = parseInt(grid.getAttribute('data-view-start') || DEFAULT_VIEW_START);
+    var scrollPct = (viewStart - GRID_START) / GRID_HOURS;
     grid.scrollTop = inner.offsetHeight * scrollPct;
   });
 }
