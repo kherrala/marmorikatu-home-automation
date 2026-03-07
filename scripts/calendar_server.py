@@ -67,6 +67,8 @@ def _load_pjhoy_disk_cache() -> list[dict] | None:
             data = json_mod.loads(PJHOY_CACHE_FILE.read_text())
             age = time.time() - data.get("ts", 0)
             events = data.get("events", [])
+            for ev in events:
+                ev.setdefault("type", "garbage")
             if age < PJHOY_CACHE_TTL:
                 _pjhoy_cache["events"] = events
                 _pjhoy_cache["ts"] = data["ts"]
