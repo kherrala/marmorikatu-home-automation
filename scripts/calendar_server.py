@@ -131,15 +131,17 @@ async def fetch_pjhoy_events() -> list[dict]:
         if "login_error" in redirect_location:
             raise RuntimeError(f"PJHOY login failed (redirect to {redirect_location})")
         # Step 3: Fetch services — construct full customer numbers from username prefix + suffixes
-        # Reference: Rust uses customerNumbers%5B%5D= (i.e. customerNumbers[]) repeated
         parts = PJHOY_USERNAME.split("-")
         prefix = f"{parts[0]}-{parts[1]}" if len(parts) >= 2 else PJHOY_USERNAME
         if PJHOY_CUSTOMER_NUMBERS:
             full_numbers = [f"{prefix}-{suffix}" for suffix in PJHOY_CUSTOMER_NUMBERS]
         else:
             full_numbers = [PJHOY_USERNAME]
-        qs = "&".join(f"customerNumbers%5B%5D={n}" for n in full_numbers)
-        resp = await client.get(f"{PJHOY_BASE_URL}/secure/get_services_by_customer_numbers.do?{qs}")
+        # Use list of tuples for repeated customerNumbers[] param
+        params = [("customerNumbers[]", n) for n in full_numbers]
+        resp = await client.get(
+            f"{PJHOY_BASE_URL}/secure/get_services_by_customer_numbers.do", params=params
+        )
         resp.raise_for_status()
         ct = resp.headers.get("content-type", "")
         if "json" not in ct:
