@@ -1,24 +1,58 @@
-# WAGO Building Automation Data Explorer
+# Marmorikatu Home Automation
 
-A data visualization system for building automation measurement data from WAGO controllers, Ruuvi sensors, and a Thermia ground-source heat pump. Imports CSV data and MQTT sensor data into InfluxDB and provides interactive Grafana dashboards for exploring HVAC, room temperature, heat pump, and environmental data.
+A building automation data collection and visualization system. Collects data from a WAGO PLC controller, Ruuvi Bluetooth sensors, a Thermia ground-source heat pump, and light switch APIs. Stores everything in InfluxDB, visualizes with Grafana dashboards, and serves a kiosk display with weather, news, and calendar widgets. Includes an MCP server for Claude Desktop integration and a price-aware heating optimizer.
 
 ## Architecture
 
-Seven Docker services: InfluxDB, Grafana, sync (WAGO CSV), ruuvi (MQTT), thermia (MQTT), lights (HTTP polling), and MCP server (Claude Desktop integration). Data flows from four sources into InfluxDB, visualized via Grafana dashboards.
+Sixteen Docker services orchestrate data collection, storage, visualization, and smart control.
+
+```
+WAGO PLC ──CSV/SCP──▶ sync ──────────────────────────▶ InfluxDB ◀── Grafana
+Ruuvi GW ──MQTT─────▶ ruuvi ─────────────────────────▶    │
+ThermIQ  ──MQTT─────▶ thermia ────────────────────────▶    │
+Light API ─HTTP─────▶ lights ─────────────────────────▶    │
+Spot API ──HTTP─────▶ electricity ────────────────────▶    │
+                                                           │
+                      heating ─── price-aware control ─────┘
+                      indoor ──── room temp → ThermIQ MQTT
+                      mcp ─────── Claude Desktop (SSE)
+                      claude-bridge ── AI kiosk voice
+                      weather ─── FMI open data
+                      news ────── YLE RSS feeds
+                      calendar ── iCal + garbage collection
+                      kiosk ───── wall display (nginx)
+                      backup ──── InfluxDB snapshots
+```
+
+### Services
 
 | Service | Technology | Port | Purpose |
 |---------|------------|------|---------|
 | influxdb | InfluxDB 2.7 | 8086 | Time-series database |
 | grafana | Grafana 12.3 | 3000 | Dashboard visualization |
-| sync | Python/SCP | — | WAGO CSV sync + import |
+| sync | Python/SCP | — | WAGO CSV sync + import (profile: `sync`) |
 | ruuvi | Python/MQTT | — | Ruuvi Bluetooth sensor data |
 | thermia | Python/MQTT | — | ThermIQ heat pump data |
 | lights | Python/HTTP | — | Light switch status polling |
+| electricity | Python/HTTP | — | Spot electricity price polling |
+| heating | Python | — | Price-aware heating optimizer |
+| indoor | Python/MQTT | — | Indoor temp publisher to ThermIQ |
 | mcp | Python/SSE | 3001 | MCP server for Claude Desktop |
+| claude-bridge | Python | 3002 | AI bridge for kiosk (Claude/OpenAI/Ollama) |
+| weather | Python | 3020 | FMI weather data + forecasts |
+| news | Python | 3021 | YLE news RSS aggregator |
+| calendar | Python | 3022 | Family calendar + garbage collection |
+| kiosk | nginx | 80/443 | Wall-mounted kiosk display |
+| backup | Python | — | InfluxDB backup with 30-day retention |
 
 See [docs/architecture.md](docs/architecture.md) for full details on services, data pipelines, environment variables, and configuration.
 
 ## Quick Start
+
+### Prerequisites
+
+- Docker and Docker Compose
+- Python 3.11+ (for local scripts)
 
 ### 1. Start Services
 
@@ -26,20 +60,26 @@ See [docs/architecture.md](docs/architecture.md) for full details on services, d
 ./start.sh
 ```
 
-This will:
-- Start InfluxDB and Grafana containers
-- Create Python virtual environment
-- Install dependencies
-- Import existing CSV data from `./data/`
+This starts InfluxDB and Grafana, creates a Python venv, installs dependencies, and imports existing CSV data from `./data/`.
+
+To start all services including data collectors:
+
+```bash
+docker compose up -d
+
+# With WAGO sync (requires SSH key in ./ssh/wago_sync)
+docker compose --profile sync up -d
+```
 
 ### 2. Access Dashboards
 
 - **Grafana**: http://localhost:3000 (admin/admin)
 - **InfluxDB**: http://localhost:8086 (admin/adminpassword)
+- **Kiosk**: https://localhost (wall display)
 
 ## Data Model
 
-Five InfluxDB measurements in bucket `building_automation`:
+Six InfluxDB measurements in bucket `building_automation`:
 
 | Measurement | Source | Sampling | Content |
 |-------------|--------|----------|---------|
@@ -48,8 +88,67 @@ Five InfluxDB measurements in bucket `building_automation`:
 | `ruuvi` | Ruuvi MQTT | ~1 second | Temperature, humidity, pressure, air quality (CO2, PM, VOC) |
 | `thermia` | ThermIQ MQTT | ~30 seconds | Heat pump temperatures, status, alarms, runtimes |
 | `lights` | HTTP API | 5 minutes | Light switch on/off status |
+| `electricity` | Spot API | 1 hour | Spot electricity prices |
 
 See [docs/influxdb-data-model.md](docs/influxdb-data-model.md) for complete schema with all tags, fields, data types, units, and example Flux queries.
+
+## Grafana Dashboards
+
+Twelve provisioned dashboards:
+
+| Dashboard | UID | Content |
+|-----------|-----|---------|
+| Temperature Overview | `wago-overview` | Home dashboard with floorplan canvas |
+| HVAC | `wago-hvac` | Ventilation temps, heat recovery, freezing risk |
+| HVAC Temperature Histogram | `hvac-temp-histogram` | HVAC temperature distributions |
+| Room Temperatures | `wago-rooms` | Room temperature trends |
+| Room Temperature Histogram | `room-temp-histogram` | Room temperature distributions |
+| Light Switch Status | `wago-lights` | Light on/off status by floor |
+| Ruuvi Sensors | `ruuvi-sensors` | Ruuvi sensor data, air quality |
+| Heat Pump | `thermia-heatpump` | Heat pump temps, COP, runtimes |
+| Energy Cost | `energy-cost` | Electricity cost breakdown by component |
+| Heating Control | `heating-control` | Heating optimizer status and decisions |
+
+Dashboards are provisioned from JSON files in `grafana/provisioning/dashboards/`. Edit the JSON directly, then:
+
+```bash
+docker compose restart grafana
+```
+
+See [docs/grafana-dashboards.md](docs/grafana-dashboards.md) for conventions, panel details, and Grafana configuration.
+
+## Kiosk Display
+
+A wall-mounted display served by nginx with a carousel of widgets:
+
+- **Weather** — current conditions and forecast from FMI open data
+- **News** — latest headlines from YLE RSS feeds
+- **Calendar** — family calendar (iCal) with three-column day view + agenda
+- **Garbage collection** — upcoming pickups from PJHOY API
+
+The kiosk includes face detection (face-api.js) to activate the display and supports portrait/landscape modes.
+
+## Heating Optimizer
+
+Price-aware heating control that adjusts the heat pump based on spot electricity prices:
+
+- Pre-heats during cheap hours, reduces during expensive hours
+- Configurable comfort range (20–23 °C)
+- Reads current temperatures from InfluxDB, writes setpoints via MQTT
+
+See [docs/heating-optimizer.md](docs/heating-optimizer.md) for the control logic, price thresholds, and configuration.
+
+## Energy Calculations
+
+The HVAC dashboard calculates heat recovery efficiency (sensible + enthalpy), recovered/coil/waste heat power, and freezing probability. The Energy Cost dashboard estimates electricity consumption from component status data and combines it with spot prices.
+
+See [docs/heat-recovery-efficiency.md](docs/heat-recovery-efficiency.md) for formulas and Flux queries. See also [docs/heatpump-efficiency.md](docs/heatpump-efficiency.md) for heat pump COP and power estimation.
+
+## MCP Server
+
+An MCP server at `http://localhost:3001/sse` provides 15+ tools for querying building automation data from Claude Desktop.
+
+See [docs/mcp-server.md](docs/mcp-server.md) for setup instructions, tool listing, and example queries.
 
 ## Data Import
 
@@ -69,37 +168,6 @@ python scripts/import_data.py --incremental
 docker compose --profile sync up -d
 ```
 
-See [docs/development.md](docs/development.md) for SSH key setup, sync configuration, sensor name mapping, data management, and troubleshooting.
-
-## Grafana Dashboards
-
-Seven provisioned dashboards:
-
-| Dashboard | UID | Content |
-|-----------|-----|---------|
-| Temperature Overview | `wago-overview` | Home dashboard with floorplan canvas |
-| HVAC | `wago-hvac` | Ventilation temps, heat recovery, freezing risk |
-| HVAC lämpötilojen jakauma | `hvac-temp-histogram` | HVAC temperature histograms |
-| Huonelämpötilojen jakauma | `room-temp-histogram` | Room temperature histograms |
-| Light Switch Status | `wago-lights` | Light on/off status by floor |
-| Ruuvi Sensors | `ruuvi-sensors` | Ruuvi sensor data, air quality |
-| Maalämpöpumppu | `thermia-heatpump` | Heat pump temps, COP, runtimes |
-
-Dashboards are provisioned from JSON files — edit directly, then `docker compose restart grafana`. See [docs/grafana-dashboards.md](docs/grafana-dashboards.md) for conventions, panel details, and Grafana configuration.
-
-## Energy Calculations
-
-The HVAC dashboard calculates heat recovery efficiency (sensible + enthalpy), recovered/coil/waste heat power, and freezing probability.
-
-See [docs/heat-recovery-efficiency.md](docs/heat-recovery-efficiency.md) for complete formulas, Flux queries, and derivations. See also [docs/heatpump-efficiency.md](docs/heatpump-efficiency.md) for heat pump COP and power estimation.
-
-## MCP Server for Claude Desktop
-
-An MCP server at `http://localhost:3001/sse` provides 15 tools for querying
-building automation data from Claude Desktop.
-
-See [docs/mcp-server.md](docs/mcp-server.md) for setup instructions, tool listing, and example queries.
-
 ## ThermIQ CLI Tool
 
 A command-line tool for reading and writing Thermia heat pump registers via MQTT.
@@ -107,18 +175,10 @@ A command-line tool for reading and writing Thermia heat pump registers via MQTT
 ```bash
 source venv/bin/activate
 
-# Read current register values from the heat pump
-python scripts/thermiq_write.py --read
-
-# List all writable registers and parameters
-python scripts/thermiq_write.py --list
-
-# Write a setting (by name or register number)
-python scripts/thermiq_write.py indoor_requested_t 22
-python scripts/thermiq_write.py d50 22
-
-# Preview without publishing
-python scripts/thermiq_write.py --dry-run hotwater_stop_t 55
+python scripts/thermiq_write.py --read        # Read current values
+python scripts/thermiq_write.py --list        # List writable registers
+python scripts/thermiq_write.py indoor_requested_t 22   # Write by name
+python scripts/thermiq_write.py --dry-run hotwater_stop_t 55  # Preview
 ```
 
 See [docs/thermiq_register_map.md](docs/thermiq_register_map.md) for the complete register map.
@@ -129,13 +189,15 @@ See [docs/thermiq_register_map.md](docs/thermiq_register_map.md) for the complet
 |----------|---------|
 | [docs/architecture.md](docs/architecture.md) | System architecture, Docker services, environment variables |
 | [docs/data-pipelines.md](docs/data-pipelines.md) | Data collection pipelines — CSV sync, MQTT, HTTP polling |
-| [docs/influxdb-data-model.md](docs/influxdb-data-model.md) | Complete InfluxDB schema — all measurements, tags, fields, example queries |
-| [docs/grafana-dashboards.md](docs/grafana-dashboards.md) | Dashboard inventory, conventions, panel details, Grafana configuration |
-| [docs/heat-recovery-efficiency.md](docs/heat-recovery-efficiency.md) | Heat recovery formulas, enthalpy calculations, freezing risk, Flux queries |
+| [docs/influxdb-data-model.md](docs/influxdb-data-model.md) | Complete InfluxDB schema — all measurements, tags, fields |
+| [docs/grafana-dashboards.md](docs/grafana-dashboards.md) | Dashboard inventory, conventions, panel details |
+| [docs/heat-recovery-efficiency.md](docs/heat-recovery-efficiency.md) | Heat recovery formulas, enthalpy calculations, freezing risk |
 | [docs/heatpump-efficiency.md](docs/heatpump-efficiency.md) | Heat pump COP and thermal power estimation |
 | [docs/thermiq_register_map.md](docs/thermiq_register_map.md) | ThermIQ-ROOM2 register definitions |
+| [docs/heating-optimizer.md](docs/heating-optimizer.md) | Price-aware heating control logic and configuration |
 | [docs/mcp-server.md](docs/mcp-server.md) | MCP server tools, endpoints, Claude Desktop setup |
-| [docs/development.md](docs/development.md) | Setup, SSH config, data management, troubleshooting, file structure |
+| [docs/development.md](docs/development.md) | Setup, SSH config, data management, troubleshooting |
+| [docs/backup-recovery.md](docs/backup-recovery.md) | Backup schedule and recovery procedures |
 
 ## Stopping Services
 
@@ -149,6 +211,10 @@ docker compose down -v
 
 For troubleshooting, see [docs/development.md](docs/development.md#troubleshooting).
 
+## Contributing
+
+Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
 ## License
 
-Internal use only.
+This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
