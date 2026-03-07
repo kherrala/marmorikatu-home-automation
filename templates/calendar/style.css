@@ -371,6 +371,98 @@ body::after {
   border-radius: 50%;
 }
 
+/* -- Garbage countdown widget ---------------------------------------------- */
+
+.garbage-countdown {
+  flex-shrink: 0;
+  padding: 1.2vh 1.2vw;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.gc-title {
+  font-size: 1.8vh;
+  font-weight: 600;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 1vh;
+}
+
+.gc-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6vh;
+}
+
+.gc-card {
+  display: flex;
+  align-items: center;
+  gap: 1vw;
+  padding: 0.8vh 0.8vw;
+  border-radius: 1.2vh;
+  background: var(--highlight);
+  animation: fadeIn 0.5s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+
+.gc-card.gc-urgent {
+  background: rgba(239,83,80,0.12);
+}
+
+.gc-card.gc-soon {
+  background: rgba(255,167,38,0.10);
+}
+
+.gc-icon-wrap {
+  width: 4vh;
+  height: 4vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2.2vh;
+  flex-shrink: 0;
+}
+
+.gc-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.gc-category {
+  font-size: 1.8vh;
+  font-weight: 500;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.gc-date {
+  font-size: 1.5vh;
+  color: var(--text-muted);
+}
+
+.gc-countdown {
+  flex-shrink: 0;
+  text-align: right;
+}
+
+.gc-days {
+  font-family: 'DM Serif Display', serif;
+  font-size: 2.2vh;
+  font-weight: 400;
+  color: var(--text-dim);
+}
+
+.gc-urgent .gc-days {
+  color: #ef5350;
+  font-weight: 500;
+}
+
+.gc-soon .gc-days {
+  color: #ffa726;
+  font-weight: 500;
+}
+
 /* -- Agenda section (events beyond tomorrow) ------------------------------- */
 
 .agenda-section {

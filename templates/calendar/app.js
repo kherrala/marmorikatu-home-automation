@@ -205,8 +205,23 @@ function renderDayColumn(dateStr, events, labelText, labelCls, viewWindow) {
   return html;
 }
 
-function renderAgenda(events) {
-  if (events.length === 0) return '';
+function renderThirdColumn(agendaEvents, allEvents) {
+  let html = '<div class="day-col" role="region" aria-label="Tulevat tapahtumat">';
+
+  // Garbage countdown at top
+  html += renderGarbageCountdown(allEvents);
+
+  // Agenda header + content
+  html += '<div class="day-col-header">';
+  html += '<span class="day-col-label other">TULOSSA</span>';
+  html += '</div>';
+
+  if (agendaEvents.length === 0) {
+    html += '</div>';
+    return html;
+  }
+
+  const events = agendaEvents;
 
   // Group by date
   const groups = {};
@@ -216,10 +231,6 @@ function renderAgenda(events) {
   }
 
   const dates = Object.keys(groups).sort();
-  let html = '<div class="day-col" role="region" aria-label="Tulevat tapahtumat">';
-  html += '<div class="day-col-header">';
-  html += '<span class="day-col-label other">TULOSSA</span>';
-  html += '</div>';
   html += '<div class="agenda-section">';
   html += '<div class="agenda">';
 
@@ -275,6 +286,60 @@ function renderAgenda(events) {
   return html;
 }
 
+function renderGarbageCountdown(allEvents) {
+  // Find next date for each garbage category
+  const today = todayStr();
+  const garbageEvents = allEvents.filter(e => isGarbage(e) && e.date >= today);
+  if (garbageEvents.length === 0) return '';
+
+  // Group by summary, keep earliest date per category
+  const categories = {};
+  for (const ev of garbageEvents) {
+    if (!categories[ev.summary] || ev.date < categories[ev.summary].date) {
+      categories[ev.summary] = ev;
+    }
+  }
+
+  // Sort by days remaining
+  const todayDate = new Date(today + 'T00:00:00');
+  const sorted = Object.values(categories).sort((a, b) => a.date.localeCompare(b.date));
+
+  let html = '<div class="garbage-countdown">';
+  html += '<div class="gc-title">Jätekalenteri</div>';
+  html += '<div class="gc-grid">';
+
+  sorted.forEach((ev, i) => {
+    const evDate = new Date(ev.date + 'T00:00:00');
+    const daysLeft = Math.round((evDate - todayDate) / 86400000);
+    const d = new Date(ev.date + 'T00:00:00');
+    const weekday = WEEKDAYS[d.getDay()];
+    const dateLabel = weekday.substring(0, 2) + ' ' + formatDate(ev.date);
+
+    // Urgency: 0-1 days = urgent, 2-3 = soon, 4+ = normal
+    var urgency = 'normal';
+    if (daysLeft <= 1) urgency = 'urgent';
+    else if (daysLeft <= 3) urgency = 'soon';
+
+    var countText;
+    if (daysLeft === 0) countText = 'Tänään';
+    else if (daysLeft === 1) countText = 'Huomenna';
+    else countText = daysLeft + ' pv';
+
+    html += '<div class="gc-card gc-' + urgency + '" style="animation-delay:' + (i * 0.06) + 's">';
+    html += '<div class="gc-icon-wrap"><span class="gc-icon">' + ev.summary.charAt(0) + ev.summary.charAt(1) + '</span></div>';
+    html += '<div class="gc-info">';
+    html += '<div class="gc-category">' + ev.summary.substring(3) + '</div>';
+    html += '<div class="gc-date">' + dateLabel + '</div>';
+    html += '</div>';
+    html += '<div class="gc-countdown"><span class="gc-days">' + countText + '</span></div>';
+    html += '</div>';
+  });
+
+  html += '</div>'; // gc-grid
+  html += '</div>'; // garbage-countdown
+  return html;
+}
+
 function dayColumnLabel(dateStr) {
   const today = todayStr();
   const tomorrow = tomorrowStr();
@@ -307,7 +372,7 @@ function render(data) {
   const col2Label = dayColumnLabel(col2Date);
   const col1Events = events.filter(e => e.date === col1Date);
   const col2Events = events.filter(e => e.date === col2Date);
-  const restEvents = events.filter(e => e.date > col2Date && !isSchool(e));
+  const restEvents = events.filter(e => e.date > col2Date && !isSchool(e) && !isGarbage(e));
 
   // Max offset: don't go beyond available events
   const lastDate = events.length > 0 ? events[events.length - 1].date : col2Date;
@@ -329,7 +394,7 @@ function render(data) {
   html += '<div class="day-columns">';
   html += renderDayColumn(col1Date, col1Events, col1Label.text, col1Label.cls, viewWindow);
   html += renderDayColumn(col2Date, col2Events, col2Label.text, col2Label.cls, viewWindow);
-  html += renderAgenda(restEvents);
+  html += renderThirdColumn(restEvents, events);
   html += '</div>';
 
   app.className = 'container';
