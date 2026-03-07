@@ -308,11 +308,11 @@ body::after {
 }
 
 .grid-event.overlap-0 {
-  right: 52%;
+  right: calc(50% + 0.3vw);
 }
 
 .grid-event.overlap-1 {
-  left: calc(3.5vw + 48%);
+  left: calc(3.5vw + 50% + 0.3vw);
   right: 0.5vw;
 }
 
