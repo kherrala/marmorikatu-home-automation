@@ -5,8 +5,8 @@
   --glass: rgba(255,255,255,0.05);
   --glass-border: rgba(255,255,255,0.08);
   --text: #edf2f7;
-  --text-dim: rgba(237,242,247,0.6);
-  --text-muted: rgba(237,242,247,0.35);
+  --text-dim: rgba(237,242,247,0.75);
+  --text-muted: rgba(237,242,247,0.5);
   --accent: #64b5f6;
   --accent-warm: #ffb74d;
   --today: #81c784;
@@ -181,7 +181,7 @@ body::after {
 .hour-row {
   position: absolute;
   left: 0; right: 0;
-  border-top: 1px solid rgba(255,255,255,0.04);
+  border-top: 1px solid rgba(255,255,255,0.07);
   pointer-events: none;
 }
 
@@ -296,7 +296,7 @@ body::after {
 }
 
 .day-label {
-  font-size: 1.2vh;
+  font-size: 1.3vh;
   font-weight: 600;
   letter-spacing: 0.15em;
   text-transform: uppercase;
@@ -320,7 +320,7 @@ body::after {
 
 .day-name {
   font-family: 'DM Serif Display', serif;
-  font-size: 2vh;
+  font-size: 2.2vh;
   font-weight: 400;
   background: linear-gradient(180deg, #fff 20%, rgba(255,255,255,0.75) 100%);
   -webkit-background-clip: text;
@@ -329,7 +329,7 @@ body::after {
 }
 
 .day-date {
-  font-size: 1.5vh;
+  font-size: 1.6vh;
   font-weight: 300;
   color: var(--text-dim);
 }
@@ -374,7 +374,7 @@ body::after {
 }
 
 .event-time-text {
-  font-size: 1.7vh;
+  font-size: 1.9vh;
   font-weight: 500;
   color: var(--accent);
   font-variant-numeric: tabular-nums;
@@ -385,14 +385,14 @@ body::after {
 }
 
 .event-time-end {
-  font-size: 1.2vh;
+  font-size: 1.3vh;
   font-weight: 300;
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
 }
 
 .event-allday {
-  font-size: 1.1vh;
+  font-size: 1.2vh;
   font-weight: 600;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -409,7 +409,7 @@ body::after {
   min-height: 3vh;
   border-radius: 2px;
   background: var(--accent);
-  opacity: 0.4;
+  opacity: 0.6;
   flex-shrink: 0;
 }
 
@@ -425,7 +425,7 @@ body::after {
 
 .event-summary {
   font-family: 'DM Serif Display', serif;
-  font-size: 1.7vh;
+  font-size: 1.9vh;
   font-weight: 400;
   line-height: 1.25;
   color: var(--text);
@@ -439,7 +439,7 @@ body::after {
 }
 
 .event-location {
-  font-size: 1.2vh;
+  font-size: 1.3vh;
   font-weight: 300;
   color: var(--text-dim);
   margin-top: 0.2vh;
@@ -502,4 +502,9 @@ body::after {
   color: var(--text-muted);
   letter-spacing: 0.05em;
   z-index: 10;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .day-group, .event-card { animation: none !important; }
+  .loading-spinner { animation: none; border-top-color: var(--text-dim); }
 }

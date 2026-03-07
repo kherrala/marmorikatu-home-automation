@@ -72,7 +72,7 @@ function renderDayColumn(dateStr, events, labelText, labelCls) {
   const timed = events.filter(e => !e.allDay);
   const timedWithOverlap = detectOverlaps(timed);
 
-  let html = '<div class="day-col">';
+  let html = '<div class="day-col" role="region" aria-label="' + labelText + ' ' + weekday + ' ' + formatDate(dateStr) + '">';
 
   // Header
   html += '<div class="day-col-header">';
@@ -136,7 +136,7 @@ function renderAgenda(events) {
   }
 
   const dates = Object.keys(groups).sort();
-  let html = '<div class="day-col">';
+  let html = '<div class="day-col" role="region" aria-label="Tulevat tapahtumat">';
   html += '<div class="day-col-header">';
   html += '<span class="day-col-label other">TULOSSA</span>';
   html += '</div>';
@@ -154,7 +154,7 @@ function renderAgenda(events) {
       html += '<span class="day-label ' + label.cls + '">' + label.text + '</span>';
     }
     html += '<span class="day-name">' + weekday.charAt(0).toUpperCase() + weekday.slice(1) + '</span>';
-    html += '<span class="day-date">' + formatDate(dateStr) + '</span>';
+    html += '<time class="day-date" datetime="' + dateStr + '">' + formatDate(dateStr) + '</time>';
     html += '</div>';
 
     html += '<div class="events-list">';
