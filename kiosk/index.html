@@ -532,9 +532,40 @@
     const PEAK_START  = 6;
     const PEAK_END    = 9;
 
+    // == Sunrise/sunset for Grafana theme (Tampere 61.50N, 23.76E) ==============
+    const SUN_LAT = 61.4978, SUN_LNG = 23.7610;
+    const D2R = Math.PI / 180, R2D = 180 / Math.PI;
+    function getSunHour(doy, rising) {
+      var lngH = SUN_LNG / 15;
+      var t = doy + ((rising ? 6 : 18) - lngH) / 24;
+      var M = 0.9856 * t - 3.289;
+      var L = ((M + 1.916 * Math.sin(M * D2R) + 0.020 * Math.sin(2 * M * D2R) + 282.634) % 360 + 360) % 360;
+      var RA = ((R2D * Math.atan(0.91764 * Math.tan(L * D2R))) % 360 + 360) % 360;
+      RA += Math.floor(L / 90) * 90 - Math.floor(RA / 90) * 90;
+      RA /= 15;
+      var sinDec = 0.39782 * Math.sin(L * D2R);
+      var cosDec = Math.cos(Math.asin(sinDec));
+      var cosH = (Math.cos(90.833 * D2R) - sinDec * Math.sin(SUN_LAT * D2R)) / (cosDec * Math.cos(SUN_LAT * D2R));
+      if (cosH > 1) return rising ? 99 : -99;
+      if (cosH < -1) return rising ? -99 : 99;
+      var H = R2D * Math.acos(cosH);
+      if (rising) H = 360 - H;
+      H /= 15;
+      var ut = ((H + RA - 0.06571 * t - 6.622 - lngH) % 24 + 24) % 24;
+      return ut + (-new Date().getTimezoneOffset() / 60);
+    }
+    function isDaytime() {
+      var now = new Date();
+      var start = new Date(now.getFullYear(), 0, 1);
+      var doy = Math.floor((now - start) / 86400000) + 1;
+      var h = now.getHours() + now.getMinutes() / 60;
+      return h >= getSunHour(doy, true) && h < getSunHour(doy, false);
+    }
+    function grafanaTheme() { return isDaytime() ? 'light' : 'dark'; }
+
     // Slide definitions: { title, src } — built dynamically from Grafana dashboards
     const SLIDE_DEFS = [
-      { title: 'Yleiskatsaus',      src: '/grafana/d/wago-overview/building-overview?kiosk' },
+      { title: 'Yleiskatsaus',      src: '/grafana/d/wago-overview/building-overview?kiosk&theme=' + grafanaTheme() },
       { title: 'Sää',              src: '/weather/' },
       { title: 'Uutiset',           src: '/news/' },
       { title: 'Kalenteri',         src: '/calendar/' },
@@ -712,6 +743,20 @@
       dot.dataset.idx = i;
       navContainer.appendChild(dot);
     });
+
+    // == Grafana theme auto-switch (check every 60s) ==========================
+    let lastGrafanaTheme = grafanaTheme();
+    setInterval(() => {
+      const theme = grafanaTheme();
+      if (theme === lastGrafanaTheme) return;
+      lastGrafanaTheme = theme;
+      document.querySelectorAll('.slide iframe').forEach(iframe => {
+        const src = iframe.getAttribute('src');
+        if (src && src.startsWith('/grafana/')) {
+          iframe.src = src.replace(/([?&])theme=(light|dark)/, '$1theme=' + theme);
+        }
+      });
+    }, 60_000);
 
     // == DOM refs ==============================================================
     const slides         = Array.from(document.querySelectorAll('.slide'));
