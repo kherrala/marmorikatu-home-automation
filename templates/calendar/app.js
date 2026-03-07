@@ -39,6 +39,8 @@ const GRID_START = 6;  // 06:00
 const GRID_END = 23;   // 23:00
 const GRID_HOURS = GRID_END - GRID_START;
 
+let dayOffset = 0;  // 0 = today+tomorrow, 1 = tomorrow+day-after, etc.
+
 function formatDate(dateStr) {
   const d = new Date(dateStr);
   return d.getDate() + '.' + (d.getMonth() + 1) + '.';
@@ -68,6 +70,12 @@ function todayStr() {
 function tomorrowStr() {
   const d = new Date();
   d.setDate(d.getDate() + 1);
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+}
+
+function dateOffsetStr(offset) {
+  const d = new Date();
+  d.setDate(d.getDate() + offset);
   return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
 }
 
@@ -241,6 +249,14 @@ function renderAgenda(events) {
   return html;
 }
 
+function dayColumnLabel(dateStr) {
+  const today = todayStr();
+  const tomorrow = tomorrowStr();
+  if (dateStr === today) return { text: 'TÄNÄÄN', cls: 'today' };
+  if (dateStr === tomorrow) return { text: 'HUOMENNA', cls: 'tomorrow' };
+  return { text: '', cls: 'other' };
+}
+
 function render(data) {
   if (!data || !data.events) return;
   const app = document.getElementById('app');
@@ -259,23 +275,31 @@ function render(data) {
     return;
   }
 
-  const today = todayStr();
-  const tomorrow = tomorrowStr();
+  const col1Date = dateOffsetStr(dayOffset);
+  const col2Date = dateOffsetStr(dayOffset + 1);
+  const col1Label = dayColumnLabel(col1Date);
+  const col2Label = dayColumnLabel(col2Date);
+  const col1Events = events.filter(e => e.date === col1Date);
+  const col2Events = events.filter(e => e.date === col2Date);
+  const restEvents = events.filter(e => e.date > col2Date);
 
-  // Split events into day-view (today + tomorrow) and agenda (rest)
-  const todayEvents = events.filter(e => e.date === today);
-  const tomorrowEvents = events.filter(e => e.date === tomorrow);
-  const restEvents = events.filter(e => e.date > tomorrow);
+  // Max offset: don't go beyond available events
+  const lastDate = events.length > 0 ? events[events.length - 1].date : col2Date;
+  const maxOffset = Math.max(0, Math.floor((new Date(lastDate + 'T00:00:00') - new Date(todayStr() + 'T00:00:00')) / 86400000) - 1);
 
   let html = '<div class="header">' +
     '<span class="header-icon">&#128197;</span>' +
     '<span class="header-label">Perheen kalenteri</span>' +
+    '<span class="day-nav">' +
+    '<button class="nav-btn nav-prev' + (dayOffset === 0 ? ' disabled' : '') + '" onclick="navigateDays(-1)" aria-label="Edelliset päivät">&#9664;</button>' +
+    '<button class="nav-btn nav-next' + (dayOffset >= maxOffset ? ' disabled' : '') + '" onclick="navigateDays(1)" aria-label="Seuraavat päivät">&#9654;</button>' +
+    '</span>' +
     '</div>';
 
   // Day columns
   html += '<div class="day-columns">';
-  html += renderDayColumn(today, todayEvents, 'TÄNÄÄN', 'today');
-  html += renderDayColumn(tomorrow, tomorrowEvents, 'HUOMENNA', 'tomorrow');
+  html += renderDayColumn(col1Date, col1Events, col1Label.text, col1Label.cls);
+  html += renderDayColumn(col2Date, col2Events, col2Label.text, col2Label.cls);
   html += renderAgenda(restEvents);
   html += '</div>';
 
@@ -289,6 +313,11 @@ function render(data) {
 
   // Start now-line updates
   updateNowLine();
+}
+
+function navigateDays(delta) {
+  dayOffset = Math.max(0, dayOffset + delta);
+  if (lastData) render(lastData);
 }
 
 function updateNowLine() {
@@ -318,6 +347,7 @@ async function refresh() {
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     const data = await resp.json();
     lastData = data;
+    dayOffset = 0;
     render(data);
   } catch (e) {
     console.error('Calendar fetch error:', e);
