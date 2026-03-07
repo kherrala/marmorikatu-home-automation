@@ -121,23 +121,25 @@ async def fetch_pjhoy_events() -> list[dict]:
     async def _do_fetch(client: httpx.AsyncClient) -> list[dict]:
         # Step 1: Get session cookie
         await client.get(PJHOY_BASE_URL)
-        # Step 2: Login
+        # Step 2: Login (don't follow redirect — capture cookies from 302)
         login_resp = await client.post(
             f"{PJHOY_BASE_URL}/j_acegi_security_check?target=2",
             data={"j_username": PJHOY_USERNAME, "j_password": PJHOY_PASSWORD, "remember-me": "false"},
+            follow_redirects=False,
         )
-        login_url = str(login_resp.url)
-        if "login_error" in login_url:
-            raise RuntimeError(f"PJHOY login failed (redirected to {login_url})")
+        redirect_location = login_resp.headers.get("location", "")
+        if "login_error" in redirect_location:
+            raise RuntimeError(f"PJHOY login failed (redirect to {redirect_location})")
         # Step 3: Fetch services — construct full customer numbers from username prefix + suffixes
+        # Reference: Rust uses customerNumbers%5B%5D= (i.e. customerNumbers[]) repeated
+        parts = PJHOY_USERNAME.split("-")
+        prefix = f"{parts[0]}-{parts[1]}" if len(parts) >= 2 else PJHOY_USERNAME
         if PJHOY_CUSTOMER_NUMBERS:
-            # Username format: xx-yyyyyyy-zz; prefix is xx-yyyyyyy
-            prefix = "-".join(PJHOY_USERNAME.split("-")[:2])
             full_numbers = [f"{prefix}-{suffix}" for suffix in PJHOY_CUSTOMER_NUMBERS]
         else:
             full_numbers = [PJHOY_USERNAME]
-        params = {f"customerNumbers[{i}]": n for i, n in enumerate(full_numbers)}
-        resp = await client.get(f"{PJHOY_BASE_URL}/secure/get_services_by_customer_numbers.do", params=params)
+        qs = "&".join(f"customerNumbers%5B%5D={n}" for n in full_numbers)
+        resp = await client.get(f"{PJHOY_BASE_URL}/secure/get_services_by_customer_numbers.do?{qs}")
         resp.raise_for_status()
         ct = resp.headers.get("content-type", "")
         if "json" not in ct:
