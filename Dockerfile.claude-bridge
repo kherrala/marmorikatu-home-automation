@@ -3,8 +3,8 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Install system deps for faster-whisper (audio decoding)
-RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
+# Install system deps: ffmpeg for faster-whisper, tini for PID 1 signal/zombie handling
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg tini && rm -rf /var/lib/apt/lists/*
 
 # Install dependencies
 RUN pip install --no-cache-dir "numpy<2" && \
@@ -25,5 +25,6 @@ EXPOSE 3002
 HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:3002/health')" || exit 1
 
-# Run the bridge
+# Run the bridge under tini (reaps zombie child processes from ffmpeg/whisper)
+ENTRYPOINT ["tini", "--"]
 CMD ["python", "/app/claude_bridge.py"]

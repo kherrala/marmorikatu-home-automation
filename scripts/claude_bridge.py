@@ -534,4 +534,13 @@ app = Starlette(
 )
 
 if __name__ == "__main__":
+    import signal
+
+    def handle_signal(sig, frame):
+        log.info("Received signal %s, shutting down...", signal.Signals(sig).name)
+        raise SystemExit(0)
+
+    signal.signal(signal.SIGTERM, handle_signal)
+    signal.signal(signal.SIGINT, handle_signal)
+
     uvicorn.run(app, host="0.0.0.0", port=BRIDGE_PORT, log_level="info")
