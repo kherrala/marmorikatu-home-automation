@@ -210,6 +210,7 @@ See [docs/thermiq_register_map.md](docs/thermiq_register_map.md) for the complet
 | [docs/heatpump-efficiency.md](docs/heatpump-efficiency.md) | Heat pump COP and thermal power estimation |
 | [docs/thermiq_register_map.md](docs/thermiq_register_map.md) | ThermIQ-ROOM2 register definitions |
 | [docs/heating-optimizer.md](docs/heating-optimizer.md) | Price-aware heating control logic and configuration |
+| [docs/ai-avatar.md](docs/ai-avatar.md) | AI avatar agent, claude-bridge, model selection, voice I/O |
 | [docs/mcp-server.md](docs/mcp-server.md) | MCP server tools, endpoints, Claude Desktop setup |
 | [docs/development.md](docs/development.md) | Setup, SSH config, data management, troubleshooting |
 | [docs/backup-recovery.md](docs/backup-recovery.md) | Backup schedule and recovery procedures |
