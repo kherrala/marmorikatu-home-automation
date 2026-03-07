@@ -136,8 +136,11 @@ function renderAgenda(events) {
   }
 
   const dates = Object.keys(groups).sort();
-  let html = '<div class="agenda-section">';
-  html += '<div class="agenda-section-label">Tulossa</div>';
+  let html = '<div class="day-col">';
+  html += '<div class="day-col-header">';
+  html += '<span class="day-col-label other">TULOSSA</span>';
+  html += '</div>';
+  html += '<div class="agenda-section">';
   html += '<div class="agenda">';
 
   dates.forEach((dateStr, gi) => {
@@ -188,6 +191,7 @@ function renderAgenda(events) {
 
   html += '</div>'; // agenda
   html += '</div>'; // agenda-section
+  html += '</div>'; // day-col
   return html;
 }
 
@@ -226,10 +230,8 @@ function render(data) {
   html += '<div class="day-columns">';
   html += renderDayColumn(today, todayEvents, 'TÄNÄÄN', 'today');
   html += renderDayColumn(tomorrow, tomorrowEvents, 'HUOMENNA', 'tomorrow');
-  html += '</div>';
-
-  // Agenda for remaining days
   html += renderAgenda(restEvents);
+  html += '</div>';
 
   app.className = 'container';
   app.innerHTML = html;

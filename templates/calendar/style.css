@@ -74,11 +74,10 @@ body::after {
 
 .day-columns {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr 1fr 1fr;
   gap: 2vw;
-  flex-shrink: 0;
-  height: 68vh;
-  margin-bottom: 2vh;
+  flex: 1;
+  min-height: 0;
 }
 
 .day-col {
@@ -273,22 +272,14 @@ body::after {
   min-height: 0;
   overflow-y: auto;
   scrollbar-width: none;
+  padding: 0 1vw 1vh;
 }
 .agenda-section::-webkit-scrollbar { display: none; }
-
-.agenda-section-label {
-  font-size: 1.4vh;
-  font-weight: 600;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-  margin-bottom: 1vh;
-}
 
 .agenda {
   display: flex;
   flex-direction: column;
-  gap: 2vh;
+  gap: 1.5vh;
 }
 
 .agenda::-webkit-scrollbar { display: none; }
@@ -298,18 +289,18 @@ body::after {
 .day-header {
   display: flex;
   align-items: baseline;
-  gap: 1.5vw;
-  margin-bottom: 1vh;
-  padding-bottom: 0.8vh;
+  gap: 0.8vw;
+  margin-bottom: 0.8vh;
+  padding-bottom: 0.6vh;
   border-bottom: 1px solid rgba(255,255,255,0.06);
 }
 
 .day-label {
-  font-size: 1.4vh;
+  font-size: 1.2vh;
   font-weight: 600;
   letter-spacing: 0.15em;
   text-transform: uppercase;
-  padding: 0.3vh 0.8vw;
+  padding: 0.3vh 0.6vw;
   border-radius: 10vh;
 }
 
@@ -329,7 +320,7 @@ body::after {
 
 .day-name {
   font-family: 'DM Serif Display', serif;
-  font-size: 2.5vh;
+  font-size: 2vh;
   font-weight: 400;
   background: linear-gradient(180deg, #fff 20%, rgba(255,255,255,0.75) 100%);
   -webkit-background-clip: text;
@@ -338,7 +329,7 @@ body::after {
 }
 
 .day-date {
-  font-size: 1.8vh;
+  font-size: 1.5vh;
   font-weight: 300;
   color: var(--text-dim);
 }
@@ -352,13 +343,13 @@ body::after {
 .event-card {
   background: var(--glass);
   border: 1px solid var(--glass-border);
-  border-radius: 1.4vh;
-  padding: 1.2vh 1.5vw;
+  border-radius: 1.2vh;
+  padding: 0.8vh 1vw;
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
   display: flex;
   align-items: center;
-  gap: 1.5vw;
+  gap: 1vw;
   position: relative;
   overflow: hidden;
   animation: cardIn 0.5s cubic-bezier(0.22, 1, 0.36, 1) backwards;
@@ -377,13 +368,13 @@ body::after {
 }
 
 .event-time {
-  min-width: 5vw;
+  min-width: 3.5vw;
   text-align: right;
   flex-shrink: 0;
 }
 
 .event-time-text {
-  font-size: 2vh;
+  font-size: 1.7vh;
   font-weight: 500;
   color: var(--accent);
   font-variant-numeric: tabular-nums;
@@ -394,14 +385,14 @@ body::after {
 }
 
 .event-time-end {
-  font-size: 1.4vh;
+  font-size: 1.2vh;
   font-weight: 300;
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
 }
 
 .event-allday {
-  font-size: 1.3vh;
+  font-size: 1.1vh;
   font-weight: 600;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -434,7 +425,7 @@ body::after {
 
 .event-summary {
   font-family: 'DM Serif Display', serif;
-  font-size: 2vh;
+  font-size: 1.7vh;
   font-weight: 400;
   line-height: 1.25;
   color: var(--text);
@@ -448,7 +439,7 @@ body::after {
 }
 
 .event-location {
-  font-size: 1.4vh;
+  font-size: 1.2vh;
   font-weight: 300;
   color: var(--text-dim);
   margin-top: 0.2vh;
