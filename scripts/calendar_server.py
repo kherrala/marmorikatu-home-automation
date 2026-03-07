@@ -27,6 +27,7 @@ log = logging.getLogger("calendar")
 
 # -- Config -------------------------------------------------------------------
 ICAL_URL = os.environ.get("CALENDAR_ICAL_URL", "")
+SCHOOL_ICAL_URL = os.environ.get("CALENDAR_SCHOOL_ICAL_URL", "")
 CACHE_TTL = int(os.environ.get("CALENDAR_CACHE_TTL", "900"))
 PORT = int(os.environ.get("CALENDAR_PORT", "3022"))
 DAYS_AHEAD = int(os.environ.get("CALENDAR_DAYS_AHEAD", "90"))
@@ -263,36 +264,43 @@ def _parse_events(cal_text: str, days: int = 90) -> list[dict]:
     return events
 
 
-async def _fetch_ical_events() -> list[dict]:
-    """Fetch iCal feed and parse events."""
-    if not ICAL_URL:
-        log.warning("CALENDAR_ICAL_URL not set")
+async def _fetch_ical(url: str, event_type: str = "calendar") -> list[dict]:
+    """Fetch a single iCal feed and parse events."""
+    if not url:
         return []
     async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
-        resp = await client.get(ICAL_URL)
+        resp = await client.get(url)
         resp.raise_for_status()
-        return _parse_events(resp.text, days=90)
+        events = _parse_events(resp.text, days=90)
+        for ev in events:
+            ev["type"] = event_type
+        return events
 
 
 async def fetch_events() -> list[dict]:
-    """Fetch iCal + PJHOY events, merge, cache. Falls back to stale cache on error."""
+    """Fetch iCal + school + PJHOY events, merge, cache. Falls back to stale cache on error."""
     now = time.time()
     if _cache["events"] and (now - _cache["ts"]) < CACHE_TTL:
         return _cache["events"]
 
     try:
-        ical_events, pjhoy_events = await asyncio.gather(
-            _fetch_ical_events(),
+        results = await asyncio.gather(
+            _fetch_ical(ICAL_URL, "calendar"),
+            _fetch_ical(SCHOOL_ICAL_URL, "school"),
             fetch_pjhoy_events(),
             return_exceptions=True,
         )
+        ical_events, school_events, pjhoy_events = results
         if isinstance(ical_events, BaseException):
             log.error("iCal fetch failed: %s", ical_events)
             ical_events = []
+        if isinstance(school_events, BaseException):
+            log.error("School iCal fetch failed: %s", school_events)
+            school_events = []
         if isinstance(pjhoy_events, BaseException):
             log.error("PJHOY fetch failed: %s", pjhoy_events)
             pjhoy_events = []
-        events = ical_events + pjhoy_events
+        events = ical_events + school_events + pjhoy_events
         events.sort(key=lambda e: (e["date"], not e["allDay"], e["start"]))
     except Exception as e:
         log.error("Calendar fetch failed: %s", e)
@@ -303,9 +311,10 @@ async def fetch_events() -> list[dict]:
 
     _cache["events"] = events
     _cache["ts"] = now
-    log.info("Calendar refreshed — %d events (%d iCal, %d PJHOY)",
+    log.info("Calendar refreshed — %d events (%d iCal, %d school, %d PJHOY)",
              len(events),
              len(ical_events) if not isinstance(ical_events, BaseException) else 0,
+             len(school_events) if not isinstance(school_events, BaseException) else 0,
              len(pjhoy_events) if not isinstance(pjhoy_events, BaseException) else 0)
     return events
 

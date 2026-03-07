@@ -221,6 +221,7 @@ services:
       - calendar-cache:/app/cache
     environment:
       - CALENDAR_ICAL_URL
+      - CALENDAR_SCHOOL_ICAL_URL
       - CALENDAR_CACHE_TTL=900
       - CALENDAR_PORT=3022
       - PJHOY_USERNAME

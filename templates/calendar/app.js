@@ -75,6 +75,16 @@ function isGarbage(ev) {
   return ev.type === 'garbage';
 }
 
+function isSchool(ev) {
+  return ev.type === 'school';
+}
+
+function eventTypeClass(ev) {
+  if (isGarbage(ev)) return ' garbage';
+  if (isSchool(ev)) return ' school';
+  return '';
+}
+
 function timeToGridPercent(isoStr) {
   const d = new Date(isoStr);
   const hours = d.getHours() + d.getMinutes() / 60;
@@ -120,7 +130,7 @@ function renderDayColumn(dateStr, events, labelText, labelCls) {
   // All-day pills
   html += '<div class="allday-zone">';
   for (const ev of allDay) {
-    const gc = isGarbage(ev) ? ' garbage' : '';
+    const gc = eventTypeClass(ev);
     html += '<span class="allday-pill' + gc + '">' + ev.summary + '</span>';
   }
   html += '</div>';
@@ -144,7 +154,7 @@ function renderDayColumn(dateStr, events, labelText, labelCls) {
     const minH = 1.5 / 68 * 100; // ~1.5vh relative to grid
     if (height < minH) height = minH;
 
-    const gc = isGarbage(ev) ? ' garbage' : '';
+    const gc = eventTypeClass(ev);
     const overlap = ev.overlapIndex > 0 ? ' overlap-' + ev.overlapIndex : (timedWithOverlap.some(o => o !== ev && o.overlapIndex > 0 && o.start < ev.end && o.end > ev.start) ? ' overlap-0' : '');
 
     html += '<div class="grid-event' + gc + overlap + '" style="top:' + top + '%;height:' + height + '%">';
@@ -195,7 +205,7 @@ function renderAgenda(events) {
 
     html += '<div class="events-list">';
     groups[dateStr].forEach((ev, ei) => {
-      const gc = isGarbage(ev) ? ' garbage' : '';
+      const gc = eventTypeClass(ev);
       const isAllDay = ev.allDay;
       html += '<div class="event-card' + (isAllDay ? ' event-allday-card' : '') + gc + '" style="animation-delay:' + (gi * 0.08 + ei * 0.04) + 's">';
 

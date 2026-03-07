@@ -24,6 +24,11 @@
   --warm-border: rgba(230,81,0,0.15);
   --event-bg: rgba(41,121,255,0.08);
   --garbage-event-bg: rgba(85,139,47,0.08);
+  --school: #6a1b9a;
+  --school-dim: rgba(106,27,154,0.1);
+  --school-border: rgba(106,27,154,0.2);
+  --school-event-text: #4a148c;
+  --school-event-bg: rgba(106,27,154,0.08);
   --highlight: rgba(0,0,0,0.04);
   --spinner-border: rgba(0,0,0,0.08);
 }
@@ -52,6 +57,11 @@ html[data-theme="dark"] {
   --warm-border: rgba(255,183,77,0.2);
   --event-bg: rgba(100,181,246,0.12);
   --garbage-event-bg: rgba(139,195,74,0.12);
+  --school: #ce93d8;
+  --school-dim: rgba(206,147,216,0.15);
+  --school-border: rgba(206,147,216,0.25);
+  --school-event-text: #e1bee7;
+  --school-event-bg: rgba(206,147,216,0.12);
   --highlight: rgba(255,255,255,0.08);
   --spinner-border: rgba(255,255,255,0.08);
 }
@@ -206,6 +216,12 @@ body::after {
   border-color: var(--garbage-border);
 }
 
+.allday-pill.school {
+  background: var(--school-dim);
+  color: var(--school-event-text);
+  border-color: var(--school-border);
+}
+
 /* -- Time grid ------------------------------------------------------------- */
 
 .time-grid {
@@ -260,6 +276,11 @@ body::after {
   border-left-color: var(--garbage);
 }
 
+.grid-event.school {
+  background: var(--school-event-bg);
+  border-left-color: var(--school);
+}
+
 .grid-event-summary {
   font-size: 1.2vh;
   font-weight: 500;
@@ -268,6 +289,10 @@ body::after {
   overflow: hidden;
   text-overflow: ellipsis;
   line-height: 1.3;
+}
+
+.grid-event.school .grid-event-summary {
+  color: var(--school-event-text);
 }
 
 .grid-event.garbage .grid-event-summary {
@@ -400,6 +425,10 @@ body::after {
   border-color: var(--garbage-border);
 }
 
+.event-card.school {
+  border-color: var(--school-border);
+}
+
 .event-time {
   min-width: 3.5vw;
   text-align: right;
@@ -415,6 +444,10 @@ body::after {
 
 .event-card.garbage .event-time-text {
   color: var(--garbage-event-text);
+}
+
+.event-card.school .event-time-text {
+  color: var(--school-event-text);
 }
 
 .event-time-end {
@@ -436,6 +469,10 @@ body::after {
   color: var(--garbage-event-text);
 }
 
+.event-card.school .event-allday {
+  color: var(--school-event-text);
+}
+
 .event-divider {
   width: 3px;
   height: 100%;
@@ -454,6 +491,10 @@ body::after {
   background: var(--garbage);
 }
 
+.event-card.school .event-divider {
+  background: var(--school);
+}
+
 .event-details { flex: 1; min-width: 0; }
 
 .event-summary {
@@ -469,6 +510,10 @@ body::after {
 
 .event-card.garbage .event-summary {
   color: var(--garbage-event-text);
+}
+
+.event-card.school .event-summary {
+  color: var(--school-event-text);
 }
 
 .event-location {
