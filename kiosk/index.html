@@ -1351,9 +1351,7 @@
     // Native Web Speech API on Chrome/Edge; MediaRecorder + Whisper on Safari
 
     const NativeSpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    const isAppleBrowser = /iPad|iPhone|iPod/.test(navigator.userAgent)
-                        || (/Safari/.test(navigator.userAgent) && !/Chrome/.test(navigator.userAgent));
-    const useNativeSpeech = !!NativeSpeechRecognition && !isAppleBrowser;
+    const useNativeSpeech = !!NativeSpeechRecognition;
 
     let nativeRecognizer = null;
     let nativeSpeechTimer = null;

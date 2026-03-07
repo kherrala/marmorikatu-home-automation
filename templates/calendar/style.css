@@ -72,6 +72,7 @@ html, body {
   font-family: 'DM Sans', sans-serif;
   color: var(--text);
   background: var(--bg);
+  letter-spacing: 0.02em;
 }
 
 body::before {

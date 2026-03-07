@@ -214,7 +214,7 @@ NEWS_HTML = r"""<!DOCTYPE html>
     font-family: 'DM Sans', sans-serif;
     color: var(--text);
     background: var(--bg);
-    letter-spacing: 0.01em;
+    letter-spacing: 0.02em;
   }
 
   /* -- Noise overlay -------------------------------------------------------- */
@@ -335,7 +335,7 @@ NEWS_HTML = r"""<!DOCTYPE html>
     font-size: 6.5vh;
     font-weight: 400;
     line-height: 1.25;
-    letter-spacing: 0.02em;
+    letter-spacing: 0.03em;
     color: var(--text);
     z-index: 1;
   }
@@ -344,7 +344,7 @@ NEWS_HTML = r"""<!DOCTYPE html>
     font-size: 3vh;
     font-weight: 300;
     line-height: 1.65;
-    letter-spacing: 0.01em;
+    letter-spacing: 0.02em;
     color: var(--text-dim);
     z-index: 1;
     display: -webkit-box;
@@ -451,7 +451,7 @@ NEWS_HTML = r"""<!DOCTYPE html>
     font-size: 3.2vh;
     font-weight: 400;
     line-height: 1.35;
-    letter-spacing: 0.02em;
+    letter-spacing: 0.03em;
     color: var(--text);
     margin-bottom: 0.5vh;
   }
@@ -460,7 +460,7 @@ NEWS_HTML = r"""<!DOCTYPE html>
     font-size: 2.2vh;
     font-weight: 300;
     line-height: 1.5;
-    letter-spacing: 0.01em;
+    letter-spacing: 0.02em;
     color: var(--text-muted);
     display: -webkit-box;
     -webkit-line-clamp: 2;

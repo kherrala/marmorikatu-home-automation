@@ -176,6 +176,7 @@ WEATHER_HTML = r"""<!DOCTYPE html>
     color: var(--text);
     background: var(--bg-day);
     transition: background 2.5s ease;
+    letter-spacing: 0.02em;
   }
 
   .container {
