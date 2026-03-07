@@ -37,6 +37,7 @@ INFLUXDB_BUCKET = os.environ.get("INFLUXDB_BUCKET", "building_automation")
 WEATHER_API_URL = os.environ.get("WEATHER_API_URL", "http://weather:3020/api/weather")
 NEWS_API_URL = os.environ.get("NEWS_API_URL", "http://news:3021/api/news")
 BUS_API_URL = os.environ.get("BUS_API_URL", "http://host.docker.internal:3010/api/departures")
+CALENDAR_API_URL = os.environ.get("CALENDAR_API_URL", "http://calendar:3022/api/calendar")
 
 # Schema documentation
 SCHEMA = {
@@ -807,6 +808,21 @@ spot price + 0.49 c/kWh margin + 6.09 c/kWh transfer fee.""",
                         "type": "integer",
                         "description": "Maximum number of departures to return (default 5)",
                         "default": 5
+                    }
+                },
+                "required": []
+            }
+        ),
+        Tool(
+            name="get_calendar_events",
+            description="Get upcoming family calendar events. Returns event summaries, times, locations grouped by date.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "days": {
+                        "type": "integer",
+                        "description": "Number of days ahead to fetch (default 7, max 14)",
+                        "default": 7
                     }
                 },
                 "required": []
@@ -2467,6 +2483,48 @@ from(bucket: "{INFLUXDB_BUCKET}")
         except Exception as e:
             log.error("get_bus_departures error: %s\n%s", e, traceback.format_exc())
             return [TextContent(type="text", text=f"Error fetching bus departures: {str(e)}")]
+
+    elif name == "get_calendar_events":
+        try:
+            days = min(int(arguments.get("days", 7)), 14)
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.get(f"{CALENDAR_API_URL}?days={days}")
+                resp.raise_for_status()
+                data = resp.json()
+
+            events = data.get("events", [])
+
+            # Group by date for readable output
+            grouped: dict[str, list] = {}
+            for ev in events:
+                d = ev.get("date", "")
+                if d not in grouped:
+                    grouped[d] = []
+                grouped[d].append(ev)
+
+            result = []
+            for date_str in sorted(grouped.keys()):
+                day_events = []
+                for ev in grouped[date_str]:
+                    entry: dict[str, Any] = {"summary": ev.get("summary", "")}
+                    if ev.get("allDay"):
+                        entry["time"] = "koko päivä"
+                    else:
+                        start = ev.get("start", "")
+                        end = ev.get("end", "")
+                        if start:
+                            entry["start"] = start[11:16] if "T" in start else start
+                        if end:
+                            entry["end"] = end[11:16] if "T" in end else end
+                    if ev.get("location"):
+                        entry["location"] = ev["location"]
+                    day_events.append(entry)
+                result.append({"date": date_str, "events": day_events})
+
+            return [TextContent(type="text", text=json.dumps(result, indent=2, ensure_ascii=False, default=str))]
+        except Exception as e:
+            log.error("get_calendar_events error: %s\n%s", e, traceback.format_exc())
+            return [TextContent(type="text", text=f"Error fetching calendar: {str(e)}")]
 
     return [TextContent(type="text", text=f"Unknown tool: {name}")]
 

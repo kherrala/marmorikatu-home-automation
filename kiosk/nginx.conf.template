@@ -82,6 +82,12 @@ server {
         proxy_set_header Host $host;
     }
 
+    # Family calendar widget
+    location /calendar/ {
+        proxy_pass http://calendar:3022/;
+        proxy_set_header Host $host;
+    }
+
     # Nysse bus timetables SPA (same-origin proxy to avoid cross-origin issues)
     location /nysse/ {
         proxy_pass http://host.docker.internal:3010/;

@@ -139,6 +139,7 @@ services:
       - WEATHER_API_URL=http://weather:3020/api/weather
       - NEWS_API_URL=http://news:3021/api/news
       - BUS_API_URL=http://host.docker.internal:3010/api/departures
+      - CALENDAR_API_URL=http://calendar:3022/api/calendar
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
@@ -209,6 +210,17 @@ services:
       - WEATHER_LON=23.7610
       - WEATHER_CACHE_TTL=600
       - WEATHER_PORT=3020
+    restart: unless-stopped
+
+  calendar:
+    build:
+      context: .
+      dockerfile: Dockerfile.calendar
+    container_name: marmorikatu-calendar
+    environment:
+      - CALENDAR_ICAL_URL
+      - CALENDAR_CACHE_TTL=900
+      - CALENDAR_PORT=3022
     restart: unless-stopped
 
   kiosk:
