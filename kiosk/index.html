@@ -842,6 +842,27 @@
 
 
     // -- Start overlay: unlock camera + audio on iOS --------------------------
+    // Try to auto-activate if permissions were previously granted
+    async function tryAutoActivate() {
+      try {
+        const cam = await navigator.permissions.query({ name: 'camera' });
+        const mic = await navigator.permissions.query({ name: 'microphone' });
+        if (cam.state === 'granted' && mic.state === 'granted') {
+          setState(STATES.UNLOCKING);
+          const cameraOk = await initCameraSteps();
+          if (cameraOk) {
+            startOverlay.classList.add('hidden');
+            initSpeechRecognition();
+            return true;
+          }
+        }
+      } catch {}
+      return false;
+    }
+
+    // Auto-activate or show the small overlay prompt
+    tryAutoActivate();
+
     startOverlay.addEventListener('click', async function handleStart() {
       startOverlay.removeEventListener('click', handleStart);
       setState(STATES.UNLOCKING);
@@ -865,8 +886,8 @@
       } catch {}
 
       // Show progress
-      startLabel.textContent = 'Aktivoidaan kamera...';
-      startSublabel.textContent = 'Salli kameran ja mikrofonin käyttö';
+      startLabel.textContent = 'Aktivoidaan...';
+      startSublabel.textContent = '';
       initSpinner.classList.remove('hidden');
       startOverlay.style.cursor = 'default';
 
@@ -874,9 +895,6 @@
 
       if (cameraOk) {
         initSpinner.classList.add('hidden');
-        startLabel.textContent = 'Valmis!';
-        startSublabel.textContent = '';
-        await new Promise(r => setTimeout(r, 500));
         startOverlay.classList.add('hidden');
         initSpeechRecognition();
       } else {
