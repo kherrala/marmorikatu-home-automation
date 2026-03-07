@@ -217,10 +217,15 @@ services:
       context: .
       dockerfile: Dockerfile.calendar
     container_name: marmorikatu-calendar
+    volumes:
+      - calendar-cache:/app/cache
     environment:
       - CALENDAR_ICAL_URL
       - CALENDAR_CACHE_TTL=900
       - CALENDAR_PORT=3022
+      - PJHOY_USERNAME
+      - PJHOY_PASSWORD
+      - PJHOY_CUSTOMER_NUMBERS
     restart: unless-stopped
 
   kiosk:
@@ -327,3 +332,4 @@ volumes:
   influxdb-data:
   influxdb-config:
   grafana-data:
+  calendar-cache:

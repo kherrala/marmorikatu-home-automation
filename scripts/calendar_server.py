@@ -1,13 +1,17 @@
 """
 Family calendar widget server for kiosk carousel.
-Fetches events from a public Google Calendar iCal feed, expands recurring events,
-caches in memory, serves a fullscreen styled calendar agenda page.
+Fetches events from a public Google Calendar iCal feed and PJHOY garbage collection
+schedule, expands recurring events, caches in memory, serves a fullscreen styled
+calendar agenda page.
 """
 
+import asyncio
+import json as json_mod
 import logging
 import os
 import time
 from datetime import date, datetime, timedelta
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import httpx
@@ -25,16 +29,173 @@ log = logging.getLogger("calendar")
 ICAL_URL = os.environ.get("CALENDAR_ICAL_URL", "")
 CACHE_TTL = int(os.environ.get("CALENDAR_CACHE_TTL", "900"))
 PORT = int(os.environ.get("CALENDAR_PORT", "3022"))
-DAYS_AHEAD = int(os.environ.get("CALENDAR_DAYS_AHEAD", "7"))
+DAYS_AHEAD = int(os.environ.get("CALENDAR_DAYS_AHEAD", "90"))
 TZ = ZoneInfo("Europe/Helsinki")
 
 WEEKDAYS_FI = ["maanantai", "tiistai", "keskiviikko", "torstai", "perjantai", "lauantai", "sunnuntai"]
 
+# -- PJHOY config ------------------------------------------------------------
+PJHOY_USERNAME = os.environ.get("PJHOY_USERNAME", "")
+PJHOY_PASSWORD = os.environ.get("PJHOY_PASSWORD", "")
+PJHOY_CUSTOMER_NUMBERS = [n for n in os.environ.get("PJHOY_CUSTOMER_NUMBERS", "").split(",") if n]
+PJHOY_CACHE_FILE = Path(os.environ.get("PJHOY_CACHE_FILE", "/app/cache/pjhoy.json"))
+PJHOY_CACHE_TTL = 86400  # 24 hours
+PJHOY_BASE_URL = "https://extranet.pjhoy.fi/pirkka"
+PJHOY_DAYS = 90
+
+PRODUCT_GROUPS: dict[str, str] = {
+    "SEK": "\U0001f5d1\ufe0f Sekajäte",
+    "BIO": "\U0001f343 Biojäte",
+    "KK": "\U0001f4e6 Kartonki",
+    "MU": "\U0001f504 Muovi",
+    "PP": "\U0001f4c4 Paperi",
+    "ME": "\U0001f527 Metalli",
+    "LA": "\U0001f943 Lasi",
+    "VU": "\u2623\ufe0f Vaarallinen jäte",
+}
+
 # -- Cache --------------------------------------------------------------------
 _cache: dict = {"events": None, "ts": 0}
+_pjhoy_cache: dict = {"events": None, "ts": 0}
 
 
-def _parse_events(cal_text: str, days: int = 14) -> list[dict]:
+def _load_pjhoy_disk_cache() -> list[dict] | None:
+    """Load PJHOY cache from disk if it exists."""
+    try:
+        if PJHOY_CACHE_FILE.exists():
+            data = json_mod.loads(PJHOY_CACHE_FILE.read_text())
+            age = time.time() - data.get("ts", 0)
+            events = data.get("events", [])
+            if age < PJHOY_CACHE_TTL:
+                _pjhoy_cache["events"] = events
+                _pjhoy_cache["ts"] = data["ts"]
+                log.info("PJHOY loaded from disk cache (%d events, %.0fh old)", len(events), age / 3600)
+            return events
+    except Exception as e:
+        log.warning("PJHOY disk cache load failed: %s", e)
+    return None
+
+
+def _save_pjhoy_disk_cache(events: list[dict]) -> None:
+    """Persist PJHOY events to disk."""
+    try:
+        PJHOY_CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        PJHOY_CACHE_FILE.write_text(json_mod.dumps({"events": events, "ts": time.time()}))
+    except Exception as e:
+        log.warning("PJHOY disk cache save failed: %s", e)
+
+
+def _extrapolate_dates(next_date: date, interval_weeks: int, days: int = PJHOY_DAYS) -> list[date]:
+    """Generate all pickup dates within a window from next_date (forward and backward)."""
+    today = date.today()
+    window_start = today
+    window_end = today + timedelta(days=days)
+    interval = timedelta(weeks=interval_weeks)
+    dates = []
+
+    # Forward from next_date
+    d = next_date
+    while d <= window_end:
+        if d >= window_start:
+            dates.append(d)
+        d += interval
+
+    # Backward from next_date
+    d = next_date - interval
+    while d >= window_start:
+        dates.append(d)
+        d -= interval
+
+    return sorted(set(dates))
+
+
+async def fetch_pjhoy_events() -> list[dict]:
+    """Fetch garbage collection schedule from PJHOY extranet."""
+    now = time.time()
+    if _pjhoy_cache["events"] is not None and (now - _pjhoy_cache["ts"]) < PJHOY_CACHE_TTL:
+        return _pjhoy_cache["events"]
+
+    if not PJHOY_USERNAME:
+        return []
+
+    async def _do_fetch(client: httpx.AsyncClient) -> list[dict]:
+        # Step 1: Get session cookie
+        await client.get(PJHOY_BASE_URL)
+        # Step 2: Login
+        await client.post(
+            f"{PJHOY_BASE_URL}/j_acegi_security_check?target=2",
+            data={"j_username": PJHOY_USERNAME, "j_password": PJHOY_PASSWORD, "remember-me": "false"},
+        )
+        # Step 3: Fetch services
+        params = {f"customerNumbers[{i}]": n for i, n in enumerate(PJHOY_CUSTOMER_NUMBERS)}
+        if not params:
+            # Derive customer number from username (xx-yyyyyyy-zz format)
+            params = {"customerNumbers[]": PJHOY_USERNAME}
+        resp = await client.get(f"{PJHOY_BASE_URL}/secure/get_services_by_customer_numbers.do", params=params)
+        resp.raise_for_status()
+        ct = resp.headers.get("content-type", "")
+        if "json" not in ct:
+            raise ValueError(f"Expected JSON, got {ct} — session may have expired")
+        return resp.json()
+
+    try:
+        async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
+            try:
+                services = await _do_fetch(client)
+            except ValueError:
+                log.info("PJHOY session expired, retrying login")
+                services = await _do_fetch(client)
+    except Exception as e:
+        log.error("PJHOY fetch failed: %s", e)
+        if _pjhoy_cache["events"] is not None:
+            log.info("Returning stale PJHOY cache")
+            return _pjhoy_cache["events"]
+        # Try disk cache as last resort
+        disk = _load_pjhoy_disk_cache()
+        return disk if disk else []
+
+    events = []
+    for svc in services:
+        next_date_str = svc.get("ASTNextDate")
+        if not next_date_str:
+            continue
+        try:
+            next_date = date.fromisoformat(next_date_str)
+        except ValueError:
+            continue
+        interval_str = svc.get("ASTVali", "")
+        try:
+            interval_weeks = int(interval_str)
+        except (ValueError, TypeError):
+            interval_weeks = 0
+        if interval_weeks <= 0:
+            interval_weeks = 4  # default fallback
+
+        pg = svc.get("tariff", {}).get("productgroup", "")
+        summary = PRODUCT_GROUPS.get(pg, f"\U0001f5d1\ufe0f {svc.get('ASTNimi', 'Jätehuolto')}")
+
+        for d in _extrapolate_dates(next_date, interval_weeks):
+            events.append({
+                "summary": summary,
+                "start": d.isoformat(),
+                "end": "",
+                "allDay": True,
+                "location": "",
+                "date": d.isoformat(),
+            })
+
+    _pjhoy_cache["events"] = events
+    _pjhoy_cache["ts"] = time.time()
+    _save_pjhoy_disk_cache(events)
+    log.info("PJHOY refreshed — %d events from %d services", len(events), len(services))
+    return events
+
+
+# Load disk cache on import
+_load_pjhoy_disk_cache()
+
+
+def _parse_events(cal_text: str, days: int = 90) -> list[dict]:
     """Parse iCal text and expand recurring events for the next N days."""
     cal = icalendar.Calendar.from_ical(cal_text)
     now = datetime.now(TZ)
@@ -90,21 +251,37 @@ def _parse_events(cal_text: str, days: int = 14) -> list[dict]:
     return events
 
 
+async def _fetch_ical_events() -> list[dict]:
+    """Fetch iCal feed and parse events."""
+    if not ICAL_URL:
+        log.warning("CALENDAR_ICAL_URL not set")
+        return []
+    async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
+        resp = await client.get(ICAL_URL)
+        resp.raise_for_status()
+        return _parse_events(resp.text, days=90)
+
+
 async def fetch_events() -> list[dict]:
-    """Fetch iCal feed, parse, cache. Falls back to stale cache on error."""
+    """Fetch iCal + PJHOY events, merge, cache. Falls back to stale cache on error."""
     now = time.time()
     if _cache["events"] and (now - _cache["ts"]) < CACHE_TTL:
         return _cache["events"]
 
-    if not ICAL_URL:
-        log.warning("CALENDAR_ICAL_URL not set")
-        return []
-
     try:
-        async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
-            resp = await client.get(ICAL_URL)
-            resp.raise_for_status()
-            events = _parse_events(resp.text, days=14)
+        ical_events, pjhoy_events = await asyncio.gather(
+            _fetch_ical_events(),
+            fetch_pjhoy_events(),
+            return_exceptions=True,
+        )
+        if isinstance(ical_events, BaseException):
+            log.error("iCal fetch failed: %s", ical_events)
+            ical_events = []
+        if isinstance(pjhoy_events, BaseException):
+            log.error("PJHOY fetch failed: %s", pjhoy_events)
+            pjhoy_events = []
+        events = ical_events + pjhoy_events
+        events.sort(key=lambda e: (e["date"], not e["allDay"], e["start"]))
     except Exception as e:
         log.error("Calendar fetch failed: %s", e)
         if _cache["events"]:
@@ -114,7 +291,10 @@ async def fetch_events() -> list[dict]:
 
     _cache["events"] = events
     _cache["ts"] = now
-    log.info("Calendar refreshed — %d events", len(events))
+    log.info("Calendar refreshed — %d events (%d iCal, %d PJHOY)",
+             len(events),
+             len(ical_events) if not isinstance(ical_events, BaseException) else 0,
+             len(pjhoy_events) if not isinstance(pjhoy_events, BaseException) else 0)
     return events
 
 
@@ -129,7 +309,7 @@ def _filter_events(events: list[dict], days: int) -> list[dict]:
 # -- Endpoints ----------------------------------------------------------------
 async def api_calendar(request: Request):
     days = int(request.query_params.get("days", str(DAYS_AHEAD)))
-    days = max(1, min(days, 14))
+    days = max(1, min(days, 90))
     events = await fetch_events()
     filtered = _filter_events(events, days)
     return JSONResponse({

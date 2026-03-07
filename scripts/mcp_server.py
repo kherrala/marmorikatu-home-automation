@@ -815,14 +815,14 @@ spot price + 0.49 c/kWh margin + 6.09 c/kWh transfer fee.""",
         ),
         Tool(
             name="get_calendar_events",
-            description="Get upcoming family calendar events. Returns event summaries, times, locations grouped by date.",
+            description="Get upcoming family calendar events and garbage collection schedule. Returns event summaries, times, locations grouped by date.",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "days": {
                         "type": "integer",
-                        "description": "Number of days ahead to fetch (default 7, max 14)",
-                        "default": 7
+                        "description": "Number of days ahead to fetch (default 90, max 90)",
+                        "default": 90
                     }
                 },
                 "required": []
@@ -2486,7 +2486,7 @@ from(bucket: "{INFLUXDB_BUCKET}")
 
     elif name == "get_calendar_events":
         try:
-            days = min(int(arguments.get("days", 7)), 14)
+            days = min(int(arguments.get("days", 90)), 90)
             async with httpx.AsyncClient(timeout=10) as client:
                 resp = await client.get(f"{CALENDAR_API_URL}?days={days}")
                 resp.raise_for_status()
