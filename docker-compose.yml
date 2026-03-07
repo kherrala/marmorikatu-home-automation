@@ -80,8 +80,6 @@ services:
       influxdb:
         condition: service_healthy
     restart: unless-stopped
-    profiles:
-      - sync
 
   ruuvi:
     build:

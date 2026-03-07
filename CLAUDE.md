@@ -9,11 +9,8 @@ Building automation data collection and visualization system. Collects data from
 ## Common Commands
 
 ```bash
-# Start all services
+# Start all services (requires SSH key in ./ssh/wago_sync for sync service)
 docker compose up -d
-
-# Start with WAGO sync service (requires SSH key in ./ssh/wago_sync)
-docker compose --profile sync up -d
 
 # Restart Grafana after dashboard JSON changes
 docker compose restart grafana
