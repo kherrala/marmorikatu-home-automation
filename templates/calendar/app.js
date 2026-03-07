@@ -325,13 +325,17 @@ function renderGarbageCountdown(allEvents) {
     else if (daysLeft === 1) countText = 'Huomenna';
     else countText = daysLeft + ' pv';
 
+    // Extract emoji icon (first grapheme cluster)
+    var icon = '';
+    var label = ev.summary;
+    var match = ev.summary.match(/^(\p{Emoji_Presentation}|\p{Emoji}\uFE0F?)/u);
+    if (match && match[0]) { icon = match[0]; label = ev.summary.substring(match[0].length).trim(); }
+
     html += '<div class="gc-card gc-' + urgency + '" style="animation-delay:' + (i * 0.06) + 's">';
-    html += '<div class="gc-icon-wrap"><span class="gc-icon">' + ev.summary.charAt(0) + ev.summary.charAt(1) + '</span></div>';
-    html += '<div class="gc-info">';
-    html += '<div class="gc-category">' + ev.summary.substring(3) + '</div>';
+    html += '<div class="gc-icon-wrap">' + icon + '</div>';
+    html += '<div class="gc-category">' + label + '</div>';
+    html += '<div class="gc-days">' + countText + '</div>';
     html += '<div class="gc-date">' + dateLabel + '</div>';
-    html += '</div>';
-    html += '<div class="gc-countdown"><span class="gc-days">' + countText + '</span></div>';
     html += '</div>';
   });
 

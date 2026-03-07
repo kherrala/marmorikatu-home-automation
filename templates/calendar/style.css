@@ -375,7 +375,7 @@ body::after {
 
 .garbage-countdown {
   flex-shrink: 0;
-  padding: 1.2vh 1.2vw;
+  padding: 1.5vh 1.2vw;
   border-bottom: 1px solid var(--border-subtle);
 }
 
@@ -385,22 +385,26 @@ body::after {
   letter-spacing: 0.15em;
   text-transform: uppercase;
   color: var(--text-muted);
-  margin-bottom: 1vh;
+  margin-bottom: 1.2vh;
 }
 
 .gc-grid {
   display: flex;
-  flex-direction: column;
-  gap: 0.6vh;
+  flex-wrap: wrap;
+  gap: 1vh 1vw;
 }
 
 .gc-card {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 1vw;
-  padding: 0.8vh 0.8vw;
-  border-radius: 1.2vh;
+  text-align: center;
+  gap: 0.4vh;
+  padding: 1vh 1vw;
+  border-radius: 1.5vh;
   background: var(--highlight);
+  flex: 1 1 0;
+  min-width: 0;
   animation: fadeIn 0.5s cubic-bezier(0.22, 1, 0.36, 1) backwards;
 }
 
@@ -413,42 +417,28 @@ body::after {
 }
 
 .gc-icon-wrap {
-  width: 4vh;
-  height: 4vh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 2.2vh;
-  flex-shrink: 0;
-}
-
-.gc-info {
-  flex: 1;
-  min-width: 0;
+  font-size: 4.5vh;
+  line-height: 1;
 }
 
 .gc-category {
-  font-size: 1.8vh;
+  font-size: 1.6vh;
   font-weight: 500;
   color: var(--text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  max-width: 100%;
 }
 
 .gc-date {
-  font-size: 1.5vh;
+  font-size: 1.4vh;
   color: var(--text-muted);
-}
-
-.gc-countdown {
-  flex-shrink: 0;
-  text-align: right;
 }
 
 .gc-days {
   font-family: 'DM Serif Display', serif;
-  font-size: 2.2vh;
+  font-size: 2.4vh;
   font-weight: 400;
   color: var(--text-dim);
 }
