@@ -307,7 +307,7 @@ function render(data) {
   const col2Label = dayColumnLabel(col2Date);
   const col1Events = events.filter(e => e.date === col1Date);
   const col2Events = events.filter(e => e.date === col2Date);
-  const restEvents = events.filter(e => e.date > col2Date);
+  const restEvents = events.filter(e => e.date > col2Date && !isSchool(e));
 
   // Max offset: don't go beyond available events
   const lastDate = events.length > 0 ? events[events.length - 1].date : col2Date;
