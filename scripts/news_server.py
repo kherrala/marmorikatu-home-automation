@@ -169,6 +169,43 @@ NEWS_HTML = r"""<!DOCTYPE html>
     --accent: #2979ff;
     --accent-warm: #e65100;
     --pirkanmaa: #2e7d32;
+    --noise-opacity: 0.3;
+    --vignette: radial-gradient(ellipse at center, transparent 50%, rgba(0,0,0,0.04) 100%);
+    --border-subtle: rgba(0,0,0,0.06);
+    --accent-bg: rgba(41,121,255,0.08);
+    --accent-border: rgba(41,121,255,0.15);
+    --secondary-bg: rgba(46,125,50,0.08);
+    --secondary-border: rgba(46,125,50,0.15);
+    --featured-gradient: linear-gradient(135deg, rgba(41,121,255,0.04) 0%, transparent 40%, rgba(230,81,0,0.03) 100%);
+    --highlight: rgba(0,0,0,0.06);
+    --headline-border: rgba(0,0,0,0.05);
+    --scroll-fade: rgba(240,242,245,0.95);
+    --spinner-border: rgba(0,0,0,0.08);
+  }
+
+  html[data-theme="dark"] {
+    --bg: linear-gradient(160deg, #0a0f1e 0%, #121a30 35%, #1a2540 65%, #1e2d48 100%);
+    --glass: rgba(255,255,255,0.05);
+    --glass-border: rgba(255,255,255,0.08);
+    --glass-hover: rgba(255,255,255,0.09);
+    --text: #edf2f7;
+    --text-dim: rgba(237,242,247,0.6);
+    --text-muted: rgba(237,242,247,0.35);
+    --accent: #64b5f6;
+    --accent-warm: #ffb74d;
+    --pirkanmaa: #81c784;
+    --noise-opacity: 0.5;
+    --vignette: radial-gradient(ellipse at center, transparent 50%, rgba(0,0,0,0.35) 100%);
+    --border-subtle: rgba(255,255,255,0.05);
+    --accent-bg: rgba(100,181,246,0.12);
+    --accent-border: rgba(100,181,246,0.2);
+    --secondary-bg: rgba(129,199,132,0.12);
+    --secondary-border: rgba(129,199,132,0.2);
+    --featured-gradient: linear-gradient(135deg, rgba(100,181,246,0.06) 0%, transparent 40%, rgba(255,183,77,0.04) 100%);
+    --highlight: rgba(255,255,255,0.12);
+    --headline-border: rgba(255,255,255,0.04);
+    --scroll-fade: rgba(10,15,30,0.9);
+    --spinner-border: rgba(255,255,255,0.08);
   }
 
   html, body {
@@ -186,7 +223,7 @@ NEWS_HTML = r"""<!DOCTYPE html>
     z-index: 0;
     background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
     background-size: 200px;
-    opacity: 0.3;
+    opacity: var(--noise-opacity);
     pointer-events: none;
   }
 
@@ -195,7 +232,7 @@ NEWS_HTML = r"""<!DOCTYPE html>
     content: '';
     position: fixed; inset: 0;
     z-index: 0;
-    background: radial-gradient(ellipse at center, transparent 50%, rgba(0,0,0,0.04) 100%);
+    background: var(--vignette);
     pointer-events: none;
   }
 
@@ -256,7 +293,7 @@ NEWS_HTML = r"""<!DOCTYPE html>
     position: absolute;
     top: 0; left: 0; right: 0;
     height: 1px;
-    background: linear-gradient(90deg, transparent, rgba(0,0,0,0.06) 30%, rgba(0,0,0,0.06) 70%, transparent);
+    background: linear-gradient(90deg, transparent, var(--highlight) 30%, var(--highlight) 70%, transparent);
   }
 
   /* Decorative gradient accent */
@@ -265,7 +302,7 @@ NEWS_HTML = r"""<!DOCTYPE html>
     position: absolute;
     top: 0; left: 0;
     width: 100%; height: 100%;
-    background: linear-gradient(135deg, rgba(41,121,255,0.04) 0%, transparent 40%, rgba(230,81,0,0.03) 100%);
+    background: var(--featured-gradient);
     pointer-events: none;
   }
 
@@ -274,8 +311,8 @@ NEWS_HTML = r"""<!DOCTYPE html>
     align-items: center;
     gap: 0.5vw;
     padding: 0.8vh 1.4vw;
-    background: rgba(41,121,255,0.08);
-    border: 1px solid rgba(41,121,255,0.15);
+    background: var(--accent-bg);
+    border: 1px solid var(--accent-border);
     border-radius: 10vh;
     font-size: 2vh;
     font-weight: 600;
@@ -287,8 +324,8 @@ NEWS_HTML = r"""<!DOCTYPE html>
   }
 
   .featured-source.pirkanmaa {
-    background: rgba(46,125,50,0.08);
-    border-color: rgba(46,125,50,0.15);
+    background: var(--secondary-bg);
+    border-color: var(--secondary-border);
     color: var(--pirkanmaa);
   }
 
@@ -337,7 +374,7 @@ NEWS_HTML = r"""<!DOCTYPE html>
     color: var(--text-muted);
     margin-bottom: 2vh;
     padding-bottom: 1vh;
-    border-bottom: 1px solid rgba(0,0,0,0.06);
+    border-bottom: 1px solid var(--border-subtle);
     flex-shrink: 0;
   }
 
@@ -372,7 +409,7 @@ NEWS_HTML = r"""<!DOCTYPE html>
   }
 
   .headline-item:not(:last-child) {
-    border-bottom: 1px solid rgba(0,0,0,0.05);
+    border-bottom: 1px solid var(--headline-border);
   }
 
   .headline-meta {
@@ -392,12 +429,12 @@ NEWS_HTML = r"""<!DOCTYPE html>
   }
 
   .headline-source.uutiset {
-    background: rgba(41,121,255,0.08);
+    background: var(--accent-bg);
     color: var(--accent);
   }
 
   .headline-source.pirkanmaa {
-    background: rgba(46,125,50,0.08);
+    background: var(--secondary-bg);
     color: var(--pirkanmaa);
   }
 
@@ -439,11 +476,11 @@ NEWS_HTML = r"""<!DOCTYPE html>
   }
   .headlines-scroll::before {
     top: 0;
-    background: linear-gradient(to bottom, rgba(240,242,245,0.95), transparent);
+    background: linear-gradient(to bottom, var(--scroll-fade), transparent);
   }
   .headlines-scroll::after {
     bottom: 0;
-    background: linear-gradient(to top, rgba(240,242,245,0.95), transparent);
+    background: linear-gradient(to top, var(--scroll-fade), transparent);
   }
 
   /* -- Stagger fade-in ------------------------------------------------------ */
@@ -482,7 +519,7 @@ NEWS_HTML = r"""<!DOCTYPE html>
   }
   .loading-spinner {
     width: 3.5vh; height: 3.5vh;
-    border: 2px solid rgba(0,0,0,0.08);
+    border: 2px solid var(--spinner-border);
     border-top-color: var(--accent);
     border-radius: 50%;
     animation: spin 0.9s linear infinite;
@@ -512,6 +549,42 @@ NEWS_HTML = r"""<!DOCTYPE html>
 <div class="update-time" id="update-time"></div>
 
 <script>
+// == Sunrise/sunset theme switcher (Tampere 61.50N, 23.76E) ==
+(function initTheme() {
+  var LAT = 61.4978, LNG = 23.7610;
+  var D2R = Math.PI / 180, R2D = 180 / Math.PI;
+  function getSunHour(doy, rising) {
+    var lngH = LNG / 15;
+    var t = doy + ((rising ? 6 : 18) - lngH) / 24;
+    var M = 0.9856 * t - 3.289;
+    var L = ((M + 1.916 * Math.sin(M * D2R) + 0.020 * Math.sin(2 * M * D2R) + 282.634) % 360 + 360) % 360;
+    var RA = ((R2D * Math.atan(0.91764 * Math.tan(L * D2R))) % 360 + 360) % 360;
+    RA += Math.floor(L / 90) * 90 - Math.floor(RA / 90) * 90;
+    RA /= 15;
+    var sinDec = 0.39782 * Math.sin(L * D2R);
+    var cosDec = Math.cos(Math.asin(sinDec));
+    var cosH = (Math.cos(90.833 * D2R) - sinDec * Math.sin(LAT * D2R)) / (cosDec * Math.cos(LAT * D2R));
+    if (cosH > 1) return rising ? 99 : -99;
+    if (cosH < -1) return rising ? -99 : 99;
+    var H = R2D * Math.acos(cosH);
+    if (rising) H = 360 - H;
+    H /= 15;
+    var ut = ((H + RA - 0.06571 * t - 6.622 - lngH) % 24 + 24) % 24;
+    return ut + (-new Date().getTimezoneOffset() / 60);
+  }
+  function updateTheme() {
+    var now = new Date();
+    var start = new Date(now.getFullYear(), 0, 1);
+    var doy = Math.floor((now - start) / 86400000) + 1;
+    var sunrise = getSunHour(doy, true);
+    var sunset = getSunHour(doy, false);
+    var h = now.getHours() + now.getMinutes() / 60;
+    document.documentElement.setAttribute('data-theme', (h < sunrise || h >= sunset) ? 'dark' : 'light');
+  }
+  updateTheme();
+  setInterval(updateTheme, 60000);
+})();
+
 // == Relative time in Finnish ==
 function relativeTime(isoStr) {
   if (!isoStr) return '';

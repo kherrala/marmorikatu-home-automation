@@ -15,6 +15,45 @@
   --garbage-dim: rgba(85,139,47,0.1);
   --garbage-border: rgba(85,139,47,0.2);
   --garbage-event-text: #33691e;
+  --noise-opacity: 0.3;
+  --vignette: radial-gradient(ellipse at center, transparent 50%, rgba(0,0,0,0.04) 100%);
+  --border-subtle: rgba(0,0,0,0.06);
+  --today-bg: rgba(46,125,50,0.1);
+  --tomorrow-bg: rgba(21,101,192,0.08);
+  --warm-bg: rgba(230,81,0,0.08);
+  --warm-border: rgba(230,81,0,0.15);
+  --event-bg: rgba(41,121,255,0.08);
+  --garbage-event-bg: rgba(85,139,47,0.08);
+  --highlight: rgba(0,0,0,0.04);
+  --spinner-border: rgba(0,0,0,0.08);
+}
+
+html[data-theme="dark"] {
+  --bg: linear-gradient(160deg, #0a0f1e 0%, #121a30 35%, #1a2540 65%, #1e2d48 100%);
+  --glass: rgba(255,255,255,0.05);
+  --glass-border: rgba(255,255,255,0.08);
+  --text: #edf2f7;
+  --text-dim: rgba(237,242,247,0.75);
+  --text-muted: rgba(237,242,247,0.5);
+  --accent: #64b5f6;
+  --accent-warm: #ffb74d;
+  --today: #81c784;
+  --tomorrow: #64b5f6;
+  --garbage: #8bc34a;
+  --garbage-dim: rgba(139,195,74,0.15);
+  --garbage-border: rgba(139,195,74,0.25);
+  --garbage-event-text: #aed581;
+  --noise-opacity: 0.5;
+  --vignette: radial-gradient(ellipse at center, transparent 50%, rgba(0,0,0,0.35) 100%);
+  --border-subtle: rgba(255,255,255,0.06);
+  --today-bg: rgba(129,199,132,0.15);
+  --tomorrow-bg: rgba(100,181,246,0.12);
+  --warm-bg: rgba(255,183,77,0.15);
+  --warm-border: rgba(255,183,77,0.2);
+  --event-bg: rgba(100,181,246,0.12);
+  --garbage-event-bg: rgba(139,195,74,0.12);
+  --highlight: rgba(255,255,255,0.08);
+  --spinner-border: rgba(255,255,255,0.08);
 }
 
 html, body {
@@ -31,7 +70,7 @@ body::before {
   z-index: 0;
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
   background-size: 200px;
-  opacity: 0.3;
+  opacity: var(--noise-opacity);
   pointer-events: none;
 }
 
@@ -39,7 +78,7 @@ body::after {
   content: '';
   position: fixed; inset: 0;
   z-index: 0;
-  background: radial-gradient(ellipse at center, transparent 50%, rgba(0,0,0,0.04) 100%);
+  background: var(--vignette);
   pointer-events: none;
 }
 
@@ -96,7 +135,7 @@ body::after {
   align-items: baseline;
   gap: 1vw;
   padding: 1.5vh 1.5vw;
-  border-bottom: 1px solid rgba(0,0,0,0.06);
+  border-bottom: 1px solid var(--border-subtle);
   flex-shrink: 0;
 }
 
@@ -110,12 +149,12 @@ body::after {
 }
 
 .day-col-label.today {
-  background: rgba(46,125,50,0.1);
+  background: var(--today-bg);
   color: var(--today);
 }
 
 .day-col-label.tomorrow {
-  background: rgba(21,101,192,0.08);
+  background: var(--tomorrow-bg);
   color: var(--tomorrow);
 }
 
@@ -152,9 +191,9 @@ body::after {
   font-weight: 500;
   padding: 0.4vh 0.8vw;
   border-radius: 10vh;
-  background: rgba(230,81,0,0.08);
+  background: var(--warm-bg);
   color: var(--accent-warm);
-  border: 1px solid rgba(230,81,0,0.15);
+  border: 1px solid var(--warm-border);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -178,7 +217,7 @@ body::after {
 .hour-row {
   position: absolute;
   left: 0; right: 0;
-  border-top: 1px solid rgba(0,0,0,0.06);
+  border-top: 1px solid var(--border-subtle);
   pointer-events: none;
 }
 
@@ -197,7 +236,7 @@ body::after {
   position: absolute;
   left: 3.5vw;
   right: 0.5vw;
-  background: rgba(41,121,255,0.08);
+  background: var(--event-bg);
   border-left: 3px solid var(--accent);
   border-radius: 0.6vh;
   padding: 0.3vh 0.6vw;
@@ -217,7 +256,7 @@ body::after {
 }
 
 .grid-event.garbage {
-  background: rgba(85,139,47,0.08);
+  background: var(--garbage-event-bg);
   border-left-color: var(--garbage);
 }
 
@@ -289,7 +328,7 @@ body::after {
   gap: 0.8vw;
   margin-bottom: 0.8vh;
   padding-bottom: 0.6vh;
-  border-bottom: 1px solid rgba(0,0,0,0.06);
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .day-label {
@@ -302,12 +341,12 @@ body::after {
 }
 
 .day-label.today {
-  background: rgba(46,125,50,0.1);
+  background: var(--today-bg);
   color: var(--today);
 }
 
 .day-label.tomorrow {
-  background: rgba(21,101,192,0.08);
+  background: var(--tomorrow-bg);
   color: var(--tomorrow);
 }
 
@@ -354,7 +393,7 @@ body::after {
   position: absolute;
   top: 0; left: 0; right: 0;
   height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(0,0,0,0.04) 30%, rgba(0,0,0,0.04) 70%, transparent);
+  background: linear-gradient(90deg, transparent, var(--highlight) 30%, var(--highlight) 70%, transparent);
 }
 
 .event-card.garbage {
@@ -480,7 +519,7 @@ body::after {
 }
 .loading-spinner {
   width: 3.5vh; height: 3.5vh;
-  border: 2px solid rgba(0,0,0,0.08);
+  border: 2px solid var(--spinner-border);
   border-top-color: var(--accent);
   border-radius: 50%;
   animation: spin 0.9s linear infinite;
