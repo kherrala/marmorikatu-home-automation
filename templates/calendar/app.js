@@ -38,6 +38,9 @@ const WEEKDAYS = ['sunnuntai','maanantai','tiistai','keskiviikko','torstai','per
 const GRID_START = 6;  // 06:00
 const GRID_END = 23;   // 23:00
 const GRID_HOURS = GRID_END - GRID_START;
+const VIEW_START = 8;  // default visible window start
+const VIEW_END = 18;   // default visible window end
+const VIEW_HOURS = VIEW_END - VIEW_START;
 
 let dayOffset = 0;  // 0 = today+tomorrow, 1 = tomorrow+day-after, etc.
 
@@ -143,8 +146,10 @@ function renderDayColumn(dateStr, events, labelText, labelCls) {
   }
   html += '</div>';
 
-  // Time grid
+  // Time grid (scrollable container → inner tall div)
+  var innerHeightPct = (GRID_HOURS / VIEW_HOURS) * 100;
   html += '<div class="time-grid" data-date="' + dateStr + '">';
+  html += '<div class="time-grid-inner" style="height:' + innerHeightPct + '%">';
 
   // Hour lines
   for (let h = GRID_START; h <= GRID_END; h++) {
@@ -173,6 +178,7 @@ function renderDayColumn(dateStr, events, labelText, labelCls) {
     html += '</div>';
   }
 
+  html += '</div>'; // time-grid-inner
   html += '</div>'; // time-grid
   html += '</div>'; // day-col
 
@@ -311,8 +317,20 @@ function render(data) {
   const now = new Date();
   ts.textContent = 'Päivitetty ' + now.getHours().toString().padStart(2,'0') + ':' + now.getMinutes().toString().padStart(2,'0');
 
+  // Scroll time grids to VIEW_START
+  scrollGridsToView();
+
   // Start now-line updates
   updateNowLine();
+}
+
+function scrollGridsToView() {
+  document.querySelectorAll('.time-grid').forEach(function(grid) {
+    var inner = grid.querySelector('.time-grid-inner');
+    if (!inner) return;
+    var scrollPct = (VIEW_START - GRID_START) / GRID_HOURS;
+    grid.scrollTop = inner.offsetHeight * scrollPct;
+  });
 }
 
 function navigateDays(delta) {

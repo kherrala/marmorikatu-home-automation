@@ -262,7 +262,17 @@ body::after {
 .time-grid {
   position: relative;
   flex: 1;
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.time-grid::-webkit-scrollbar { display: none; }
+
+.time-grid-inner {
+  position: relative;
+  /* height set by JS: (GRID_HOURS / VISIBLE_HOURS) * 100% */
 }
 
 .hour-row {
