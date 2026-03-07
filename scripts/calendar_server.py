@@ -122,15 +122,21 @@ async def fetch_pjhoy_events() -> list[dict]:
         # Step 1: Get session cookie
         await client.get(PJHOY_BASE_URL)
         # Step 2: Login
-        await client.post(
+        login_resp = await client.post(
             f"{PJHOY_BASE_URL}/j_acegi_security_check?target=2",
             data={"j_username": PJHOY_USERNAME, "j_password": PJHOY_PASSWORD, "remember-me": "false"},
         )
-        # Step 3: Fetch services
-        params = {f"customerNumbers[{i}]": n for i, n in enumerate(PJHOY_CUSTOMER_NUMBERS)}
-        if not params:
-            # Derive customer number from username (xx-yyyyyyy-zz format)
-            params = {"customerNumbers[]": PJHOY_USERNAME}
+        login_url = str(login_resp.url)
+        if "login_error" in login_url:
+            raise RuntimeError(f"PJHOY login failed (redirected to {login_url})")
+        # Step 3: Fetch services — construct full customer numbers from username prefix + suffixes
+        if PJHOY_CUSTOMER_NUMBERS:
+            # Username format: xx-yyyyyyy-zz; prefix is xx-yyyyyyy
+            prefix = "-".join(PJHOY_USERNAME.split("-")[:2])
+            full_numbers = [f"{prefix}-{suffix}" for suffix in PJHOY_CUSTOMER_NUMBERS]
+        else:
+            full_numbers = [PJHOY_USERNAME]
+        params = {f"customerNumbers[{i}]": n for i, n in enumerate(full_numbers)}
         resp = await client.get(f"{PJHOY_BASE_URL}/secure/get_services_by_customer_numbers.do", params=params)
         resp.raise_for_status()
         ct = resp.headers.get("content-type", "")
@@ -142,8 +148,8 @@ async def fetch_pjhoy_events() -> list[dict]:
         async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
             try:
                 services = await _do_fetch(client)
-            except ValueError:
-                log.info("PJHOY session expired, retrying login")
+            except ValueError as ve:
+                log.info("PJHOY session expired, retrying login: %s", ve)
                 services = await _do_fetch(client)
     except Exception as e:
         log.error("PJHOY fetch failed: %s", e)
