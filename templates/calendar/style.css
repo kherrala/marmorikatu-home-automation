@@ -416,8 +416,9 @@ body::after {
 
 .gc-left {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 0.6vw;
+  gap: 0.3vh;
   flex-shrink: 0;
 }
 
