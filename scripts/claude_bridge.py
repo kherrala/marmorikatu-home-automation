@@ -255,7 +255,7 @@ async def run_ollama_agentic_loop(messages: list[dict], tools: list[dict]) -> di
                     "stream": False,
                     "options": {
                         "num_ctx": OLLAMA_NUM_CTX,
-                        "temperature": 0.1,
+                        "temperature": 0.7,
                         "repeat_penalty": 1.0,
                     },
                 },

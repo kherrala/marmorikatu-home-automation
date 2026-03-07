@@ -632,8 +632,11 @@
     let conversationHistory = [];
 
     // Random fallback system when AI is unavailable
-    const pick = arr => arr[Math.floor(Math.random() * arr.length)];
-    const randInt = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
+    function cryptoRand() {
+      return crypto.getRandomValues(new Uint32Array(1))[0] / 4294967296;
+    }
+    const pick = arr => arr[Math.floor(cryptoRand() * arr.length)];
+    const randInt = (min, max) => Math.floor(cryptoRand() * (max - min + 1)) + min;
 
     // Strip LLM reasoning traces (<think>...</think>) from responses
     function stripThinkTags(text) {
@@ -655,38 +658,60 @@
 
     function randomFallback() {
       // ~40% chance: generate absurd sentence from vocabulary
-      if (Math.random() < 0.4) return generateAbsurd();
+      if (cryptoRand() < 0.4) return generateAbsurd();
       // ~30% chance: existential robot musings
-      if (Math.random() < 0.5) return generateMusing();
+      if (cryptoRand() < 0.5) return generateMusing();
       // ~30% chance: fake statistic
       return generateFakeStat();
     }
 
     function generateAbsurd() {
       const subjects = [
-        'Naapurin kissa', 'Kuun pimeä puoli', 'Eräs viisas perunalaatikko',
-        'Pörröinen pilvi', 'Kadonneet sukat', 'Jääkaapin valo',
-        'Kaukosäädin', 'Saunan kiuas', 'Postilaatikko', 'Pyykkikone',
-        'Olohuoneen sohva', 'Takapihan siili', 'Muuttolinnut',
-        'Viime yönä nähty uni', 'Kahvikupin pohjasakka', 'Parveketuoli',
-        'Rappukäytävän kummitus', 'Kerrostalon hissi', 'Tuuliviiri',
+        'Naapurin kissa', 'Kuun pimeä puoli', 'Pörröinen pilvi',
+        'Kadonneet sukat', 'Jääkaapin valo', 'Kaukosäädin',
+        'Saunan kiuas', 'Postilaatikko', 'Pyykkikone',
+        'Takapihan siili', 'Muuttolinnut', 'Parveketuoli',
+        'Kerrostalon hissi', 'Tuuliviiri', 'Verhokisko',
+        'Paistinpannu', 'Eteisen matto', 'Pesukoneen luukku',
+        'Parvekkeen lintuja', 'Talon putket', 'Ulko-oven lukko',
+        'Ilmanvaihdon suodatin', 'Lattiakaivo', 'Viereisen talon koivu',
+        'Roskapönttö', 'Sähkömittari', 'Pakastimen jääkerros',
+        'Ikkunalaudan kaktus', 'Portaikon valo', 'Auton tuulilasi',
       ];
       const verbs = [
-        'pohtii syvällisesti', 'on viime aikoina harkinnut', 'suunnittelee salaa',
-        'unelmoi hartaasti', 'väittää tietävänsä kaiken aiheesta',
-        'on kirjoittanut väitöskirjan aiheesta', 'epäilee vahvasti',
-        'on perustanut yhdistyksen nimeltä', 'julistautui asiantuntijaksi aiheessa',
-        'lähetti kirjeen presidentille koskien', 'twiittasi keskiyöllä aiheesta',
-        'järjestää seminaarin teemalla', 'heräsi kesken unien miettimään',
+        'pohtii', 'suunnittelee salaa', 'unelmoi',
+        'väittää ymmärtävänsä', 'epäilee vahvasti',
+        'julistautui asiantuntijaksi aiheessa', 'ihailee',
+        'pelkää', 'halveksii', 'on kateellinen aiheesta',
+        'kiistää koko käsitteen', 'haluaa keskustella aiheesta',
+        'kirjoitti blogin aiheesta', 'on huolissaan aiheesta',
+        'kertoo kaikille', 'väittää keksineensä',
+        'on alkanut uskoa', 'nautti viime yönä',
       ];
       const objects = [
-        'pimeyden termodynaaminen olemus', 'mikroaaltouunin sisäinen rauha',
-        'sukkien katoamisen kvanttifysiikka', 'perunan filosofinen ulottuvuus',
-        'kahvin ja ajan suhteellisuusteoria', 'ovenkarmin eksistentiaalinen kriisi',
-        'tuulen suunnan poliittiset vaikutukset', 'jääkaappimagneetin elämäntehtävä',
-        'sateenkaaren päätepisteen verotus', 'pölyhiukkasen matka halki galaksin',
-        'hissimusiikin vaikutus maailmanrauhaan', 'lumiukon kesäsuunnitelmat',
-        'kynttilän liekin muistelmat', 'lattialämmityksen haaveet Havaijista',
+        'mikroaaltouunin sisäinen rauha',
+        'sukkien katoamisen kvanttifysiikka',
+        'kahvin ja ajan suhteellisuusteoria',
+        'tuulen suunnan poliittiset vaikutukset',
+        'hissimusiikin vaikutus maailmanrauhaan',
+        'lumiukon kesäsuunnitelmat',
+        'lattialämmityksen haaveet Havaijista',
+        'pesukoneen pyörimissuunnan merkitys',
+        'patterien kuplivat äänet yöllä',
+        'liikennevalojen salaliitto',
+        'villasukkien vallankumous',
+        'saippuakuplan lyhyt elämä',
+        'jouluvalojen kesämasennus',
+        'hämähäkin uraohjaus',
+        'muurahaisten ammattiliitto',
+        'pilven muoto tiistaisin',
+        'kuun vaikutus pyykkiin',
+        'ovenkahvan filosofia',
+        'pölypalleron sielunelämä',
+        'vesimittarin unettomuus',
+        'jääkaapin yöelämä',
+        'tuulilasin existentialismi',
+        'ruohonleikkurin talviharrastukset',
       ];
       return `${pick(subjects)} ${pick(verbs)} "${pick(objects)}".`;
     }
