@@ -1133,10 +1133,11 @@
                   faceGoneTimeout = setTimeout(() => {
                     faceGoneTimeout = null;
                     if (kioskState === STATES.GREETING && !faceVisible) {
-                      // Wait for speech to finish before dismissing
-                      if (speechSynthesis.speaking) {
+                      // Wait for speech to finish before dismissing (covers both browser TTS and server TTS)
+                      const isSpeaking = () => speechSynthesis.speaking || !ttsAudio.paused;
+                      if (isSpeaking()) {
                         const checkDone = setInterval(() => {
-                          if (!speechSynthesis.speaking) {
+                          if (!isSpeaking()) {
                             clearInterval(checkDone);
                             if (!faceVisible) dismissOverlay();
                           }
@@ -1220,6 +1221,7 @@
       // Show overlay with greeting
       greetingText.textContent = greeting;
       reportText.textContent = '';
+      greetingActiveAt = Date.now();
       greetingOverlay.classList.add('visible');
 
       // Random quote only once every 3 hours
@@ -1257,6 +1259,7 @@
           clearTimeout(silenceTimer);
           clearTimeout(nativeSpeechTimer);
           clearTimeout(nativeHardTimer);
+          recognitionEpoch++; // invalidate any pending callbacks before abort fires
           if (nativeRecognizer) { try { nativeRecognizer.abort(); } catch {} nativeRecognizer = null; }
           if (mediaRecorder && mediaRecorder.state === 'recording') { try { mediaRecorder.stop(); } catch {} }
 
@@ -1303,7 +1306,11 @@
     }
 
     // -- Dismiss greeting on card tap (not full overlay, so arrows stay tappable)
+    // greetingActiveAt guards against tap-through: iOS can forward a tap from an element
+    // that disappears (e.g. start-overlay) to whatever appears underneath it.
+    let greetingActiveAt = 0;
     greetingCard.addEventListener('click', () => {
+      if (Date.now() - greetingActiveAt < 600) return; // ignore phantom tap-throughs
       dismissOverlay();
     });
 
@@ -1432,6 +1439,8 @@
     let nativeSpeechText = '';
     let nativeFailCount = 0;
     let nativeFallenBack = false;      // sticky: once fallen back, stay on MediaRecorder
+    let nativeHasWorked = false;       // true once native API has produced a result this session
+    let recognitionEpoch = 0;          // incremented on every intentional stop — stale callbacks check this
     const NATIVE_SPEECH_PAUSE = 2000;
     const NATIVE_HARD_TIMEOUT = 15000; // force-stop after 15s if no final result
     const NATIVE_MAX_FAILS = 3;        // fall back to MediaRecorder after N failures
@@ -1533,9 +1542,17 @@
 
     // -- Native Web Speech API -----------------------------------------------
     function fallbackToMediaRecorder() {
+      if (nativeHasWorked) {
+        console.warn('[voice] Native failed but has worked this session — restarting native');
+        nativeFailCount = 0;
+        if (listeningActive) startNativeRecognition();
+        return;
+      }
       console.warn('[voice] Falling back to MediaRecorder + server transcription');
       nativeFailCount = 0;
       nativeFallenBack = true;
+      recognitionEpoch++; // invalidate any pending native callbacks
+      if (nativeRecognizer) { try { nativeRecognizer.abort(); } catch {} nativeRecognizer = null; }
       if (audioStream && listeningActive) {
         if (audioContext?.state === 'suspended') audioContext.resume();
         startRecording();
@@ -1549,6 +1566,7 @@
       clearTimeout(nativeSpeechTimer);
       clearTimeout(nativeHardTimer);
 
+      const myEpoch = ++recognitionEpoch; // capture — stale callbacks will see epoch mismatch
       nativeRecognizer = new NativeSpeechRecognition();
       nativeRecognizer.lang = 'fi-FI';
       nativeRecognizer.continuous = true;
@@ -1565,6 +1583,7 @@
 
       nativeRecognizer.onresult = (event) => {
         nativeFailCount = 0; // got a result, reset fail counter
+        nativeHasWorked = true;
         let finalText = '';
         let interimText = '';
         for (let i = 0; i < event.results.length; i++) {
@@ -1599,6 +1618,7 @@
       };
 
       nativeRecognizer.onerror = (event) => {
+        if (myEpoch !== recognitionEpoch) return; // stale — a newer session owns things now
         console.warn('[voice] Native error:', event.error, 'listeningActive=', listeningActive);
 
         // 'aborted' when not listening is expected — we called .stop() ourselves
@@ -1606,7 +1626,7 @@
 
         clearTimeout(nativeHardTimer);
 
-        if ((event.error === 'no-speech' || event.error === 'aborted') && listeningActive && kioskState === STATES.GREETING) {
+        if ((event.error === 'no-speech' || event.error === 'aborted') && listeningActive && kioskState === STATES.GREETING && !nativeFallenBack) {
           nativeFailCount++;
           if (nativeFailCount >= NATIVE_MAX_FAILS && audioStream) {
             fallbackToMediaRecorder();
@@ -1619,7 +1639,7 @@
         } else if (event.error === 'network') {
           console.warn('[voice] Network error — falling back to MediaRecorder');
           if (audioStream) fallbackToMediaRecorder();
-        } else if (listeningActive) {
+        } else if (listeningActive && !nativeFallenBack) {
           // Only fall back on truly unrecoverable errors while actively listening
           console.warn('[voice] Unrecoverable native error — falling back to MediaRecorder');
           if (audioStream) fallbackToMediaRecorder();
@@ -1627,6 +1647,7 @@
       };
 
       nativeRecognizer.onend = () => {
+        if (myEpoch !== recognitionEpoch) return; // stale callback — ignore
         clearTimeout(nativeHardTimer);
         // Use whatever text we have (final or interim)
         const text = nativeSpeechText || bestInterim;
@@ -1635,7 +1656,7 @@
           handleVoiceResult(text);
           return;
         }
-        if (listeningActive && kioskState === STATES.GREETING) {
+        if (listeningActive && kioskState === STATES.GREETING && !nativeFallenBack) {
           nativeFailCount++;
           if (nativeFailCount >= NATIVE_MAX_FAILS && audioStream) {
             fallbackToMediaRecorder();
@@ -1763,6 +1784,7 @@
     }
 
     function stopListening() {
+      recognitionEpoch++; // invalidate any in-flight native recognition callbacks
       listeningActive = false;
       listeningIndicator.classList.add('hidden');
       avatarEl.classList.remove('listening');
