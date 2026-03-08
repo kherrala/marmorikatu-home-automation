@@ -10,3 +10,4 @@ WEATHER_API_URL = os.environ.get("WEATHER_API_URL", "http://weather:3020/api/wea
 NEWS_API_URL = os.environ.get("NEWS_API_URL", "http://news:3021/api/news")
 BUS_API_URL = os.environ.get("BUS_API_URL", "http://host.docker.internal:3010/api/departures")
 CALENDAR_API_URL = os.environ.get("CALENDAR_API_URL", "http://calendar:3022/api/calendar")
+HARMONY_HUB_HOST = os.environ.get("HARMONY_HUB_HOST", "")
