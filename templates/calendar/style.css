@@ -402,8 +402,9 @@ body::after {
   padding: 1vh 1.2vw;
   border-radius: 1.5vh;
   background: var(--highlight);
-  flex: 1 1 0;
-  min-width: 0;
+  flex: 1 1 auto;
+  min-width: 180px;
+  overflow: hidden;
   animation: fadeIn 0.5s cubic-bezier(0.22, 1, 0.36, 1) backwards;
 }
 
@@ -432,7 +433,8 @@ body::after {
   font-size: 2vh;
   font-weight: 600;
   color: var(--text);
-  white-space: nowrap;
+  white-space: normal;
+  word-break: break-word;
 }
 
 .gc-right {
