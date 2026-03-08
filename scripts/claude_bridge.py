@@ -19,7 +19,9 @@ import logging
 import asyncio
 from contextlib import asynccontextmanager
 
+import re
 import wave
+import base64
 import hashlib
 import struct
 from collections import OrderedDict
@@ -431,11 +433,26 @@ async def _piper_synthesize(text: str) -> bytes:
     return wav
 
 
-async def tts_endpoint(request: Request) -> Response:
-    """POST /tts — local Finnish TTS via Piper, returns audio/wav.
+def _split_sentences(text: str) -> list[str]:
+    """Split Finnish text into sentences for streaming TTS.
 
-    Plays through <audio> element in the browser, which respects
-    the native device volume (unlike speechSynthesis on iOS).
+    Splits on sentence-ending punctuation (.!?) followed by whitespace and an
+    uppercase letter (including Finnish Ä/Ö/Å).  This avoids splitting on
+    Finnish ordinals ("1. tammikuuta") and common abbreviations, which are
+    always followed by a lowercase letter or digit.
+    """
+    parts = re.split(r'(?<=[.!?])\s+(?=[A-ZÄÖÅ])', text)
+    return [s.strip() for s in parts if s.strip()] or [text]
+
+
+async def tts_endpoint(request: Request) -> Response:
+    """POST /tts — local Finnish TTS via Piper, streams NDJSON sentence audio.
+
+    Returns a newline-delimited JSON stream.  Each line is:
+        {"audio": "<base64-encoded WAV>"}
+
+    The client plays each sentence as it arrives while piper synthesizes the
+    next one, reducing perceived latency for multi-sentence responses.
     """
     try:
         body = await request.json()
@@ -446,13 +463,21 @@ async def tts_endpoint(request: Request) -> Response:
     if not text:
         return JSONResponse({"error": "No text provided"}, status_code=400)
 
-    try:
-        wav = await _piper_synthesize(text)
-    except Exception as e:
-        log.error("Piper TTS error: %s", e)
-        return JSONResponse({"error": "TTS failed"}, status_code=500)
+    sentences = _split_sentences(text)
 
-    return Response(content=wav, media_type="audio/wav")
+    async def generate():
+        for sentence in sentences:
+            try:
+                wav = await _piper_synthesize(sentence)
+                yield json.dumps({"audio": base64.b64encode(wav).decode()}) + "\n"
+            except Exception as e:
+                log.error("Piper TTS error for sentence %r: %s", sentence[:40], e)
+
+    return StreamingResponse(
+        generate(),
+        media_type="application/x-ndjson",
+        headers={"X-Accel-Buffering": "no"},
+    )
 
 
 import threading

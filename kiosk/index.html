@@ -1363,7 +1363,8 @@
     }
 
     async function speakAndWait(text) {
-      // Try server-side TTS first, using persistent <audio> element (iOS-safe)
+      // Try server-side TTS first — streams NDJSON, one sentence per line.
+      // Playing each sentence as it arrives pipelines synthesis with playback.
       try {
         const res = await fetch('/api/chat/tts', {
           method: 'POST',
@@ -1371,29 +1372,45 @@
           body: JSON.stringify({ text })
         });
         if (res.ok) {
-          const blob = await res.blob();
-          if (blob.size > 0) {
-            const url = URL.createObjectURL(blob);
-            try {
-              // Reuse persistent ttsAudio element — maintains iOS audio unlock
-              ttsAudio.src = url;
-              ttsAudio.currentTime = 0;
-              await ttsAudio.play();
-              avatarEl.classList.add('speaking');
-              avatarEl.classList.remove('listening');
-              const ok = await new Promise(resolve => {
-                const cleanup = () => { ttsAudio.onended = null; ttsAudio.onerror = null; };
-                ttsAudio.onended = () => { cleanup(); resolve(true); };
-                ttsAudio.onerror = () => { cleanup(); resolve(false); };
-              });
-              avatarEl.classList.remove('speaking');
-              URL.revokeObjectURL(url);
-              if (ok) return;
-            } catch (e) {
-              console.warn('[tts] Audio play failed:', e);
-              URL.revokeObjectURL(url);
+          const reader = res.body.getReader();
+          const decoder = new TextDecoder();
+          let buf = '';
+          let played = 0;
+
+          const playSentence = (b64wav) => new Promise(resolve => {
+            const bytes = atob(b64wav);
+            const arr = new Uint8Array(bytes.length);
+            for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
+            const url = URL.createObjectURL(new Blob([arr], { type: 'audio/wav' }));
+            ttsAudio.src = url;
+            ttsAudio.currentTime = 0;
+            ttsAudio.play().catch(() => resolve(false));
+            avatarEl.classList.add('speaking');
+            avatarEl.classList.remove('listening');
+            const cleanup = () => { ttsAudio.onended = null; ttsAudio.onerror = null; URL.revokeObjectURL(url); };
+            ttsAudio.onended = () => { cleanup(); resolve(true); };
+            ttsAudio.onerror = () => { cleanup(); resolve(false); };
+          });
+
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buf += decoder.decode(value, { stream: true });
+            const lines = buf.split('\n');
+            buf = lines.pop(); // keep incomplete trailing line
+            for (const line of lines) {
+              if (!line.trim()) continue;
+              const { audio } = JSON.parse(line);
+              await playSentence(audio);
+              played++;
             }
           }
+          // flush any remaining complete line
+          if (buf.trim()) {
+            try { const { audio } = JSON.parse(buf); await playSentence(audio); played++; } catch {}
+          }
+          avatarEl.classList.remove('speaking');
+          if (played > 0) return;
         }
       } catch { /* server TTS failed, fall back to browser */ }
 
