@@ -1331,6 +1331,9 @@
 
     function dismissOverlay() {
       if (kioskState !== STATES.GREETING) return;
+      console.log('[kiosk] dismissOverlay — overlayAge=%ds caller=%s',
+        Math.round((Date.now() - overlayStartTime) / 1000),
+        new Error().stack.split('\n')[2]?.trim() ?? '?');
       setState(STATES.GREETING_COOLDOWN);
       clearTimeout(overlayTimeout);
       clearTimeout(faceGoneTimeout);
@@ -1575,6 +1578,7 @@
 
       // Hard timeout: if no usable result after 15s, stop and restart/fallback
       nativeHardTimer = setTimeout(() => {
+        if (myEpoch !== recognitionEpoch) return; // stale
         console.warn('[voice] Native hard timeout — no final result in %ds', NATIVE_HARD_TIMEOUT / 1000);
         try { nativeRecognizer.abort(); } catch {}
       }, NATIVE_HARD_TIMEOUT);
@@ -1582,6 +1586,7 @@
       let bestInterim = '';
 
       nativeRecognizer.onresult = (event) => {
+        if (myEpoch !== recognitionEpoch) return; // stale — a newer session owns things now
         nativeFailCount = 0; // got a result, reset fail counter
         nativeHasWorked = true;
         let finalText = '';
@@ -1606,6 +1611,7 @@
         // Reset pause timer on any result activity
         clearTimeout(nativeSpeechTimer);
         nativeSpeechTimer = setTimeout(() => {
+          if (myEpoch !== recognitionEpoch) return; // stale
           // Prefer final text, fall back to best interim
           const text = nativeSpeechText || bestInterim;
           if (text && listeningActive) {
