@@ -235,6 +235,7 @@ services:
     ports:
       - "80:80"
       - "443:443"
+      - "3080:3080"
       - "8888:8888"
     extra_hosts:
       - "host.docker.internal:host-gateway"
