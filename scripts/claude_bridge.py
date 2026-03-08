@@ -457,16 +457,43 @@ async def transcribe_endpoint(request: Request) -> JSONResponse:
     log.info("Transcribe: received %d bytes (%s)", len(audio_bytes), filename)
 
     try:
+        import subprocess
+
         ext = filename.rsplit(".", 1)[-1] if "." in filename else "webm"
-        with tempfile.NamedTemporaryFile(suffix=f".{ext}", delete=True) as tmp:
-            tmp.write(audio_bytes)
-            tmp.flush()
+        with tempfile.NamedTemporaryFile(suffix=f".{ext}", delete=True) as src:
+            src.write(audio_bytes)
+            src.flush()
+
+            # Re-mux through ffmpeg to fix malformed webm containers
+            wav_path = src.name + ".wav"
+            try:
+                proc = subprocess.run(
+                    ["ffmpeg", "-y", "-i", src.name, "-ar", "16000", "-ac", "1", "-f", "wav", wav_path],
+                    capture_output=True, timeout=15,
+                )
+                if proc.returncode != 0:
+                    log.warning("ffmpeg conversion failed (rc=%d), trying original: %s",
+                                proc.returncode, proc.stderr[-200:] if proc.stderr else "")
+                    wav_path = None
+            except FileNotFoundError:
+                wav_path = None  # ffmpeg not installed, use original
+
+            transcribe_path = wav_path or src.name
+
             loop = asyncio.get_event_loop()
             model = await loop.run_in_executor(None, _get_whisper_model)
             segments, _info = await loop.run_in_executor(
-                None, lambda: model.transcribe(tmp.name, language="fi", beam_size=3)
+                None, lambda: model.transcribe(transcribe_path, language="fi", beam_size=3)
             )
             text = " ".join(s.text.strip() for s in segments).strip()
+
+            # Clean up wav temp file
+            if wav_path:
+                try:
+                    os.remove(wav_path)
+                except OSError:
+                    pass
+
         log.info("Transcribe: '%s'", text)
         return JSONResponse({"text": text})
     except Exception as e:
