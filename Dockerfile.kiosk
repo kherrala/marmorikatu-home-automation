@@ -3,14 +3,8 @@ FROM nginx:alpine
 # Install openssl — used by entrypoint.sh to generate the cert on first boot
 RUN apk add --no-cache openssl
 
-# Download face-api.js and TinyFaceDetector model weights
-RUN mkdir -p /usr/share/nginx/html/face-api && \
-    wget -q -O /usr/share/nginx/html/face-api/face-api.min.js \
-      "https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js" && \
-    wget -q -O /usr/share/nginx/html/face-api/tiny_face_detector_model-shard1 \
-      "https://raw.githubusercontent.com/justadudewhohacks/face-api.js/master/weights/tiny_face_detector_model-shard1" && \
-    wget -q -O /usr/share/nginx/html/face-api/tiny_face_detector_model-weights_manifest.json \
-      "https://raw.githubusercontent.com/justadudewhohacks/face-api.js/master/weights/tiny_face_detector_model-weights_manifest.json"
+# Bundle face-api.js and TinyFaceDetector model weights (vendored — no build-time network needed)
+COPY kiosk/face-api/ /usr/share/nginx/html/face-api/
 
 # Copy nginx config template and entrypoint
 COPY kiosk/nginx.conf.template /etc/nginx/templates/default.conf.template
