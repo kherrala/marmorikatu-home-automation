@@ -11,7 +11,17 @@ server {
 
 server {
     listen 80;
-    return 301 https://$host$request_uri;
+
+    # Serve the certificate over plain HTTP so devices can trust it before HTTPS works
+    location = /cert {
+        alias /etc/nginx/ssl/kiosk.cer;
+        default_type application/x-x509-ca-cert;
+        add_header Content-Disposition 'attachment; filename="kiosk.cer"';
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
 }
 
 # Plain HTTP MCP SSE proxy on port 3080 (for Claude Desktop — LAN only)
