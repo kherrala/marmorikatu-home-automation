@@ -1,20 +1,7 @@
 FROM nginx:alpine
 
-# Install openssl for self-signed certificate generation
+# Install openssl — used by entrypoint.sh to generate the cert on first boot
 RUN apk add --no-cache openssl
-
-# Generate a self-signed TLS certificate (10-year validity, SAN for the LAN IP)
-# Also export DER format (.cer) for reliable iOS profile installation
-RUN mkdir -p /etc/nginx/ssl && \
-    openssl req -x509 -nodes -days 3650 \
-      -newkey rsa:2048 \
-      -keyout /etc/nginx/ssl/kiosk.key \
-      -out    /etc/nginx/ssl/kiosk.crt \
-      -subj   "/CN=kiosk.local" \
-      -addext "subjectAltName=IP:192.168.1.160,DNS:localhost" && \
-    openssl x509 -in /etc/nginx/ssl/kiosk.crt -outform DER -out /etc/nginx/ssl/kiosk.cer && \
-    mkdir -p /usr/share/nginx/cert && \
-    cp /etc/nginx/ssl/kiosk.cer /usr/share/nginx/cert/kiosk.cer
 
 # Download face-api.js and TinyFaceDetector model weights
 RUN mkdir -p /usr/share/nginx/html/face-api && \

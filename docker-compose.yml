@@ -138,6 +138,7 @@ services:
       - NEWS_API_URL=http://news:3021/api/news
       - BUS_API_URL=http://host.docker.internal:3010/api/departures
       - CALENDAR_API_URL=http://calendar:3022/api/calendar
+      - HARMONY_HUB_HOST=${HARMONY_HUB_HOST:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
@@ -237,6 +238,8 @@ services:
       - "443:443"
       - "3080:3080"
       - "8888:8888"
+    volumes:
+      - kiosk-ssl:/etc/nginx/ssl
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
@@ -333,3 +336,4 @@ volumes:
   influxdb-config:
   grafana-data:
   calendar-cache:
+  kiosk-ssl:
