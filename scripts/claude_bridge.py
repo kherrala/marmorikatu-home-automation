@@ -19,9 +19,13 @@ import logging
 import asyncio
 from contextlib import asynccontextmanager
 
+import wave
+import hashlib
+import struct
+from collections import OrderedDict
+
 import anyio
 import anthropic
-import edge_tts
 import uvicorn
 from mcp.client.sse import sse_client
 from mcp.client.session import ClientSession
@@ -39,8 +43,13 @@ MAX_TOOL_ITERATIONS = int(os.environ.get("MAX_TOOL_ITERATIONS", "10"))
 MAX_TOKENS = int(os.environ.get("MAX_TOKENS", "300"))
 OLLAMA_NUM_CTX = int(os.environ.get("OLLAMA_NUM_CTX", "16384"))
 BRIDGE_PORT = int(os.environ.get("BRIDGE_PORT", "3002"))
-TTS_VOICE = os.environ.get("TTS_VOICE", "fi-FI-NooraNeural")
-TTS_RATE = os.environ.get("TTS_RATE", "+15%")
+PIPER_BINARY = os.environ.get("PIPER_BINARY", "/usr/local/piper/piper")
+PIPER_MODEL  = os.environ.get("PIPER_MODEL",  "/models/fi_FI-harri-medium.onnx")
+PIPER_SPEED  = float(os.environ.get("PIPER_SPEED", "1.0"))   # <1 = slower, >1 = faster
+TTS_CACHE_SIZE = int(os.environ.get("TTS_CACHE_SIZE", "64"))  # max cached audio entries
+
+# LRU audio cache: text-hash → WAV bytes
+_tts_cache: "OrderedDict[str, bytes]" = OrderedDict()
 
 WEEKDAYS_FI = ["maanantai", "tiistai", "keskiviikko", "torstai", "perjantai", "lauantai", "sunnuntai"]
 
@@ -375,8 +384,55 @@ async def chat_endpoint(request: Request) -> JSONResponse:
         return JSONResponse({"error": str(e)}, status_code=500)
 
 
+def _pcm_to_wav(pcm: bytes, sample_rate: int) -> bytes:
+    """Wrap raw 16-bit mono PCM in a WAV container."""
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(sample_rate)
+        wf.writeframes(pcm)
+    return buf.getvalue()
+
+
+async def _piper_synthesize(text: str) -> bytes:
+    """Run piper TTS in a subprocess and return WAV bytes."""
+    cache_key = hashlib.md5(text.encode()).hexdigest()
+    if cache_key in _tts_cache:
+        _tts_cache.move_to_end(cache_key)
+        log.debug("TTS cache hit (%d chars)", len(text))
+        return _tts_cache[cache_key]
+
+    cmd = [
+        PIPER_BINARY,
+        "--model", PIPER_MODEL,
+        "--output_raw",
+        "--length_scale", str(1.0 / PIPER_SPEED),
+    ]
+    proc = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.DEVNULL,
+        env={**os.environ, "LD_LIBRARY_PATH": "/usr/local/piper"},
+    )
+    raw_pcm, _ = await proc.communicate(input=text.encode("utf-8"))
+    if proc.returncode != 0 or not raw_pcm:
+        raise RuntimeError(f"piper exited with code {proc.returncode}")
+
+    # harri-medium outputs 22050 Hz mono 16-bit PCM
+    wav = _pcm_to_wav(raw_pcm, sample_rate=22050)
+
+    _tts_cache[cache_key] = wav
+    _tts_cache.move_to_end(cache_key)
+    if len(_tts_cache) > TTS_CACHE_SIZE:
+        _tts_cache.popitem(last=False)
+
+    return wav
+
+
 async def tts_endpoint(request: Request) -> Response:
-    """POST /tts — server-side Finnish TTS, returns audio/mpeg.
+    """POST /tts — local Finnish TTS via Piper, returns audio/wav.
 
     Plays through <audio> element in the browser, which respects
     the native device volume (unlike speechSynthesis on iOS).
@@ -390,23 +446,13 @@ async def tts_endpoint(request: Request) -> Response:
     if not text:
         return JSONResponse({"error": "No text provided"}, status_code=400)
 
-    voice = body.get("voice", TTS_VOICE)
-    rate = body.get("rate", TTS_RATE)
+    try:
+        wav = await _piper_synthesize(text)
+    except Exception as e:
+        log.error("Piper TTS error: %s", e)
+        return JSONResponse({"error": "TTS failed"}, status_code=500)
 
-    async def audio_stream():
-        try:
-            communicate = edge_tts.Communicate(text, voice, rate=rate)
-            async for chunk in communicate.stream():
-                if chunk["type"] == "audio":
-                    yield chunk["data"]
-        except Exception as e:
-            log.error("TTS streaming error: %s", e)
-
-    return StreamingResponse(
-        audio_stream(),
-        media_type="audio/mpeg",
-        headers={"X-Accel-Buffering": "no"},
-    )
+    return Response(content=wav, media_type="audio/wav")
 
 
 import threading

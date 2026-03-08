@@ -8,7 +8,24 @@ RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg tini && 
 
 # Install dependencies
 RUN pip install --no-cache-dir "numpy<2" && \
-    pip install --no-cache-dir anthropic mcp uvicorn starlette httpx edge-tts faster-whisper
+    pip install --no-cache-dir anthropic mcp uvicorn starlette httpx faster-whisper
+
+# Install piper TTS binary (arch-aware) for fast local Finnish speech synthesis
+RUN ARCH=$(uname -m) && \
+    if [ "$ARCH" = "x86_64" ]; then PIPER_ARCH="amd64"; \
+    elif [ "$ARCH" = "aarch64" ]; then PIPER_ARCH="arm64"; \
+    else echo "Unsupported arch: $ARCH" && exit 1; fi && \
+    wget -q -O /tmp/piper.tar.gz \
+      "https://github.com/rhasspy/piper/releases/download/2023.11.14-2/piper_linux_${PIPER_ARCH}.tar.gz" && \
+    tar -xzf /tmp/piper.tar.gz -C /usr/local && \
+    rm /tmp/piper.tar.gz
+
+# Download Finnish Piper voice model
+RUN mkdir -p /models && \
+    wget -q -O /models/fi_FI-harri-medium.onnx \
+      "https://huggingface.co/rhasspy/piper-voices/resolve/main/fi/fi_FI/harri/medium/fi_FI-harri-medium.onnx" && \
+    wget -q -O /models/fi_FI-harri-medium.onnx.json \
+      "https://huggingface.co/rhasspy/piper-voices/resolve/main/fi/fi_FI/harri/medium/fi_FI-harri-medium.onnx.json"
 
 # Copy bridge script
 COPY scripts/claude_bridge.py /app/
