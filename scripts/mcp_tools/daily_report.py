@@ -24,7 +24,7 @@ TOOLS = [
 
 Returns a structured summary covering:
 - Current weather and today's forecast
-- News digest: up to 10 headlines with descriptions and a topic summary
+- News digest: up to 10 headlines with descriptions, links, and a topic summary. Use get_news_article with the link URL to fetch the full content of any story.
 - Today's and tomorrow's calendar events (family + garbage collection, excludes school)
 - Home status: indoor/outdoor temperatures, heat pump, air quality
 
@@ -122,6 +122,8 @@ async def _fetch_news() -> dict | None:
             desc = item.get("description", "").strip()
             if desc:
                 entry["description"] = desc
+            if item.get("link"):
+                entry["link"] = item["link"]
             headlines.append(entry)
 
         if not headlines:

@@ -25,7 +25,7 @@ TOOLS = [
     ),
     Tool(
         name="get_news_headlines",
-        description="Get latest Finnish news headlines from Yle (national + Pirkanmaa regional). Returns titles, descriptions, sources and publish times.",
+        description="Get latest Finnish news headlines from Yle (national + Pirkanmaa regional). Returns titles, descriptions, sources, publish times, and article links. Use get_news_article to fetch the full content of any article.",
         inputSchema={
             "type": "object",
             "properties": {
@@ -36,6 +36,20 @@ TOOLS = [
                 }
             },
             "required": []
+        }
+    ),
+    Tool(
+        name="get_news_article",
+        description="Fetch the full text content of a news article by its URL. Use this when the user wants more details about a specific news story from the headlines.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "url": {
+                    "type": "string",
+                    "description": "The article URL (from the 'link' field in news headlines)"
+                }
+            },
+            "required": ["url"]
         }
     ),
     Tool(
@@ -170,17 +184,40 @@ async def handle_get_news_headlines(arguments):
                         age = f"{mins // 1440} pv sitten"
                 except (ValueError, TypeError):
                     age = pub
-            headlines.append({
+            entry = {
                 "title": item.get("title", ""),
                 "description": item.get("description", ""),
                 "source": item.get("source", ""),
                 "published": age or pub,
-            })
+            }
+            if item.get("link"):
+                entry["link"] = item["link"]
+            headlines.append(entry)
 
         return [TextContent(type="text", text=json.dumps(headlines, indent=2, ensure_ascii=False, default=str))]
     except Exception as e:
         log.error("get_news_headlines error: %s\n%s", e, traceback.format_exc())
         return [TextContent(type="text", text=f"Error fetching news: {str(e)}")]
+
+
+async def handle_get_news_article(arguments):
+    try:
+        url = arguments.get("url", "").strip()
+        if not url:
+            return [TextContent(type="text", text='{"error": "Missing url parameter"}')]
+
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.get(f"{NEWS_API_URL}/article", params={"url": url})
+            resp.raise_for_status()
+            data = resp.json()
+
+        if "error" in data:
+            return [TextContent(type="text", text=json.dumps(data, ensure_ascii=False))]
+
+        return [TextContent(type="text", text=json.dumps(data, indent=2, ensure_ascii=False, default=str))]
+    except Exception as e:
+        log.error("get_news_article error: %s\n%s", e, traceback.format_exc())
+        return [TextContent(type="text", text=f"Error fetching article: {str(e)}")]
 
 
 async def handle_get_bus_departures(arguments):
@@ -267,6 +304,7 @@ async def handle_get_calendar_events(arguments):
 HANDLERS = {
     "get_weather_forecast": handle_get_weather_forecast,
     "get_news_headlines": handle_get_news_headlines,
+    "get_news_article": handle_get_news_article,
     "get_bus_departures": handle_get_bus_departures,
     "get_calendar_events": handle_get_calendar_events,
 }

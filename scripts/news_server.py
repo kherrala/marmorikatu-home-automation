@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 
 import httpx
+from bs4 import BeautifulSoup
 from starlette.applications import Starlette
 from starlette.responses import HTMLResponse, JSONResponse
 from starlette.routing import Route
@@ -132,10 +133,115 @@ async def fetch_news() -> list[dict]:
     return result
 
 
+# -- Article scraping ---------------------------------------------------------
+ALLOWED_DOMAINS = {"yle.fi", "www.yle.fi"}
+
+
+async def fetch_article(url: str) -> dict:
+    """Fetch and extract full article text from a Yle news URL."""
+    from urllib.parse import urlparse
+
+    parsed = urlparse(url)
+    if parsed.hostname not in ALLOWED_DOMAINS:
+        return {"error": f"Domain not allowed: {parsed.hostname}"}
+
+    try:
+        async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
+            resp = await client.get(url, headers={
+                "User-Agent": "Mozilla/5.0 (compatible; HomeAutomation/1.0)",
+                "Accept": "text/html",
+            })
+            resp.raise_for_status()
+    except Exception as e:
+        log.error("Article fetch failed for %s: %s", url, e)
+        return {"error": f"Failed to fetch article: {e}"}
+
+    soup = BeautifulSoup(resp.text, "html.parser")
+
+    # Extract title from og:title or <h1>
+    title = ""
+    og_title = soup.find("meta", property="og:title")
+    if og_title:
+        title = og_title.get("content", "")
+    if not title:
+        h1 = soup.find("h1")
+        title = h1.get_text(strip=True) if h1 else ""
+
+    # Remove non-article elements before extracting text
+    article = soup.find("article")
+    if article:
+        # Remove navigation, sidebars, footers, related content, ads
+        for tag in article.find_all(["nav", "footer", "aside", "figure", "figcaption"]):
+            tag.decompose()
+        for tag in article.find_all(attrs={"role": ["navigation", "complementary", "banner"]}):
+            tag.decompose()
+        for tag in article.find_all(class_=lambda c: c and any(
+            kw in str(c).lower() for kw in [
+                "sidebar", "related", "recommend", "popular", "suositui",
+                "tuoreimmat", "comment", "share", "social", "cookie",
+                "footer", "header", "nav", "menu", "no-print", "ad-",
+                "sticky", "skip-to",
+            ]
+        )):
+            tag.decompose()
+
+    # Extract paragraphs and subheadings in document order
+    blocks = []
+    search_root = article or soup
+
+    for tag in search_root.find_all(["p", "h2", "h3"]):
+        # Skip elements inside link blocks (navigation lists)
+        if tag.find_parent("a"):
+            continue
+        text = tag.get_text(strip=True)
+        if not text:
+            continue
+        # Headings: keep if meaningful length
+        if tag.name in ("h2", "h3"):
+            if len(text) > 5:
+                blocks.append(f"## {text}")
+        # Paragraphs: filter out short boilerplate
+        elif len(text) > 20:
+            blocks.append(text)
+
+    # Deduplicate while preserving order
+    seen = set()
+    unique = []
+    for b in blocks:
+        if b not in seen:
+            seen.add(b)
+            unique.append(b)
+
+    content = "\n\n".join(unique)
+
+    if not content:
+        # Last resort: meta description
+        meta_desc = soup.find("meta", attrs={"name": "description"})
+        if meta_desc:
+            content = meta_desc.get("content", "")
+
+    return {
+        "title": title,
+        "content": content,
+        "url": url,
+        "paragraphs": len(unique),
+    }
+
+
 # -- Endpoints ----------------------------------------------------------------
 async def api_news(request):
     items = await fetch_news()
     return JSONResponse(items)
+
+
+async def api_article(request):
+    url = request.query_params.get("url", "").strip()
+    if not url:
+        return JSONResponse({"error": "Missing 'url' parameter"}, status_code=400)
+    result = await fetch_article(url)
+    if "error" in result:
+        return JSONResponse(result, status_code=400)
+    return JSONResponse(result)
 
 
 async def health(request):
@@ -705,6 +811,7 @@ app = Starlette(
     routes=[
         Route("/", index),
         Route("/api/news", api_news),
+        Route("/api/news/article", api_article),
         Route("/health", health),
     ],
 )
