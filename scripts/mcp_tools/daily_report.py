@@ -24,7 +24,7 @@ TOOLS = [
 
 Returns a structured summary covering:
 - Current weather and today's forecast
-- Top news headlines (3 items)
+- News digest: up to 10 headlines with descriptions and a topic summary
 - Today's and tomorrow's calendar events (family + garbage collection, excludes school)
 - Home status: indoor/outdoor temperatures, heat pump, air quality
 
@@ -81,8 +81,12 @@ async def _fetch_weather() -> dict | None:
         return None
 
 
-async def _fetch_news(count: int = 3) -> list[dict] | None:
-    """Fetch top news headlines."""
+async def _fetch_news() -> dict | None:
+    """Fetch news headlines and build a digest summary.
+
+    Returns a structured digest with a brief summary covering the main
+    topics across all headlines, plus individual items with descriptions.
+    """
     try:
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.get(NEWS_API_URL)
@@ -90,29 +94,54 @@ async def _fetch_news(count: int = 3) -> list[dict] | None:
             items = resp.json()
 
         now = datetime.now(timezone.utc)
+
+        def relative_age(pub: str) -> str:
+            if not pub:
+                return ""
+            try:
+                pub_dt = datetime.fromisoformat(pub)
+                delta = now - pub_dt.astimezone(timezone.utc)
+                mins = int(delta.total_seconds() / 60)
+                if mins < 60:
+                    return f"{mins} min sitten"
+                elif mins < 1440:
+                    return f"{mins // 60} h sitten"
+                else:
+                    return f"{mins // 1440} pv sitten"
+            except (ValueError, TypeError):
+                return pub
+
+        # Take up to 10 items for a broad overview
         headlines = []
-        for item in items[:count]:
-            pub = item.get("pubDate", "")
-            age = ""
-            if pub:
-                try:
-                    pub_dt = datetime.fromisoformat(pub)
-                    delta = now - pub_dt.astimezone(timezone.utc)
-                    mins = int(delta.total_seconds() / 60)
-                    if mins < 60:
-                        age = f"{mins} min sitten"
-                    elif mins < 1440:
-                        age = f"{mins // 60} h sitten"
-                    else:
-                        age = f"{mins // 1440} pv sitten"
-                except (ValueError, TypeError):
-                    age = pub
-            headlines.append({
+        for item in items[:10]:
+            entry = {
                 "title": item.get("title", ""),
                 "source": item.get("source", ""),
-                "published": age or pub,
-            })
-        return headlines
+                "published": relative_age(item.get("pubDate", "")),
+            }
+            desc = item.get("description", "").strip()
+            if desc:
+                entry["description"] = desc
+            headlines.append(entry)
+
+        if not headlines:
+            return None
+
+        # Build a topic summary from titles + descriptions to help the LLM
+        # produce a concise briefing without reading every item
+        topics = []
+        for item in headlines:
+            topic = item["title"]
+            desc = item.get("description", "")
+            if desc and len(desc) > 20:
+                topic += f" — {desc}"
+            topics.append(topic)
+
+        return {
+            "summary": " | ".join(topics),
+            "headlines": headlines,
+            "count": len(headlines),
+        }
     except Exception as e:
         log.error("Daily report — news fetch failed: %s", e)
         return None
