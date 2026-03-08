@@ -1205,6 +1205,7 @@
       }
       conversationHistory = [];
       autoSummaryGiven = false;
+      nativeRestartRounds = 0; // fresh restart budget for each greeting
       userTextEl.textContent = '';
 
       // Determine time-appropriate greeting (short form)
@@ -1458,12 +1459,14 @@
     let nativeHardTimer = null;
     let nativeSpeechText = '';
     let nativeFailCount = 0;
+    let nativeRestartRounds = 0;       // counts restart rounds when nativeHasWorked; capped to prevent infinite loop
     let nativeFallenBack = false;      // sticky: once fallen back, stay on MediaRecorder
     let nativeHasWorked = false;       // true once native API has produced a result this session
     let recognitionEpoch = 0;          // incremented on every intentional stop — stale callbacks check this
     const NATIVE_SPEECH_PAUSE = 2000;
     const NATIVE_HARD_TIMEOUT = 15000; // force-stop after 15s if no final result
     const NATIVE_MAX_FAILS = 3;        // fall back to MediaRecorder after N failures
+    const NATIVE_MAX_RESTART_ROUNDS = 5; // give up restarting native after N rounds (user is silent)
 
     let mediaRecorder = null;
     let audioChunks = [];
@@ -1563,9 +1566,23 @@
     // -- Native Web Speech API -----------------------------------------------
     function fallbackToMediaRecorder() {
       if (nativeHasWorked) {
-        console.warn('[voice] Native failed but has worked this session — restarting native');
-        nativeFailCount = 0;
-        if (listeningActive) startNativeRecognition();
+        nativeRestartRounds++;
+        if (nativeRestartRounds <= NATIVE_MAX_RESTART_ROUNDS) {
+          console.warn('[voice] Native failed but has worked this session — restarting native (round %d/%d)', nativeRestartRounds, NATIVE_MAX_RESTART_ROUNDS);
+          nativeFailCount = 0;
+          if (listeningActive) startNativeRecognition();
+          return;
+        }
+        // Exceeded max rounds — user is silent; stop listening gracefully
+        console.warn('[voice] Too many consecutive native failures — stopping listening');
+        nativeRestartRounds = 0;
+        listeningActive = false;
+        listeningIndicator.classList.add('hidden');
+        avatarEl.classList.remove('listening');
+        clearTimeout(nativeSpeechTimer);
+        clearTimeout(nativeHardTimer);
+        try { nativeRecognizer?.abort(); } catch {}
+        nativeRecognizer = null;
         return;
       }
       console.warn('[voice] Falling back to MediaRecorder + server transcription');
@@ -1605,6 +1622,7 @@
       nativeRecognizer.onresult = (event) => {
         if (myEpoch !== recognitionEpoch) return; // stale — a newer session owns things now
         nativeFailCount = 0; // got a result, reset fail counter
+        nativeRestartRounds = 0; // user spoke — reset restart cap
         nativeHasWorked = true;
         let finalText = '';
         let interimText = '';
