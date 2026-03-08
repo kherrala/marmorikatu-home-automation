@@ -44,7 +44,7 @@ MAX_TOKENS = int(os.environ.get("MAX_TOKENS", "300"))
 OLLAMA_NUM_CTX = int(os.environ.get("OLLAMA_NUM_CTX", "16384"))
 BRIDGE_PORT = int(os.environ.get("BRIDGE_PORT", "3002"))
 PIPER_BINARY = os.environ.get("PIPER_BINARY", "/usr/local/piper/piper")
-PIPER_MODEL  = os.environ.get("PIPER_MODEL",  "/models/fi_FI-harri-medium.onnx")
+PIPER_MODEL  = os.environ.get("PIPER_MODEL",  "/models/fi_FI-asmo-medium.onnx")
 PIPER_SPEED  = float(os.environ.get("PIPER_SPEED", "1.0"))   # <1 = slower, >1 = faster
 TTS_CACHE_SIZE = int(os.environ.get("TTS_CACHE_SIZE", "64"))  # max cached audio entries
 

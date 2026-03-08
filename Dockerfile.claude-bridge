@@ -16,12 +16,12 @@ RUN wget -q -O /tmp/piper.tar.gz \
     tar -xzf /tmp/piper.tar.gz -C /usr/local && \
     rm /tmp/piper.tar.gz
 
-# Download Finnish Piper voice model
+# Download Finnish Piper voice model (AsmoKoskinen/Piper_Finnish_Model, CC-BY-NC-4.0)
 RUN mkdir -p /models && \
-    wget -q -O /models/fi_FI-harri-medium.onnx \
-      "https://huggingface.co/rhasspy/piper-voices/resolve/main/fi/fi_FI/harri/medium/fi_FI-harri-medium.onnx" && \
-    wget -q -O /models/fi_FI-harri-medium.onnx.json \
-      "https://huggingface.co/rhasspy/piper-voices/resolve/main/fi/fi_FI/harri/medium/fi_FI-harri-medium.onnx.json"
+    wget -q -O /models/fi_FI-asmo-medium.onnx \
+      "https://huggingface.co/AsmoKoskinen/Piper_Finnish_Model/resolve/main/fi_FI-asmo-medium.onnx" && \
+    wget -q -O /models/fi_FI-asmo-medium.onnx.json \
+      "https://huggingface.co/AsmoKoskinen/Piper_Finnish_Model/resolve/main/fi_FI-asmo-medium.onnx.json"
 
 # Copy bridge script
 COPY scripts/claude_bridge.py /app/
