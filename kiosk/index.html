@@ -1226,7 +1226,7 @@
 
           reportSpinner.classList.remove('hidden');
           try {
-            conversationHistory.push({ role: 'user', content: 'Anna p\u00e4iv\u00e4n raportti: aloita p\u00e4iv\u00e4n t\u00e4rkein uutinen, sitten s\u00e4\u00e4tilanne ja kodin tilanne. Tarkista my\u00f6s kalenteri ja kerro jos t\u00e4n\u00e4\u00e4n tai huomenna on j\u00e4teastioidenty\u00f6hjennys (sek\u00e4j\u00e4te, bioj\u00e4te, kartonki, muovi jne). Hae tiedot ty\u00f6kaluilla. \u00c4l\u00e4 luettele lukemia, vaan kerro olennainen lyhyesti.' });
+            conversationHistory.push({ role: 'user', content: 'Hae päiväraportti get_daily_report-työkalulla ja tiivistä se lyhyeksi katsaukseksi. Aloita tärkeimmästä uutisesta, sitten sää, kodin tilanne ja kalenterin tapahtumat. Älä luettele lukemia, vaan kerro olennainen.' });
             const summary = await generateConversationalResponse();
             reportSpinner.classList.add('hidden');
             if (summary) {
