@@ -414,7 +414,7 @@ async def _piper_synthesize(text: str) -> bytes:
         stdin=asyncio.subprocess.PIPE,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.DEVNULL,
-        env={**os.environ, "LD_LIBRARY_PATH": "/usr/local/piper"},
+        env={**os.environ, "LD_LIBRARY_PATH": "/usr/local/piper", "LANG": "C.UTF-8", "LC_ALL": "C.UTF-8"},
     )
     raw_pcm, _ = await proc.communicate(input=text.encode("utf-8"))
     if proc.returncode != 0 or not raw_pcm:
