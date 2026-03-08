@@ -520,6 +520,8 @@
 
   <!-- Greeting jingle (local MP3, preloaded for instant playback) -->
   <audio id="jingle" preload="auto" src="/jingle.mp3"></audio>
+  <!-- Persistent TTS audio element (reused to maintain iOS audio unlock) -->
+  <audio id="tts-audio" preload="none"></audio>
 
   <!-- face-api.js (served from nginx static files, downloaded during Docker build) -->
   <script src="/face-api/face-api.min.js"></script>
@@ -798,6 +800,7 @@
     const reportSpinner  = document.getElementById('report-spinner');
     const videoEl        = document.getElementById('camera');
     const jingleAudio    = document.getElementById('jingle');
+    const ttsAudio       = document.getElementById('tts-audio');
     const userTextEl     = document.getElementById('user-text');
     const listeningIndicator = document.getElementById('listening-indicator');
     const initSpinner    = document.getElementById('init-spinner');
@@ -911,9 +914,57 @@
     // =========================================================================
 
 
+    // -- Audio unlock (must be called from a user gesture) --------------------
+    let audioUnlocked = false;
+
+    function unlockAudio() {
+      if (audioUnlocked) return;
+      audioUnlocked = true;
+
+      // Unlock speechSynthesis
+      const silentUtterance = new SpeechSynthesisUtterance('');
+      silentUtterance.volume = 0;
+      speechSynthesis.speak(silentUtterance);
+
+      // Unlock jingle <audio>
+      jingleAudio.muted = true;
+      jingleAudio.play().then(() => { jingleAudio.pause(); jingleAudio.currentTime = 0; jingleAudio.muted = false; }).catch(() => { jingleAudio.muted = false; });
+
+      // Unlock persistent TTS <audio> (reused for all server TTS playback)
+      ttsAudio.muted = true;
+      ttsAudio.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=';
+      ttsAudio.play().then(() => { ttsAudio.pause(); ttsAudio.muted = false; }).catch(() => { ttsAudio.muted = false; });
+
+      // Unlock AudioContext
+      try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const buf = ctx.createBuffer(1, 1, 22050);
+        const src = ctx.createBufferSource();
+        src.buffer = buf;
+        src.connect(ctx.destination);
+        src.start(0);
+        ctx.resume();
+      } catch {}
+
+      // iOS speechSynthesis keepalive — prevent the speech engine from going dormant
+      setInterval(() => {
+        if (!speechSynthesis.speaking) {
+          speechSynthesis.cancel();
+          const keepalive = new SpeechSynthesisUtterance('');
+          keepalive.volume = 0;
+          speechSynthesis.speak(keepalive);
+        }
+      }, 10_000);
+
+      console.log('[audio] Unlocked all audio channels');
+    }
+
     // -- Start overlay: unlock camera + audio on iOS --------------------------
-    // Try to auto-activate if permissions were previously granted
+    // iOS requires a user gesture to unlock audio — never auto-activate on iOS/iPadOS
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
     async function tryAutoActivate() {
+      if (isIOS) return false; // always require tap on iOS to unlock audio
       try {
         const cam = await navigator.permissions.query({ name: 'camera' });
         const mic = await navigator.permissions.query({ name: 'microphone' });
@@ -937,23 +988,8 @@
       startOverlay.removeEventListener('click', handleStart);
       setState(STATES.UNLOCKING);
 
-      // Unlock speechSynthesis + audio playback (must be in gesture handler)
-      const silentUtterance = new SpeechSynthesisUtterance('');
-      silentUtterance.volume = 0;
-      speechSynthesis.speak(silentUtterance);
-      jingleAudio.muted = true;
-      jingleAudio.play().then(() => { jingleAudio.pause(); jingleAudio.currentTime = 0; jingleAudio.muted = false; }).catch(() => { jingleAudio.muted = false; });
-
-      // Unlock AudioContext for programmatic Audio() playback on iOS
-      try {
-        const ctx = new (window.AudioContext || window.webkitAudioContext)();
-        const buf = ctx.createBuffer(1, 1, 22050);
-        const src = ctx.createBufferSource();
-        src.buffer = buf;
-        src.connect(ctx.destination);
-        src.start(0);
-        ctx.resume();
-      } catch {}
+      // Unlock all audio playback channels (must be in gesture handler)
+      unlockAudio();
 
       // Show progress
       startLabel.textContent = 'Aktivoidaan...';
@@ -1317,7 +1353,7 @@
     }
 
     async function speakAndWait(text) {
-      // Try server-side TTS first (respects native device volume)
+      // Try server-side TTS first, using persistent <audio> element (iOS-safe)
       try {
         const res = await fetch('/api/chat/tts', {
           method: 'POST',
@@ -1328,21 +1364,24 @@
           const blob = await res.blob();
           if (blob.size > 0) {
             const url = URL.createObjectURL(blob);
-            const audio = new Audio(url);
             try {
-              await audio.play();
+              // Reuse persistent ttsAudio element — maintains iOS audio unlock
+              ttsAudio.src = url;
+              ttsAudio.currentTime = 0;
+              await ttsAudio.play();
               avatarEl.classList.add('speaking');
               avatarEl.classList.remove('listening');
               const ok = await new Promise(resolve => {
-                audio.onended = () => resolve(true);
-                audio.onerror = () => resolve(false);
+                const cleanup = () => { ttsAudio.onended = null; ttsAudio.onerror = null; };
+                ttsAudio.onended = () => { cleanup(); resolve(true); };
+                ttsAudio.onerror = () => { cleanup(); resolve(false); };
               });
               avatarEl.classList.remove('speaking');
               URL.revokeObjectURL(url);
-              if (ok) return; // played successfully — done
-            } catch {
+              if (ok) return;
+            } catch (e) {
+              console.warn('[tts] Audio play failed:', e);
               URL.revokeObjectURL(url);
-              // audio.play() failed — fall through to browser TTS
             }
           }
         }
@@ -1366,11 +1405,18 @@
           avatarEl.classList.remove('speaking');
           resolve();
         };
-        utterance.onerror = () => {
+        utterance.onerror = (e) => {
+          console.warn('[tts] speechSynthesis error:', e.error);
           avatarEl.classList.remove('speaking');
           resolve();
         };
+        // iOS workaround: speechSynthesis.speak can silently fail if called too
+        // long after the last user gesture. Force a pause/resume cycle first.
         speechSynthesis.speak(utterance);
+        if (isIOS) {
+          speechSynthesis.pause();
+          speechSynthesis.resume();
+        }
       });
     }
 
