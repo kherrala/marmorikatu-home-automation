@@ -935,15 +935,24 @@
       ttsAudio.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=';
       ttsAudio.play().then(() => { ttsAudio.pause(); ttsAudio.muted = false; }).catch(() => { ttsAudio.muted = false; });
 
-      // Unlock AudioContext
+      // Unlock AudioContext and route ttsAudio through a gain node.
+      // Gain > 1.0 amplifies the voice signal; the iPad OS/Safari volume mixer
+      // still controls the final output level (system volume buttons work normally).
       try {
-        const ctx = new (window.AudioContext || window.webkitAudioContext)();
-        const buf = ctx.createBuffer(1, 1, 22050);
-        const src = ctx.createBufferSource();
+        const ttsCtx = new (window.AudioContext || window.webkitAudioContext)();
+        // Silent buffer to unlock the AudioContext within the gesture handler
+        const buf = ttsCtx.createBuffer(1, 1, 22050);
+        const src = ttsCtx.createBufferSource();
         src.buffer = buf;
-        src.connect(ctx.destination);
+        src.connect(ttsCtx.destination);
         src.start(0);
-        ctx.resume();
+        // Route TTS audio through a gain node so the voice is loud enough
+        const ttsSource = ttsCtx.createMediaElementSource(ttsAudio);
+        const ttsGain = ttsCtx.createGain();
+        ttsGain.gain.value = 3.0;
+        ttsSource.connect(ttsGain);
+        ttsGain.connect(ttsCtx.destination);
+        ttsCtx.resume();
       } catch {}
 
       // iOS speechSynthesis keepalive — prevent the speech engine from going dormant
