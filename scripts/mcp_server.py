@@ -47,10 +47,10 @@ def create_starlette_app():
     """Create Starlette app with SSE transport for MCP."""
     sse = SseServerTransport("/messages/")
 
-    async def handle_sse(request):
-        async with sse.connect_sse(
-            request.scope, request.receive, request._send
-        ) as streams:
+    # ASGI callable — Starlette 0.40+ requires Route handlers to return a Response,
+    # so we use Mount instead, which accepts bare ASGI callables.
+    async def handle_sse(scope, receive, send):
+        async with sse.connect_sse(scope, receive, send) as streams:
             await app.run(
                 streams[0], streams[1], app.create_initialization_options()
             )
@@ -62,7 +62,7 @@ def create_starlette_app():
         debug=False,
         routes=[
             Route("/health", health_check),
-            Route("/sse", handle_sse),
+            Mount("/sse", app=handle_sse),
             Mount("/messages/", app=sse.handle_post_message),
         ],
     )
