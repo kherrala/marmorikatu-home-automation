@@ -18,7 +18,7 @@ from mcp.server.sse import SseServerTransport
 from mcp.types import Tool, TextContent
 from starlette.applications import Starlette
 from starlette.routing import Route, Mount
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, Response
 
 from mcp_tools import ALL_TOOLS, ALL_HANDLERS
 
@@ -47,13 +47,19 @@ def create_starlette_app():
     """Create Starlette app with SSE transport for MCP."""
     sse = SseServerTransport("/messages/")
 
-    # ASGI callable — Starlette 0.40+ requires Route handlers to return a Response,
-    # so we use Mount instead, which accepts bare ASGI callables.
-    async def handle_sse(scope, receive, send):
-        async with sse.connect_sse(scope, receive, send) as streams:
+    class _NullResponse(Response):
+        """No-op response returned after SSE session ends to satisfy Starlette routing."""
+        async def __call__(self, scope, receive, send) -> None:
+            pass  # connection already closed by SSE transport
+
+    async def handle_sse(request):
+        async with sse.connect_sse(
+            request.scope, request.receive, request._send
+        ) as streams:
             await app.run(
                 streams[0], streams[1], app.create_initialization_options()
             )
+        return _NullResponse()
 
     async def health_check(request):
         return JSONResponse({"status": "ok", "service": "building-automation-mcp"})
@@ -62,7 +68,7 @@ def create_starlette_app():
         debug=False,
         routes=[
             Route("/health", health_check),
-            Mount("/sse", app=handle_sse),
+            Route("/sse", handle_sse),
             Mount("/messages/", app=sse.handle_post_message),
         ],
     )
