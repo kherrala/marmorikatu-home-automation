@@ -1627,6 +1627,8 @@
         console.log('[voice] startListening skipped: micReady=%s, state=%s', micReady, kioskState);
         return;
       }
+      // Re-enable audio tracks so iOS shows the mic indicator and MediaRecorder works
+      videoEl.srcObject?.getAudioTracks().forEach(t => { t.enabled = true; });
 
       // Wait for jingle to finish before opening mic
       if (!jingleAudio.paused) {
@@ -1930,6 +1932,9 @@
       if (mediaRecorder && mediaRecorder.state === 'recording') {
         try { mediaRecorder.stop(); } catch { /* ignore */ }
       }
+      // Disable audio tracks so the iOS mic indicator clears between sessions.
+      // Tracks are re-enabled at the start of startListening().
+      videoEl.srcObject?.getAudioTracks().forEach(t => { t.enabled = false; });
     }
 
     const FAREWELL_PATTERNS = /\b(heippa|heihei|hei\s*hei|näkemiin|nähdään|moi\s*moi|moikka|kiitos\s+siitä|kiitos\s+paljon|selvä\s+homma|hyvää\s+päivän\s*jatkoa|hyvää\s+yötä|hyvää\s+iltaa|bye|goodbye|see\s*you)\b/i;
