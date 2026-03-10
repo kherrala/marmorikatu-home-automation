@@ -916,6 +916,7 @@
 
     // -- Audio unlock (must be called from a user gesture) --------------------
     let audioUnlocked = false;
+    let ttsAudioCtx = null; // persisted so it isn't GC'd and can be resumed
 
     function unlockAudio() {
       if (audioUnlocked) return;
@@ -938,21 +939,23 @@
       // Unlock AudioContext and route ttsAudio through a gain node.
       // Gain > 1.0 amplifies the voice signal; the iPad OS/Safari volume mixer
       // still controls the final output level (system volume buttons work normally).
+      // Stored in ttsAudioCtx (module-level) so it is never GC'd and can be
+      // resumed after iOS suspends it (device lock, tab background, etc.).
       try {
-        const ttsCtx = new (window.AudioContext || window.webkitAudioContext)();
+        ttsAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
         // Silent buffer to unlock the AudioContext within the gesture handler
-        const buf = ttsCtx.createBuffer(1, 1, 22050);
-        const src = ttsCtx.createBufferSource();
+        const buf = ttsAudioCtx.createBuffer(1, 1, 22050);
+        const src = ttsAudioCtx.createBufferSource();
         src.buffer = buf;
-        src.connect(ttsCtx.destination);
+        src.connect(ttsAudioCtx.destination);
         src.start(0);
         // Route TTS audio through a gain node so the voice is loud enough
-        const ttsSource = ttsCtx.createMediaElementSource(ttsAudio);
-        const ttsGain = ttsCtx.createGain();
+        const ttsSource = ttsAudioCtx.createMediaElementSource(ttsAudio);
+        const ttsGain = ttsAudioCtx.createGain();
         ttsGain.gain.value = 3.0;
         ttsSource.connect(ttsGain);
-        ttsGain.connect(ttsCtx.destination);
-        ttsCtx.resume();
+        ttsGain.connect(ttsAudioCtx.destination);
+        ttsAudioCtx.resume();
       } catch {}
 
       // iOS speechSynthesis keepalive — prevent the speech engine from going dormant
@@ -981,6 +984,7 @@
           setState(STATES.UNLOCKING);
           const cameraOk = await initCameraSteps();
           if (cameraOk) {
+            unlockAudio(); // set up TTS AudioContext even on the no-tap path
             startOverlay.classList.add('hidden');
             initSpeechRecognition();
             return true;
@@ -1388,16 +1392,26 @@
           let played = 0;
 
           const playSentence = (b64wav) => new Promise(resolve => {
+            // Resume AudioContext if iOS suspended it (device lock / tab background)
+            if (ttsAudioCtx?.state === 'suspended') ttsAudioCtx.resume();
             const bytes = atob(b64wav);
             const arr = new Uint8Array(bytes.length);
             for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
             const url = URL.createObjectURL(new Blob([arr], { type: 'audio/wav' }));
+            let safetyTimer;
+            const cleanup = () => {
+              clearTimeout(safetyTimer);
+              ttsAudio.onended = null;
+              ttsAudio.onerror = null;
+              URL.revokeObjectURL(url);
+            };
             ttsAudio.src = url;
             ttsAudio.currentTime = 0;
-            ttsAudio.play().catch(() => resolve(false));
+            ttsAudio.play().catch(() => { cleanup(); resolve(false); });
             avatarEl.classList.add('speaking');
             avatarEl.classList.remove('listening');
-            const cleanup = () => { ttsAudio.onended = null; ttsAudio.onerror = null; URL.revokeObjectURL(url); };
+            // Safety net: if onended never fires (network drop mid-stream) don't hang
+            safetyTimer = setTimeout(() => { cleanup(); resolve(false); }, 15_000);
             ttsAudio.onended = () => { cleanup(); resolve(true); };
             ttsAudio.onerror = () => { cleanup(); resolve(false); };
           });
@@ -1522,7 +1536,12 @@
 
     function setupAudioAnalyser() {
       try {
-        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        // Reuse the TTS AudioContext when available — iOS only allows a small
+        // number of simultaneous AudioContexts; keeping one prevents the other
+        // from being silently suspended.
+        audioContext = ttsAudioCtx || new (window.AudioContext || window.webkitAudioContext)();
+        if (!ttsAudioCtx) ttsAudioCtx = audioContext; // keep a reference either way
+        if (audioContext.state === 'suspended') audioContext.resume();
         const source = audioContext.createMediaStreamSource(audioStream);
         analyserNode = audioContext.createAnalyser();
         analyserNode.fftSize = 512;
