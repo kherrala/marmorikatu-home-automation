@@ -1097,8 +1097,70 @@
 
       setState(STATES.READY);
       startFaceDetection();
+
+      // Watch for iOS interrupting the camera (device lock, incoming call, tab switch).
+      // When any video track ends, schedule a camera restart once the page is visible.
+      function attachTrackEndedWatcher() {
+        const stream = videoEl.srcObject;
+        if (!stream) return;
+        stream.getVideoTracks().forEach(t => {
+          t.addEventListener('ended', () => {
+            console.warn('[camera] Video track ended — will restart on next visibility');
+            scheduleVideoRestart();
+          });
+        });
+      }
+      attachTrackEndedWatcher();
+
       return true;
     }
+
+    // Restart the camera stream after an iOS interruption.
+    let videoRestartPending = false;
+    function scheduleVideoRestart() {
+      if (videoRestartPending) return;
+      videoRestartPending = true;
+      async function doRestart() {
+        videoRestartPending = false;
+        if (document.visibilityState === 'hidden') return; // wait for visible event
+        console.log('[camera] Restarting camera stream after interruption');
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: 'user', width: 320, height: 240 },
+            audio: true
+          });
+          videoEl.srcObject = stream;
+          stream.getAudioTracks().forEach(t => t.enabled = false);
+          await videoEl.play();
+          // Re-enable mic track in the speech recognition path
+          const existingTracks = stream.getAudioTracks();
+          if (existingTracks.length > 0 && audioStream) {
+            existingTracks.forEach(t => t.enabled = true);
+            audioStream = new MediaStream(existingTracks);
+          }
+          console.log('[camera] Camera stream restarted');
+        } catch (err) {
+          console.warn('[camera] Camera restart failed:', err);
+        }
+      }
+      // Give iOS a moment to release the camera before re-requesting
+      setTimeout(doRestart, 800);
+    }
+
+    // iOS pauses video when the tab is hidden; resume + restart if needed on return.
+    document.addEventListener('visibilitychange', async () => {
+      if (document.visibilityState !== 'visible') return;
+      // Resume AudioContext that iOS may have suspended
+      if (ttsAudioCtx?.state === 'suspended') ttsAudioCtx.resume();
+      // If video has stalled or tracks have ended, restart the stream
+      const tracks = videoEl.srcObject?.getVideoTracks() ?? [];
+      const needsRestart = tracks.length === 0 || tracks.some(t => t.readyState === 'ended');
+      if (needsRestart) {
+        scheduleVideoRestart();
+      } else if (videoEl.paused) {
+        videoEl.play().catch(() => {});
+      }
+    });
 
     // -- Face detection loop --------------------------------------------------
     let consecutiveDetections = 0;
