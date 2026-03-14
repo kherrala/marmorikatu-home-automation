@@ -425,12 +425,12 @@ body::after {
 }
 
 .gc-icon-wrap {
-  font-size: 3.8vh;
+  font-size: 5.5vh;
   line-height: 1;
 }
 
 .gc-category {
-  font-size: 1.7vh;
+  font-size: 2.4vh;
   font-weight: 600;
   color: var(--text);
   white-space: nowrap;
