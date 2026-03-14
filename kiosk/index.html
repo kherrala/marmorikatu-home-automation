@@ -301,7 +301,7 @@
     #avatar.listening #lash-l { transform: translateY(-5px); }
     #avatar.listening #lash-r { transform: translateY(-5px); }
     #avatar.listening .avatar-mouth-inner { display: none; }
-    #avatar.listening #listen-mouth { display: block; }
+    #avatar.listening #listen-mouth { display: block !important; }
 
     /* -- Greeting content ------------------------------------------------- */
     #greeting-content {
@@ -972,7 +972,7 @@
         // Route TTS audio through a gain node so the voice is loud enough
         const ttsSource = ttsAudioCtx.createMediaElementSource(ttsAudio);
         const ttsGain = ttsAudioCtx.createGain();
-        ttsGain.gain.value = 3.0;
+        ttsGain.gain.value = 1.0;
         ttsSource.connect(ttsGain);
         ttsGain.connect(ttsAudioCtx.destination);
         ttsAudioCtx.resume();
