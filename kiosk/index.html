@@ -1772,27 +1772,44 @@
           userTextEl.textContent = '\u201c' + liveText + '\u201d';
         }
 
-        // Reset ALL timers from the moment of last speech activity.
-        // Hard timeout must slide with speech — otherwise any sentence >15 s gets aborted.
+        // Cancel daily-report timer as soon as any speech is detected
         clearTimeout(silenceAutoSummaryTimer);
-        clearTimeout(nativeHardTimer);
-        nativeHardTimer = setTimeout(() => {
-          if (myEpoch !== recognitionEpoch) return;
-          console.warn('[voice] Native hard timeout — 15 s since last speech activity');
-          try { nativeRecognizer.abort(); } catch {}
-        }, NATIVE_HARD_TIMEOUT);
-        clearTimeout(nativeSpeechTimer);
-        nativeSpeechTimer = setTimeout(() => {
-          if (myEpoch !== recognitionEpoch) return; // stale
-          // Prefer final text, fall back to best interim
-          const text = nativeSpeechText || bestInterim;
-          if (text && listeningActive) {
-            clearTimeout(nativeHardTimer);
-            console.log('[voice] Native speech done:', text);
-            try { nativeRecognizer.stop(); } catch {}
-            handleVoiceResult(text);
-          }
-        }, hadVoiceInput ? NATIVE_SPEECH_PAUSE_SHORT : NATIVE_SPEECH_PAUSE);
+
+        if (finalText.trim()) {
+          // isFinal=true means Chrome considers the utterance complete — process it
+          // quickly (200 ms) rather than waiting a full pause period. The long wait
+          // was the source of race conditions with onend / daily-report timer.
+          clearTimeout(nativeSpeechTimer);
+          nativeSpeechTimer = setTimeout(() => {
+            if (myEpoch !== recognitionEpoch) return;
+            const text = nativeSpeechText || bestInterim;
+            if (text && listeningActive) {
+              clearTimeout(nativeHardTimer);
+              console.log('[voice] Native speech done (final):', text);
+              try { nativeRecognizer.stop(); } catch {}
+              handleVoiceResult(text);
+            }
+          }, 200);
+        } else {
+          // Interim only — reset the sliding hard timeout and the fallback pause timer
+          clearTimeout(nativeHardTimer);
+          nativeHardTimer = setTimeout(() => {
+            if (myEpoch !== recognitionEpoch) return;
+            console.warn('[voice] Native hard timeout — 15 s since last interim');
+            try { nativeRecognizer.abort(); } catch {}
+          }, NATIVE_HARD_TIMEOUT);
+          clearTimeout(nativeSpeechTimer);
+          nativeSpeechTimer = setTimeout(() => {
+            if (myEpoch !== recognitionEpoch) return;
+            const text = nativeSpeechText || bestInterim;
+            if (text && listeningActive) {
+              clearTimeout(nativeHardTimer);
+              console.log('[voice] Native speech done (pause):', text);
+              try { nativeRecognizer.stop(); } catch {}
+              handleVoiceResult(text);
+            }
+          }, hadVoiceInput ? NATIVE_SPEECH_PAUSE_SHORT : NATIVE_SPEECH_PAUSE);
+        }
       };
 
       nativeRecognizer.onerror = (event) => {
@@ -1838,6 +1855,7 @@
         clearTimeout(nativeHardTimer);
         // Use whatever text we have (final or interim)
         const text = nativeSpeechText || bestInterim;
+        console.log('[voice] onend: text=%s listeningActive=%s', JSON.stringify(text), listeningActive);
         if (text && listeningActive) {
           clearTimeout(nativeSpeechTimer);
           handleVoiceResult(text);
