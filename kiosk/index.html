@@ -1772,8 +1772,15 @@
           userTextEl.textContent = '\u201c' + liveText + '\u201d';
         }
 
-        // Reset pause timer on any result activity; cancel daily report if user spoke first
+        // Reset ALL timers from the moment of last speech activity.
+        // Hard timeout must slide with speech — otherwise any sentence >15 s gets aborted.
         clearTimeout(silenceAutoSummaryTimer);
+        clearTimeout(nativeHardTimer);
+        nativeHardTimer = setTimeout(() => {
+          if (myEpoch !== recognitionEpoch) return;
+          console.warn('[voice] Native hard timeout — 15 s since last speech activity');
+          try { nativeRecognizer.abort(); } catch {}
+        }, NATIVE_HARD_TIMEOUT);
         clearTimeout(nativeSpeechTimer);
         nativeSpeechTimer = setTimeout(() => {
           if (myEpoch !== recognitionEpoch) return; // stale
@@ -1798,6 +1805,15 @@
         clearTimeout(nativeHardTimer);
 
         if ((event.error === 'no-speech' || event.error === 'aborted') && listeningActive && kioskState === STATES.GREETING && !nativeFallenBack) {
+          // If we accumulated text before the abort/timeout, use it now rather than restarting
+          const accumulated = nativeSpeechText || bestInterim;
+          if (accumulated) {
+            console.log('[voice] Using accumulated text after abort:', accumulated);
+            clearTimeout(nativeSpeechTimer);
+            recognitionEpoch++; // stale the current session before handing off
+            handleVoiceResult(accumulated);
+            return;
+          }
           nativeFailCount++;
           if (nativeFailCount >= NATIVE_MAX_FAILS && audioStream) {
             fallbackToMediaRecorder();
