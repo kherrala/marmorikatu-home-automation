@@ -1760,6 +1760,10 @@
           console.log('[voice] Native interim:', bestInterim);
         }
 
+        // Show partial result in speech bubble immediately
+        const liveText = nativeSpeechText || bestInterim;
+        if (liveText) userTextEl.textContent = '\u201c' + liveText + '\u201d';
+
         // Reset pause timer on any result activity; cancel daily report if user spoke first
         clearTimeout(silenceAutoSummaryTimer);
         clearTimeout(nativeSpeechTimer);
