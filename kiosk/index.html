@@ -281,12 +281,27 @@
     }
 
     #avatar.listening {
-      animation: listenPulse 2s ease-in-out infinite;
+      animation: listenAttentive 1.4s ease-in-out infinite;
     }
-    @keyframes listenPulse {
-      0%, 100% { transform: translateY(0) rotate(0deg); }
-      50%  { transform: translateY(-2px) rotate(2deg); }
+    @keyframes listenAttentive {
+      0%   { transform: rotate(-6deg) translateY(2px); }
+      50%  { transform: rotate(6deg) translateY(-4px); }
+      100% { transform: rotate(-6deg) translateY(2px); }
     }
+
+    /* Radical listening face */
+    #avatar.listening .avatar-eye-lid {
+      animation: none;
+      transform: scaleY(1.35);
+      transform-box: fill-box;
+      transform-origin: center;
+    }
+    #avatar.listening #eb-l  { transform: translateY(-5px); }
+    #avatar.listening #eb-r  { transform: translateY(-5px); }
+    #avatar.listening #lash-l { transform: translateY(-5px); }
+    #avatar.listening #lash-r { transform: translateY(-5px); }
+    #avatar.listening .avatar-mouth-inner { display: none; }
+    #avatar.listening #listen-mouth { display: block; }
 
     /* -- Greeting content ------------------------------------------------- */
     #greeting-content {
@@ -351,11 +366,11 @@
       position: fixed;
       bottom: 64px;
       right: 20px;
-      max-width: 280px;
+      max-width: 330px;
       width: auto;
       padding: 14px 18px 14px 14px;
       border-radius: 20px;
-      gap: 10px;
+      gap: 12px;
       flex-direction: row;
       pointer-events: auto;
       transform: scale(1) translateY(0);
@@ -366,8 +381,8 @@
       100% { opacity: 1; transform: scale(1); }
     }
     #greeting-overlay.minimized #avatar-container {
-      width: 52px;
-      height: 52px;
+      width: 94px;
+      height: 94px;
     }
     #greeting-overlay.minimized #greeting-content {
       align-items: flex-start;
@@ -462,8 +477,8 @@
           <path d="M26 50 Q22 65 24 90 Q28 80 30 60z" fill="#3d2b1f"/>
           <path d="M94 50 Q98 65 96 90 Q92 80 90 60z" fill="#3d2b1f"/>
           <!-- Eyebrows -->
-          <path d="M40 48 Q47 44 54 47" stroke="#3d2b1f" stroke-width="1.8" fill="none" stroke-linecap="round"/>
-          <path d="M66 47 Q73 44 80 48" stroke="#3d2b1f" stroke-width="1.8" fill="none" stroke-linecap="round"/>
+          <path id="eb-l" d="M40 48 Q47 44 54 47" stroke="#3d2b1f" stroke-width="1.8" fill="none" stroke-linecap="round"/>
+          <path id="eb-r" d="M66 47 Q73 44 80 48" stroke="#3d2b1f" stroke-width="1.8" fill="none" stroke-linecap="round"/>
           <!-- Eyes -->
           <g class="avatar-eye-lid">
             <ellipse cx="47" cy="56" rx="6" ry="6" fill="#fff"/>
@@ -474,14 +489,19 @@
             <circle cx="74.5" cy="55" r="1.3" fill="#fff"/>
           </g>
           <!-- Eyelashes -->
-          <path d="M41 51.5 Q47 49 53 51.5" stroke="#3d2b1f" stroke-width="1.2" fill="none"/>
-          <path d="M67 51.5 Q73 49 79 51.5" stroke="#3d2b1f" stroke-width="1.2" fill="none"/>
+          <path id="lash-l" d="M41 51.5 Q47 49 53 51.5" stroke="#3d2b1f" stroke-width="1.2" fill="none"/>
+          <path id="lash-r" d="M67 51.5 Q73 49 79 51.5" stroke="#3d2b1f" stroke-width="1.2" fill="none"/>
           <!-- Nose -->
           <path d="M58 66 Q60 70 62 66" stroke="#dbb896" stroke-width="1.2" fill="none" stroke-linecap="round"/>
-          <!-- Mouth -->
+          <!-- Mouth (normal smile) -->
           <g class="avatar-mouth-inner">
             <path d="M48 78 Q54 84 60 84 Q66 84 72 78" stroke="#d4736a" stroke-width="2" fill="none" stroke-linecap="round"/>
             <path d="M50 79 Q60 86 70 79" fill="#d4736a" fill-opacity="0.25"/>
+          </g>
+          <!-- Listening mouth (open O, hidden by default) -->
+          <g id="listen-mouth" style="display:none">
+            <ellipse cx="60" cy="81" rx="9" ry="7" fill="#b05050"/>
+            <ellipse cx="60" cy="81" rx="6" ry="4.5" fill="#7a2020"/>
           </g>
           <!-- Cheek blush -->
           <circle cx="38" cy="70" r="7" fill="#f0a0a0" opacity="0.2"/>
@@ -1280,6 +1300,7 @@
       }
       conversationHistory = [];
       autoSummaryGiven = false;
+      hadVoiceInput = false;
       nativeRestartRounds = 0; // fresh restart budget for each greeting
       userTextEl.textContent = '';
 
@@ -1548,7 +1569,8 @@
     let nativeFallenBack = false;      // sticky: once fallen back, stay on MediaRecorder
     let nativeHasWorked = false;       // true once native API has produced a result this session
     let recognitionEpoch = 0;          // incremented on every intentional stop — stale callbacks check this
-    const NATIVE_SPEECH_PAUSE = 2000;
+    const NATIVE_SPEECH_PAUSE = 2000;      // first utterance: wait 2s of silence
+    const NATIVE_SPEECH_PAUSE_SHORT = 800; // subsequent: 0.8s (conversation already going)
     const NATIVE_HARD_TIMEOUT = 15000; // force-stop after 15s if no final result
     const NATIVE_MAX_FAILS = 3;        // fall back to MediaRecorder after N failures
     const NATIVE_MAX_RESTART_ROUNDS = 5; // give up restarting native after N rounds (user is silent)
@@ -1560,11 +1582,13 @@
     let audioContext = null;
     let analyserNode = null;
     const SILENCE_THRESHOLD = 0.015; // RMS below this = silence
-    const SILENCE_DURATION = 1500;   // ms of silence before sending
+    const SILENCE_DURATION = 1500;   // ms of silence before sending (first utterance)
+    const SILENCE_DURATION_SHORT = 700; // ms of silence after first exchange
     const MIN_RECORDING_MS = 500;    // ignore very short recordings
     const MAX_RECORDING_MS = 10_000; // hard cap — send after 10s regardless
     let recordingStartTime = 0;
     let micReady = false;
+    let hadVoiceInput = false; // true after first real voice exchange; shortens silence delay
 
     function initSpeechRecognition() {
       // Always set up mic stream — needed for MediaRecorder fallback even on native path
@@ -1643,6 +1667,7 @@
       }
 
       listeningActive = true;
+      reportText.textContent = '';
       listeningIndicator.classList.remove('hidden');
       avatarEl.classList.add('listening');
       scheduleOverlayDismiss();
@@ -1735,7 +1760,8 @@
           console.log('[voice] Native interim:', bestInterim);
         }
 
-        // Reset pause timer on any result activity
+        // Reset pause timer on any result activity; cancel daily report if user spoke first
+        clearTimeout(silenceAutoSummaryTimer);
         clearTimeout(nativeSpeechTimer);
         nativeSpeechTimer = setTimeout(() => {
           if (myEpoch !== recognitionEpoch) return; // stale
@@ -1747,7 +1773,7 @@
             try { nativeRecognizer.stop(); } catch {}
             handleVoiceResult(text);
           }
-        }, NATIVE_SPEECH_PAUSE);
+        }, hadVoiceInput ? NATIVE_SPEECH_PAUSE_SHORT : NATIVE_SPEECH_PAUSE);
       };
 
       nativeRecognizer.onerror = (event) => {
@@ -1897,13 +1923,14 @@
         }
 
         if (rms >= SILENCE_THRESHOLD) {
+          if (!speechDetected) clearTimeout(silenceAutoSummaryTimer);
           speechDetected = true;
           silenceStart = null;
         } else if (speechDetected) {
           // Only start counting silence after speech was detected
           if (!silenceStart) silenceStart = Date.now();
           const silentFor = Date.now() - silenceStart;
-          if (silentFor >= SILENCE_DURATION) {
+          if (silentFor >= (hadVoiceInput ? SILENCE_DURATION_SHORT : SILENCE_DURATION)) {
             console.log('[voice] Silence after speech, stopping recording');
             mediaRecorder.stop();
             return;
@@ -1987,6 +2014,7 @@
         reportSpinner.classList.add('hidden');
         reportText.textContent = response;
         conversationHistory.push({ role: 'assistant', content: response });
+        hadVoiceInput = true;
         await speakAndWait(response);
       } catch {
         const fallback = randomFallback();

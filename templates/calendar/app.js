@@ -330,8 +330,10 @@ function renderGarbageCountdown(allEvents) {
     var label = ev.summary;
     var match = ev.summary.match(/^(\p{Emoji_Presentation}|\p{Emoji}\uFE0F?)/u);
     if (match && match[0]) { icon = match[0]; label = ev.summary.substring(match[0].length).trim(); }
-    // Strip trailing " tyhjennys ..." — show only the waste type name (e.g. "Sekajäte")
-    label = label.replace(/\s+tyhjennys.*/i, '').trim();
+    // Strip " tyhjennys ..." suffix — show only the waste type name (e.g. "Sekajäte")
+    label = label.replace(/[,\s]*tyhjennys\b.*/i, '').trim();
+    // Fallback: if still long, take just first word (covers "Sekajäte tyhjennys" variants)
+    if (label.length > 14) label = label.split(/\s+/)[0];
 
     html += '<div class="gc-card gc-' + urgency + '" style="animation-delay:' + (i * 0.06) + 's">';
     html += '<div class="gc-left"><div class="gc-icon-wrap">' + icon + '</div><div class="gc-category">' + label + '</div></div>';
