@@ -1339,49 +1339,9 @@
 
       // Enter listening mode (waits for jingle to finish if still playing)
       // scheduleOverlayDismiss is called inside startListening after mic actually opens
-      startListening();
-
-      // If no speech input within 5s, generate a daily report (once per day)
-      const todayDate = new Date().toISOString().slice(0, 10);
-      const dailyReportDue = lastReportDate !== todayDate;
+      // Daily-report timer is started inside startListening once the mic is actually open
       clearTimeout(silenceAutoSummaryTimer);
-      if (dailyReportDue) {
-        silenceAutoSummaryTimer = setTimeout(async () => {
-          if (kioskState !== STATES.GREETING || !listeningActive || autoSummaryGiven) return;
-
-          // Pause listening while generating summary
-          listeningActive = false;
-          listeningIndicator.classList.add('hidden');
-          avatarEl.classList.remove('listening');
-          clearTimeout(silenceTimer);
-          clearTimeout(nativeSpeechTimer);
-          clearTimeout(nativeHardTimer);
-          recognitionEpoch++; // invalidate any pending callbacks before abort fires
-          if (nativeRecognizer) { try { nativeRecognizer.abort(); } catch {} nativeRecognizer = null; }
-          if (mediaRecorder && mediaRecorder.state === 'recording') { try { mediaRecorder.stop(); } catch {} }
-
-          reportSpinner.classList.remove('hidden');
-          try {
-            conversationHistory.push({ role: 'user', content: 'Hae päiväraportti get_daily_report-työkalulla ja tiivistä se lyhyeksi katsaukseksi. Aloita tärkeimmästä uutisesta, sitten sää, kodin tilanne ja kalenterin tapahtumat. Älä luettele lukemia, vaan kerro olennainen.' });
-            const summary = await generateConversationalResponse();
-            reportSpinner.classList.add('hidden');
-            if (summary) {
-              autoSummaryGiven = true;
-              lastReportDate = todayDate;
-              reportText.textContent = summary;
-              conversationHistory.push({ role: 'assistant', content: summary });
-              await speakAndWait(summary);
-            }
-          } catch {
-            reportSpinner.classList.add('hidden');
-          }
-
-          // Resume listening after summary
-          if (kioskState === STATES.GREETING && Date.now() - overlayStartTime < MAX_OVERLAY_DURATION) {
-            startListening();
-          }
-        }, SILENCE_AUTO_SUMMARY_MS);
-      }
+      startListening();
     }
 
     function minimizeOverlay() {
@@ -1588,7 +1548,8 @@
     const MAX_RECORDING_MS = 10_000; // hard cap — send after 10s regardless
     let recordingStartTime = 0;
     let micReady = false;
-    let hadVoiceInput = false; // true after first real voice exchange; shortens silence delay
+    let hadVoiceInput = false;      // true after first real voice exchange; shortens silence delay
+    let voiceInputReceived = false; // true as soon as any audio/text is detected; guards daily-report timer
 
     function initSpeechRecognition() {
       // Always set up mic stream — needed for MediaRecorder fallback even on native path
@@ -1667,10 +1628,54 @@
       }
 
       listeningActive = true;
+      voiceInputReceived = false;
       reportText.textContent = '';
       listeningIndicator.classList.remove('hidden');
       avatarEl.classList.add('listening');
       scheduleOverlayDismiss();
+
+      // Daily-report timer: fires if user says nothing for 5 s after mic opens.
+      // Placed here (not in triggerGreeting) so the countdown starts from when the
+      // mic is actually open — including after a jingle delay.
+      // voiceInputReceived is a synchronous guard so the callback can't race with
+      // onresult / silence-detection even if both land in the event queue at once.
+      if (!autoSummaryGiven && new Date().toISOString().slice(0, 10) !== lastReportDate) {
+        clearTimeout(silenceAutoSummaryTimer);
+        silenceAutoSummaryTimer = setTimeout(async () => {
+          if (kioskState !== STATES.GREETING || !listeningActive || autoSummaryGiven || voiceInputReceived) return;
+
+          // Pause listening while generating summary
+          listeningActive = false;
+          listeningIndicator.classList.add('hidden');
+          avatarEl.classList.remove('listening');
+          clearTimeout(silenceTimer);
+          clearTimeout(nativeSpeechTimer);
+          clearTimeout(nativeHardTimer);
+          recognitionEpoch++;
+          if (nativeRecognizer) { try { nativeRecognizer.abort(); } catch {} nativeRecognizer = null; }
+          if (mediaRecorder && mediaRecorder.state === 'recording') { try { mediaRecorder.stop(); } catch {} }
+
+          reportSpinner.classList.remove('hidden');
+          try {
+            conversationHistory.push({ role: 'user', content: 'Hae päiväraportti get_daily_report-työkalulla ja tiivistä se lyhyeksi katsaukseksi. Aloita tärkeimmästä uutisesta, sitten sää, kodin tilanne ja kalenterin tapahtumat. Älä luettele lukemia, vaan kerro olennainen.' });
+            const summary = await generateConversationalResponse();
+            reportSpinner.classList.add('hidden');
+            if (summary) {
+              autoSummaryGiven = true;
+              lastReportDate = new Date().toISOString().slice(0, 10);
+              reportText.textContent = summary;
+              conversationHistory.push({ role: 'assistant', content: summary });
+              await speakAndWait(summary);
+            }
+          } catch {
+            reportSpinner.classList.add('hidden');
+          }
+
+          if (kioskState === STATES.GREETING && Date.now() - overlayStartTime < MAX_OVERLAY_DURATION) {
+            startListening();
+          }
+        }, SILENCE_AUTO_SUMMARY_MS);
+      }
 
       if (useNativeSpeech && !nativeFallenBack) {
         startNativeRecognition();
@@ -1762,7 +1767,10 @@
 
         // Show partial result in speech bubble immediately
         const liveText = nativeSpeechText || bestInterim;
-        if (liveText) userTextEl.textContent = '\u201c' + liveText + '\u201d';
+        if (liveText) {
+          voiceInputReceived = true; // synchronous guard — stops daily-report timer even on race
+          userTextEl.textContent = '\u201c' + liveText + '\u201d';
+        }
 
         // Reset pause timer on any result activity; cancel daily report if user spoke first
         clearTimeout(silenceAutoSummaryTimer);
@@ -1927,7 +1935,7 @@
         }
 
         if (rms >= SILENCE_THRESHOLD) {
-          if (!speechDetected) clearTimeout(silenceAutoSummaryTimer);
+          if (!speechDetected) { voiceInputReceived = true; clearTimeout(silenceAutoSummaryTimer); }
           speechDetected = true;
           silenceStart = null;
         } else if (speechDetected) {
