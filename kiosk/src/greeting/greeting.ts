@@ -15,6 +15,7 @@ import {
 } from '../dom/elements.js';
 
 let overlayTimeout: ReturnType<typeof setTimeout> | null = null;
+let cooldownTimeout: ReturnType<typeof setTimeout> | null = null;
 let jingleTimeout: ReturnType<typeof setTimeout> | null = null;
 let silenceAutoSummaryTimer: ReturnType<typeof setTimeout> | null = null;
 let greetingActiveAt = 0;
@@ -122,6 +123,7 @@ export function dismissGreeting(): void {
   dispatch({ type: 'GREETING_DISMISS', time: now });
 
   clearOverlayTimeout();
+  if (cooldownTimeout !== null) clearTimeout(cooldownTimeout);
   stopJingle();
   stopListeningFn?.();
   clearSilenceTimer();
@@ -130,7 +132,8 @@ export function dismissGreeting(): void {
   clearAvatar();
   greetingOverlay.classList.remove('visible', 'minimized');
 
-  setTimeout(() => {
+  cooldownTimeout = setTimeout(() => {
+    cooldownTimeout = null;
     if (getState().phase === KioskPhase.COOLDOWN) {
       dispatch({ type: 'SET_PHASE', phase: KioskPhase.READY });
     }

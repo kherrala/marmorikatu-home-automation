@@ -1,4 +1,5 @@
 import { getState, dispatch } from '../state/store.js';
+import { KioskPhase } from '../types/state.js';
 import { userTextEl, listeningIndicator } from '../dom/elements.js';
 import { setListening } from '../dom/avatar.js';
 import { NativeSpeechRecognition } from './microphone.js';
@@ -60,7 +61,7 @@ export function startNativeListening(): void {
       onVoiceResult?.(text.trim());
     } else {
       const st = getState();
-      if (st.voice.listeningActive && st.phase === 'GREETING') {
+      if (st.voice.listeningActive && st.phase === KioskPhase.GREETING) {
         dispatch({ type: 'NATIVE_SILENCE_INCREMENT' });
         const updated = getState();
         if (updated.voice.nativeSilenceCount >= MAX_NATIVE_SILENCE) {

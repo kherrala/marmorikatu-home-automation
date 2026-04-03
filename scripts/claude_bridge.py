@@ -58,14 +58,21 @@ WEEKDAYS_FI = ["maanantai", "tiistai", "keskiviikko", "torstai", "perjantai", "l
 
 def get_system_prompt() -> str:
     """Build system prompt with current date and time."""
-    from datetime import datetime, timezone, timedelta
-    now = datetime.now(timezone(timedelta(hours=2)))  # EET
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    now = datetime.now(ZoneInfo("Europe/Helsinki"))
     weekday = WEEKDAYS_FI[now.weekday()]
     date_str = f"{weekday} {now.day}.{now.month}.{now.year}"
     time_str = f"{now.hour}:{now.minute:02d}"
     return (
-        f"Käytä AINA työkaluja. ÄLÄ keksi tietoja.\n"
-        f"Nyt on {date_str}, kello {time_str}.\n"
+        f"Olet kodin älykäs avustaja Tampereella. Nyt on {date_str}, kello {time_str}.\n"
+        f"\n"
+        f"TÄRKEÄÄ:\n"
+        f"- Käytä AINA työkaluja tietojen hakuun. ÄLÄ KOSKAAN keksi tai arvaa tietoja.\n"
+        f"- Jos työkalu ei ole käytettävissä tai kutsu epäonnistuu, sano rehellisesti ettet tiedä.\n"
+        f"- ÄLÄ keksi säätietoja, uutisia, lämpötiloja tai kalenterimerkintöjä.\n"
+        f"- Kerro vain se mitä työkalut palauttavat.\n"
+        f"\n"
         f"Vastaa lyhyesti suomeksi ilman muotoilua.\n"
         f"Vastauksesi luetaan ääneen — pidä ne lyhyinä ja selkeinä.\n"
         f"Käyttäjä on kotona.\n"

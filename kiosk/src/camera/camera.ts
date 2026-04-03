@@ -76,7 +76,7 @@ export function scheduleVideoRestart(): void {
         const audioTracks = stream.getAudioTracks();
         if (audioTracks.length > 0) {
           audioTracks.forEach(t => t.enabled = true);
-          audioStream = new MediaStream(audioTracks);
+          setAudioStream(new MediaStream(audioTracks));
         }
       }
       console.log('[camera] Camera stream restarted');
