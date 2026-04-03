@@ -6,4 +6,4 @@ RUN npx playwright install --with-deps chromium
 
 EXPOSE 3025
 
-CMD ["npx", "@playwright/mcp@latest", "--host", "0.0.0.0", "--port", "3025", "--browser", "chromium", "--headless", "--allowed-hosts", "*", "--timeout-navigation", "30000", "--timeout-action", "10000"]
+CMD ["npx", "@playwright/mcp@latest", "--host", "0.0.0.0", "--port", "3025", "--browser", "chromium", "--headless", "--allowed-hosts", "*", "--no-sandbox", "--timeout-navigation", "30000", "--timeout-action", "10000", "--user-agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"]

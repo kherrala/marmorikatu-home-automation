@@ -90,8 +90,9 @@ def get_system_prompt() -> str:
         f"\n"
         f"Verkkohaku:\n"
         f"- Käytä 'browser_navigate' + 'browser_snapshot' hakeaksesi tietoa verkosta.\n"
-        f"- Navigoi esim. https://www.google.com/search?q=hakusana tai suoraan sivustolle.\n"
-        f"- Käytä 'browser_snapshot' lukeaksesi sivun sisällön."
+        f"- Käytä hakuun: https://html.duckduckgo.com/html/?q=hakusana (ei estä headless-selainta).\n"
+        f"- Käytä 'browser_snapshot' lukeaksesi sivun sisällön.\n"
+        f"- Jos sivu näyttää evästebannerin tai 'Just a moment', yritä toista sivustoa."
     )
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
