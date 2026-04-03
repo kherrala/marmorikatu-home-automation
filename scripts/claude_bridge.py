@@ -30,6 +30,7 @@ import anyio
 import anthropic
 import uvicorn
 from mcp.client.sse import sse_client
+from mcp.client.streamable_http import streamablehttp_client
 from mcp.client.session import ClientSession
 from starlette.applications import Starlette
 from starlette.routing import Route
@@ -241,7 +242,9 @@ async def mcp_connection_loop(url: str):
         try:
             _reconnect_events[url].clear()
             log.info("Connecting to MCP server at %s ...", url)
-            async with sse_client(url) as (read_stream, write_stream):
+            # Use streamable HTTP for /mcp endpoints, SSE for /sse endpoints
+            transport = streamablehttp_client(url) if url.rstrip("/").endswith("/mcp") else sse_client(url)
+            async with transport as (read_stream, write_stream):
                 async with ClientSession(read_stream, write_stream) as session:
                     await asyncio.wait_for(session.initialize(), timeout=15)
                     tools_result = await asyncio.wait_for(session.list_tools(), timeout=10)
