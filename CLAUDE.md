@@ -36,6 +36,18 @@ Five measurements in bucket `building_automation`: `hvac` (WAGO HVAC, ~2h), `roo
 
 See [docs/influxdb-data-model.md](docs/influxdb-data-model.md) for complete schema with all tags, fields, types, units, and example queries.
 
+## Kiosk Avatar
+
+The kiosk is a wall-mounted iPad running a TypeScript + Vite + RxJS frontend served by nginx. It displays rotating Grafana dashboards with face-detection-triggered AI voice assistant (Ollama qwen2.5:14b via Claude Bridge + MCP tools). Memory persistence via remind MCP server.
+
+- **Source**: `kiosk/src/` — TypeScript modules, built with `cd kiosk && npm run build`
+- **State management**: RxJS `BehaviorSubject` + `scan` reducer (`state/machine.ts`)
+- **AI backend**: `scripts/claude_bridge.py` — Ollama primary, Claude fallback, MCP tool routing
+- **Memory**: remind MCP server (`Dockerfile.remind`) — stores user preferences between sessions
+- **TTS**: Server-side Piper Finnish TTS with browser speechSynthesis fallback
+
+See [docs/kiosk-state-machine.md](docs/kiosk-state-machine.md) for complete business logic, state transitions, acceptance criteria, and timer reference.
+
 ## Key Files
 
 - **`scripts/import_data.py`** — CSV parser handling Latin-1 encoding, sensor validation, batch writes (5000 points). Maps CSV columns to measurements with proper tags.
