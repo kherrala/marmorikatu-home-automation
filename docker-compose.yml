@@ -176,6 +176,8 @@ services:
       context: .
       dockerfile: Dockerfile.remind
     container_name: marmorikatu-remind
+    ports:
+      - "8765:8765"
     volumes:
       - remind-data:/data
     extra_hosts:
