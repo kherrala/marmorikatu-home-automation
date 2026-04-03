@@ -196,7 +196,7 @@ async def mcp_connection_loop(url: str):
             log.info("Connecting to MCP server at %s ...", url)
             async with sse_client(url) as (read_stream, write_stream):
                 async with ClientSession(read_stream, write_stream) as session:
-                    await session.initialize()
+                    await asyncio.wait_for(session.initialize(), timeout=15)
                     tools_result = await asyncio.wait_for(session.list_tools(), timeout=10)
 
                     tools_claude = [
@@ -222,11 +222,11 @@ async def mcp_connection_loop(url: str):
 
                     retry_delay = 5  # reset on successful connection
 
-                    # Keep alive: periodically ping and watch for forced reconnect
+                    # Keep alive: health-check every 60s, watch for forced reconnect
                     while not _reconnect_events[url].is_set():
                         try:
                             await asyncio.wait_for(
-                                _reconnect_events[url].wait(), timeout=300
+                                _reconnect_events[url].wait(), timeout=60
                             )
                         except asyncio.TimeoutError:
                             # Periodic health check — verify session is still alive
@@ -238,10 +238,12 @@ async def mcp_connection_loop(url: str):
                                 break
                     else:
                         log.info("MCP %s — forced reconnect requested", url)
+                        _servers.pop(url, None)
         except asyncio.CancelledError:
             break
         except Exception as e:
-            log.warning("MCP %s lost (%s), reconnecting in %ds...", url, e, retry_delay)
+            log.warning("MCP %s lost (%s: %s), reconnecting in %ds...",
+                        url, type(e).__name__, e, retry_delay)
             _servers.pop(url, None)
             await asyncio.sleep(retry_delay)
             retry_delay = min(retry_delay * 2, 60)  # backoff up to 60s
