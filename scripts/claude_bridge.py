@@ -158,6 +158,11 @@ def _invalidate_session(session: ClientSession):
 
 async def _call_tool_safe(tool_name: str, tool_input: dict, iteration: int, caller: str) -> str:
     """Call an MCP tool with timeout, dead-session detection, and error handling."""
+    # Workaround: remind's remember tool crashes when episode_type is a string
+    # (expects enum, gets str from LLM). Strip it — remind auto-detects the type.
+    if tool_name == "remember":
+        tool_input = {k: v for k, v in tool_input.items() if k != "episode_type"}
+
     session = _find_session(tool_name)
     if not session:
         msg = f"Error: tool '{tool_name}' not available (MCP server offline?)"
