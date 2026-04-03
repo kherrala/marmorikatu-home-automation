@@ -1,4 +1,6 @@
-import { dispatch, getState } from '../state/store.js';
+import { Subject, Subscription, timer, EMPTY } from 'rxjs';
+import { switchMap, takeUntil, filter } from 'rxjs/operators';
+import { dispatch, getState, select } from '../state/store.js';
 import { KioskPhase } from '../types/state.js';
 import {
   GREETING_COOLDOWN, MAX_OVERLAY_DURATION, JINGLE_DURATION,
@@ -14,17 +16,20 @@ import {
   userTextEl, jingleAudio, ttsAudio,
 } from '../dom/elements.js';
 
-// -- Timers --
-let overlayTimeout: ReturnType<typeof setTimeout> | null = null;
-let cooldownTimeout: ReturnType<typeof setTimeout> | null = null;
-let jingleTimeout: ReturnType<typeof setTimeout> | null = null;
-let silenceAutoSummaryTimer: ReturnType<typeof setTimeout> | null = null;
-let greetingActiveAt = 0;
+// -- RxJS cancellation signals --
+// Emits when the current greeting ends (dismiss or new greeting).
+// All greeting-scoped timers use takeUntil(greetingEnd$) for auto-cleanup.
+const greetingEnd$ = new Subject<void>();
 
-// Epoch counter: incremented on every new greeting. Deferred callbacks
-// compare their captured epoch to the current one to avoid acting on
-// a greeting that has already been dismissed and replaced.
+// Emits to (re)schedule the overlay safety timeout
+const scheduleOverlay$ = new Subject<void>();
+
+let greetingActiveAt = 0;
 let greetingEpoch = 0;
+let jingleTimeout: ReturnType<typeof setTimeout> | null = null;
+
+// Active RxJS subscriptions for the current greeting session
+let greetingSubs = new Subscription();
 
 // External handlers wired up by main.ts
 let showSlideFn: ((idx: number) => void) | null = null;
@@ -53,15 +58,52 @@ export function getGreetingEpoch(): number {
 }
 
 export async function triggerGreeting(): Promise<void> {
-  // Clean up any lingering state from a previous greeting
-  clearAllTimers();
+  // End previous greeting (cancels all its timers)
+  endGreeting();
 
   greetingEpoch++;
   const epoch = greetingEpoch;
+  greetingSubs = new Subscription();
 
   dispatch({ type: 'SET_PHASE', phase: KioskPhase.GREETING });
   const now = Date.now();
   dispatch({ type: 'GREETING_START', time: now });
+
+  // -- Set up RxJS timers for this greeting session --
+
+  // Overlay safety timeout: auto-dismiss after MAX_OVERLAY_DURATION.
+  // Re-schedulable via scheduleOverlay$.next() (called from startListening).
+  greetingSubs.add(
+    scheduleOverlay$.pipe(
+      switchMap(() => {
+        const remaining = MAX_OVERLAY_DURATION - (Date.now() - getState().greeting.overlayStartTime);
+        return remaining > 0 ? timer(remaining) : EMPTY;
+      }),
+      takeUntil(greetingEnd$),
+    ).subscribe(() => dismissGreeting()),
+  );
+
+  // Cooldown → READY transition (activated when phase enters COOLDOWN)
+  greetingSubs.add(
+    select(s => s.phase).pipe(
+      filter(p => p === KioskPhase.COOLDOWN),
+      switchMap(() => timer(GREETING_COOLDOWN)),
+      takeUntil(greetingEnd$),
+    ).subscribe(() => {
+      if (getState().phase === KioskPhase.COOLDOWN) {
+        dispatch({ type: 'SET_PHASE', phase: KioskPhase.READY });
+      }
+    }),
+  );
+
+  // Deferred dismiss retry: when dismiss is called during processing,
+  // poll every 2s until processing clears.
+  greetingSubs.add(
+    deferredDismiss$.pipe(
+      switchMap(() => timer(2000)),
+      takeUntil(greetingEnd$),
+    ).subscribe(() => dismissGreeting()),
+  );
 
   // Switch to relevant slide
   try {
@@ -77,7 +119,6 @@ export async function triggerGreeting(): Promise<void> {
     showSlideFn?.(NEWS_IDX);
   }
 
-  // Bail if dismissed while fetching departures
   if (epoch !== greetingEpoch) return;
 
   userTextEl.textContent = '';
@@ -92,7 +133,6 @@ export async function triggerGreeting(): Promise<void> {
 
   if (h >= 5 && h < 10) startJingle();
 
-  // Show overlay
   greetingText.textContent = greeting;
   reportText.textContent = '';
   greetingActiveAt = Date.now();
@@ -114,36 +154,25 @@ export async function triggerGreeting(): Promise<void> {
 
   if (epoch !== greetingEpoch) return;
 
-  // Minimize avatar to bottom-right
   greetingOverlay.classList.add('minimized');
   startListeningFn?.();
 }
 
+// Trigger to reschedule the overlay safety timeout
 export function scheduleOverlayDismiss(): void {
-  if (overlayTimeout !== null) clearTimeout(overlayTimeout);
-  const remaining = MAX_OVERLAY_DURATION - (Date.now() - getState().greeting.overlayStartTime);
-  if (remaining <= 0) { dismissGreeting(); return; }
-  overlayTimeout = setTimeout(() => dismissGreeting(), remaining);
+  scheduleOverlay$.next();
 }
 
-export function clearOverlayTimeout(): void {
-  if (overlayTimeout !== null) {
-    clearTimeout(overlayTimeout);
-    overlayTimeout = null;
-  }
-}
+// Signal for deferred dismiss retries
+const deferredDismiss$ = new Subject<void>();
 
 export function dismissGreeting(): void {
   const s = getState();
   if (s.phase !== KioskPhase.GREETING) return;
 
-  // Don't dismiss while processing AI response — defer and retry.
+  // Defer if processing — the deferred timer (set up in triggerGreeting) will retry
   if (s.processing) {
-    clearOverlayTimeout();
-    const epoch = greetingEpoch;
-    overlayTimeout = setTimeout(() => {
-      if (greetingEpoch === epoch) dismissGreeting();
-    }, 2000);
+    deferredDismiss$.next();
     return;
   }
 
@@ -153,84 +182,87 @@ export function dismissGreeting(): void {
   dispatch({ type: 'SET_PHASE', phase: KioskPhase.COOLDOWN });
   dispatch({ type: 'GREETING_DISMISS', time: Date.now() });
 
-  clearAllTimers();
+  // endGreeting cancels all RxJS timers; the cooldown→READY timer
+  // is already subscribed and will fire because it listens for COOLDOWN phase.
+  // But we need to NOT end the greeting subs yet — the cooldown timer needs them.
+  // So we only signal greetingEnd$ after the cooldown timer fires.
+  // Actually, the cooldown timer uses takeUntil(greetingEnd$), so we must NOT
+  // emit greetingEnd$ here. It's emitted only when a NEW greeting starts.
+
   stopJingle();
   stopListeningFn?.();
   speechSynthesis.cancel();
   ttsAudio.pause();
   clearAvatar();
   greetingOverlay.classList.remove('visible', 'minimized');
-
-  cooldownTimeout = setTimeout(() => {
-    cooldownTimeout = null;
-    if (getState().phase === KioskPhase.COOLDOWN) {
-      dispatch({ type: 'SET_PHASE', phase: KioskPhase.READY });
-    }
-  }, GREETING_COOLDOWN);
 }
 
-// -- Daily report timer management --
+// Called when a new greeting starts or when cleaning up
+function endGreeting(): void {
+  greetingEnd$.next();
+  greetingSubs.unsubscribe();
+  greetingSubs = new Subscription();
+  stopJingle();
+}
+
+// -- Daily report --
 export function scheduleDailyReport(): void {
   const s = getState();
   if (s.greeting.autoSummaryGiven || new Date().toISOString().slice(0, 10) === s.greeting.lastReportDate) {
     return;
   }
 
-  clearSilenceTimer();
   const epoch = greetingEpoch;
-  silenceAutoSummaryTimer = setTimeout(async () => {
-    silenceAutoSummaryTimer = null;
-    const st = getState();
-    if (epoch !== greetingEpoch) return;
-    if (st.phase !== KioskPhase.GREETING || !st.voice.listeningActive
-        || st.greeting.autoSummaryGiven || st.voice.voiceInputReceived) return;
 
-    dispatch({ type: 'SET_PROCESSING', processing: true });
-    pauseListeningFn?.();
-    reportSpinner.classList.remove('hidden');
-    try {
-      dispatch({
-        type: 'CONVERSATION_ADD',
-        message: {
-          role: 'user',
-          content: 'Hae päiväraportti get_daily_report-työkalulla ja tiivistä se lyhyeksi katsaukseksi. Aloita tärkeimmästä uutisesta, sitten sää, kodin tilanne ja kalenterin tapahtumat. Älä luettele lukemia, vaan kerro olennainen.',
-        },
-      });
-      const summary = await generateAIResponse();
-      reportSpinner.classList.add('hidden');
+  // Use RxJS timer with takeUntil for auto-cleanup
+  greetingSubs.add(
+    timer(SILENCE_AUTO_SUMMARY_MS).pipe(
+      takeUntil(greetingEnd$),
+    ).subscribe(async () => {
+      const st = getState();
       if (epoch !== greetingEpoch) return;
-      if (summary) {
-        dispatch({ type: 'AUTO_SUMMARY_GIVEN', date: new Date().toISOString().slice(0, 10) });
-        reportText.textContent = summary;
-        dispatch({ type: 'CONVERSATION_ADD', message: { role: 'assistant', content: summary } });
-        await speakAndWait(summary);
+      if (st.phase !== KioskPhase.GREETING || !st.voice.listeningActive
+          || st.greeting.autoSummaryGiven || st.voice.voiceInputReceived) return;
+
+      dispatch({ type: 'SET_PROCESSING', processing: true });
+      pauseListeningFn?.();
+      reportSpinner.classList.remove('hidden');
+      try {
+        dispatch({
+          type: 'CONVERSATION_ADD',
+          message: {
+            role: 'user',
+            content: 'Hae päiväraportti get_daily_report-työkalulla ja tiivistä se lyhyeksi katsaukseksi. Aloita tärkeimmästä uutisesta, sitten sää, kodin tilanne ja kalenterin tapahtumat. Älä luettele lukemia, vaan kerro olennainen.',
+          },
+        });
+        const summary = await generateAIResponse();
+        reportSpinner.classList.add('hidden');
+        if (epoch !== greetingEpoch) return;
+        if (summary) {
+          dispatch({ type: 'AUTO_SUMMARY_GIVEN', date: new Date().toISOString().slice(0, 10) });
+          reportText.textContent = summary;
+          dispatch({ type: 'CONVERSATION_ADD', message: { role: 'assistant', content: summary } });
+          await speakAndWait(summary);
+        }
+      } catch {
+        reportSpinner.classList.add('hidden');
+      } finally {
+        dispatch({ type: 'SET_PROCESSING', processing: false });
       }
-    } catch {
-      reportSpinner.classList.add('hidden');
-    } finally {
-      dispatch({ type: 'SET_PROCESSING', processing: false });
-    }
 
-    if (epoch !== greetingEpoch) return;
-    const after = getState();
-    if (after.phase === KioskPhase.GREETING
-        && Date.now() - after.greeting.overlayStartTime < MAX_OVERLAY_DURATION) {
-      startListeningFn?.();
-    }
-  }, SILENCE_AUTO_SUMMARY_MS);
+      if (epoch !== greetingEpoch) return;
+      const after = getState();
+      if (after.phase === KioskPhase.GREETING
+          && Date.now() - after.greeting.overlayStartTime < MAX_OVERLAY_DURATION) {
+        startListeningFn?.();
+      }
+    }),
+  );
 }
 
+// No longer needed — RxJS takeUntil handles cleanup
 export function clearSilenceTimer(): void {
-  if (silenceAutoSummaryTimer !== null) {
-    clearTimeout(silenceAutoSummaryTimer);
-    silenceAutoSummaryTimer = null;
-  }
-}
-
-function clearAllTimers(): void {
-  clearOverlayTimeout();
-  clearSilenceTimer();
-  if (cooldownTimeout !== null) { clearTimeout(cooldownTimeout); cooldownTimeout = null; }
+  // Kept as no-op for API compatibility with listening.ts
 }
 
 // -- Jingle --
