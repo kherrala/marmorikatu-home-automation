@@ -85,7 +85,12 @@ def get_system_prompt() -> str:
         f"  * Kiinnostavat uutiset ja sääilmiöt päiväraporteista\n"
         f"  * Käyttäjän kysymykset ja huolenaiheet kodista\n"
         f"  * Tapahtumat ja suunnitelmat joista käyttäjä puhuu\n"
-        f"- Älä mainitse muistijärjestelmää käyttäjälle ellei hän kysy."
+        f"- Älä mainitse muistijärjestelmää käyttäjälle ellei hän kysy.\n"
+        f"\n"
+        f"Verkkohaku:\n"
+        f"- Käytä 'browser_navigate' + 'browser_snapshot' hakeaksesi tietoa verkosta.\n"
+        f"- Navigoi esim. https://www.google.com/search?q=hakusana tai suoraan sivustolle.\n"
+        f"- Käytä 'browser_snapshot' lukeaksesi sivun sisällön."
     )
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -101,19 +106,27 @@ _tasks: list[asyncio.Task] = []
 claude_client: anthropic.AsyncAnthropic | None = None
 
 
-# Tools excluded from Ollama — too many tools overwhelms small models.
-# Keep only the essential voice-assistant tools. Claude fallback gets the full set.
-_OLLAMA_EXCLUDED_TOOLS = {
-    # Low-level InfluxDB tools
-    "describe_schema", "list_measurements", "describe_measurement",
-    "query_data", "get_time_range", "get_statistics",
-    "get_thermia_register_data",
-    # Remind admin/maintenance tools (keep only remember + recall)
-    "consolidate", "ingest", "flush_ingest", "inspect", "entities",
-    "inspect_entity", "stats", "update_episode", "delete_episode",
-    "restore_episode", "update_concept", "delete_concept", "restore_concept",
-    "list_deleted", "list_topics", "topic_overview",
-    "task_add", "task_update_status", "list_tasks", "list_specs", "list_plans",
+# Whitelist of tools available to Ollama. Small models can't handle too many tools.
+# Claude fallback gets the full set from all MCP servers.
+_OLLAMA_ALLOWED_TOOLS = {
+    # Home automation
+    "get_latest", "get_room_temperatures", "get_air_quality",
+    "compare_indoor_outdoor", "get_heat_recovery_efficiency",
+    "get_freezing_probability", "get_thermia_status", "get_thermia_temperatures",
+    "get_heatpump_cop", "get_brine_circuit", "get_hotwater_analysis",
+    "get_compressor_duty_cycle", "get_energy_consumption",
+    "get_electricity_prices", "get_heating_status", "get_energy_cost",
+    "get_sauna_status",
+    # External services
+    "get_weather_forecast", "get_news_headlines", "get_news_article",
+    "get_bus_departures", "get_calendar_events", "get_daily_report",
+    # Harmony Hub
+    "harmony_list_activities", "harmony_current_activity",
+    "harmony_start_activity", "harmony_power_off",
+    # Memory
+    "remember", "recall",
+    # Web browsing
+    "browser_navigate", "browser_snapshot",
 }
 
 
@@ -123,7 +136,7 @@ def _aggregated_tools(for_ollama: bool = False) -> list[dict]:
     for info in _servers.values():
         tools.extend(info["tools_claude"])
     if for_ollama:
-        tools = [t for t in tools if t["name"] not in _OLLAMA_EXCLUDED_TOOLS]
+        tools = [t for t in tools if t["name"] in _OLLAMA_ALLOWED_TOOLS]
     return tools
 
 
