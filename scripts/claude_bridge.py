@@ -92,7 +92,8 @@ def get_system_prompt() -> str:
         f"- Käytä 'browser_navigate' + 'browser_snapshot' hakeaksesi tietoa verkosta.\n"
         f"- Käytä hakuun: https://html.duckduckgo.com/html/?q=hakusana (ei estä headless-selainta).\n"
         f"- Käytä 'browser_snapshot' lukeaksesi sivun sisällön.\n"
-        f"- Jos sivu näyttää evästebannerin tai 'Just a moment', yritä toista sivustoa."
+        f"- Jos sivu näyttää evästebannerin, hyväksy se 'browser_click'-työkalulla.\n"
+        f"- Jos sivu näyttää 'Just a moment' tai muun esteen, yritä toista sivustoa."
     )
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -128,7 +129,7 @@ _OLLAMA_ALLOWED_TOOLS = {
     # Memory
     "remember", "recall",
     # Web browsing
-    "browser_navigate", "browser_snapshot",
+    "browser_navigate", "browser_snapshot", "browser_click", "browser_handle_dialog",
 }
 
 
