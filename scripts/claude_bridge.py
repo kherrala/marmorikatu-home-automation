@@ -196,9 +196,9 @@ async def _call_tool_safe(tool_name: str, tool_input: dict, iteration: int, call
 
 
 async def _consolidate_memory():
-    """Trigger remind consolidation after a remember call."""
+    """Trigger remind consolidation after a remember call (non-forced)."""
     try:
-        result = await _call_tool_safe("consolidate", {"force": True}, 0, "auto-consolidate")
+        result = await _call_tool_safe("consolidate", {}, 0, "auto-consolidate")
         log.info("Memory consolidation: %s", result[:100])
     except Exception as e:
         log.warning("Memory consolidation failed: %s", e)
