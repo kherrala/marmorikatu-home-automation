@@ -157,7 +157,7 @@ services:
     ports:
       - "3002:3002"
     environment:
-      - MCP_URLS=http://mcp:3001/sse,http://remind:8765/sse?db=home
+      - MCP_URLS=http://mcp:3001/sse,http://remind:8765/sse?db=home,http://playwright-mcp:3025/sse
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - CLAUDE_MODEL=claude-haiku-4-5-20251001
@@ -190,6 +190,15 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+    restart: unless-stopped
+
+  playwright-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile.playwright-mcp
+    container_name: marmorikatu-playwright-mcp
+    ports:
+      - "3025:3025"
     restart: unless-stopped
 
   lights:

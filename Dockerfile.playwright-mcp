@@ -1,0 +1,9 @@
+FROM node:22-slim
+
+# Install Playwright MCP and its browser dependencies
+RUN npx -y @playwright/mcp@latest --help > /dev/null 2>&1 && \
+    npx playwright install --with-deps chromium
+
+EXPOSE 3025
+
+CMD ["npx", "@playwright/mcp@latest", "--host", "0.0.0.0", "--port", "3025"]
