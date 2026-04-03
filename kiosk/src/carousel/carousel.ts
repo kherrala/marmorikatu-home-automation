@@ -31,8 +31,12 @@ export function showSlide(idx: number): void {
 function startCarousel(): void {
   if (carouselTimer !== null) clearInterval(carouselTimer);
   carouselTimer = setInterval(() => {
-    if (!getState().carousel.paused) {
-      showSlide(getState().carousel.currentSlide + 1);
+    const s = getState();
+    // Don't advance while paused, greeting active, or face recently detected
+    const facePresent = s.faceDetection.lastFaceSeenTime > 0
+      && Date.now() - s.faceDetection.lastFaceSeenTime < 5000;
+    if (!s.carousel.paused && !facePresent) {
+      showSlide(s.carousel.currentSlide + 1);
     }
   }, CAROUSEL_MS);
 }
