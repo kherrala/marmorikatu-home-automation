@@ -6,8 +6,4 @@ RUN npx -y @playwright/mcp@latest --help > /dev/null 2>&1 && \
 
 EXPOSE 3025
 
-# socat forwards 0.0.0.0:3025 → localhost:3025 since playwright-mcp
-# ignores --host and always binds to localhost
-RUN apt-get update && apt-get install -y --no-install-recommends socat && rm -rf /var/lib/apt/lists/*
-CMD socat TCP-LISTEN:3025,fork,bind=0.0.0.0,reuseaddr TCP:localhost:3026 & \
-    npx @playwright/mcp@latest --port 3026
+CMD ["npx", "@playwright/mcp@latest", "--host", "0.0.0.0", "--port", "3025", "--headless"]
