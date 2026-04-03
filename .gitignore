@@ -18,3 +18,5 @@ venv/
 backups/
 .env
 .pruner/
+kiosk/node_modules/
+kiosk/dist/

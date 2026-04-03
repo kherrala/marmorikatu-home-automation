@@ -1,3 +1,14 @@
+# Stage 1: Build the Vite app
+FROM node:22-alpine AS build
+WORKDIR /app
+COPY kiosk/package.json kiosk/package-lock.json ./
+RUN npm ci
+COPY kiosk/tsconfig.json kiosk/vite.config.ts ./
+COPY kiosk/src/ src/
+COPY kiosk/public/ public/
+RUN npm run build
+
+# Stage 2: Serve with nginx
 FROM nginx:alpine
 
 # Install openssl — used by entrypoint.sh to generate the cert on first boot
@@ -11,9 +22,8 @@ COPY kiosk/nginx.conf.template /etc/nginx/templates/default.conf.template
 COPY kiosk/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
-# Copy the kiosk HTML and audio assets
-COPY kiosk/index.html /usr/share/nginx/html/index.html
-COPY kiosk/jingle.mp3 /usr/share/nginx/html/jingle.mp3
+# Copy Vite build output
+COPY --from=build /app/dist/ /usr/share/nginx/html/
 
 # Build version stamp (changes on every rebuild for auto-reload detection)
 RUN date +%s > /usr/share/nginx/html/version.txt
