@@ -34,6 +34,10 @@ export async function generateAIResponse(): Promise<string | null> {
   return null;
 }
 
+// True while waiting for AI response or speaking — prevents face-gone dismiss
+let _processing = false;
+export function isProcessing(): boolean { return _processing; }
+
 let startListeningFn: (() => void) | null = null;
 let dismissGreetingFn: (() => void) | null = null;
 let pauseListeningFn: (() => void) | null = null;
@@ -50,41 +54,46 @@ export function setConversationHandlers(handlers: {
 
 export async function handleVoiceResult(transcript: string): Promise<void> {
   userTextEl.textContent = `"${transcript}"`;
+  _processing = true;
 
   // Pause listening while processing
   pauseListeningFn?.();
 
-  // Farewell detection
-  if (isFarewell(transcript)) {
-    const goodbye = pick(['Heippa!', 'Nähdään!', 'Moikka!', 'Hei hei!']);
-    reportSpinner.classList.add('hidden');
-    reportText.textContent = goodbye;
-    await speakAndWait(goodbye);
-    dismissGreetingFn?.();
-    return;
-  }
-
-  dispatch({ type: 'CONVERSATION_ADD', message: { role: 'user', content: transcript } });
-  reportSpinner.classList.remove('hidden');
-
   try {
-    const response = await generateAIResponse() || randomFallback();
-    reportSpinner.classList.add('hidden');
-    reportText.textContent = response;
-    dispatch({ type: 'CONVERSATION_ADD', message: { role: 'assistant', content: response } });
-    dispatch({ type: 'SET_HAD_VOICE_INPUT' });
-    await speakAndWait(response);
-  } catch {
-    const fallback = randomFallback();
-    reportSpinner.classList.add('hidden');
-    reportText.textContent = fallback;
-    await speakAndWait(fallback);
-  }
+    // Farewell detection
+    if (isFarewell(transcript)) {
+      const goodbye = pick(['Heippa!', 'Nähdään!', 'Moikka!', 'Hei hei!']);
+      reportSpinner.classList.add('hidden');
+      reportText.textContent = goodbye;
+      await speakAndWait(goodbye);
+      dismissGreetingFn?.();
+      return;
+    }
 
-  // Resume listening if still within max duration
-  const s = getState();
-  if (Date.now() - s.greeting.overlayStartTime < MAX_OVERLAY_DURATION
-      && s.phase === KioskPhase.GREETING) {
-    startListeningFn?.();
+    dispatch({ type: 'CONVERSATION_ADD', message: { role: 'user', content: transcript } });
+    reportSpinner.classList.remove('hidden');
+
+    try {
+      const response = await generateAIResponse() || randomFallback();
+      reportSpinner.classList.add('hidden');
+      reportText.textContent = response;
+      dispatch({ type: 'CONVERSATION_ADD', message: { role: 'assistant', content: response } });
+      dispatch({ type: 'SET_HAD_VOICE_INPUT' });
+      await speakAndWait(response);
+    } catch {
+      const fallback = randomFallback();
+      reportSpinner.classList.add('hidden');
+      reportText.textContent = fallback;
+      await speakAndWait(fallback);
+    }
+
+    // Resume listening if still within max duration
+    const s = getState();
+    if (Date.now() - s.greeting.overlayStartTime < MAX_OVERLAY_DURATION
+        && s.phase === KioskPhase.GREETING) {
+      startListeningFn?.();
+    }
+  } finally {
+    _processing = false;
   }
 }
