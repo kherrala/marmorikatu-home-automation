@@ -16,7 +16,7 @@ export function isFarewell(text: string): boolean {
 export async function generateAIResponse(): Promise<string | null> {
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000);
+    const timeoutId = setTimeout(() => controller.abort(), 90000);
     const { greeting } = getState();
     const res = await fetch('/api/chat/chat', {
       method: 'POST',
