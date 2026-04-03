@@ -114,7 +114,15 @@ export function clearOverlayTimeout(): void {
 }
 
 export function dismissGreeting(): void {
-  if (getState().phase !== KioskPhase.GREETING) return;
+  const s = getState();
+  if (s.phase !== KioskPhase.GREETING) return;
+  // Don't dismiss while processing AI response — the response would play
+  // after the overlay is already hidden. Reschedule dismiss for later.
+  if (s.processing) {
+    clearOverlayTimeout();
+    overlayTimeout = setTimeout(() => dismissGreeting(), 2000);
+    return;
+  }
   console.log('[kiosk] dismissGreeting — overlayAge=%ds',
     Math.round((Date.now() - getState().greeting.overlayStartTime) / 1000));
 
