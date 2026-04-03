@@ -24,6 +24,7 @@ export type Action =
   | { type: 'SET_QUOTE_TIME'; time: number }
   | { type: 'SET_HAD_VOICE_INPUT' }
   | { type: 'SET_VERSION'; version: string }
+  | { type: 'SET_PROCESSING'; processing: boolean }
   ;
 
 export const INITIAL_STATE: AppState = {
@@ -51,6 +52,7 @@ export const INITIAL_STATE: AppState = {
   },
   audioUnlocked: false,
   micReady: false,
+  processing: false,
   knownVersion: null,
 };
 
@@ -170,6 +172,8 @@ export function reducer(state: AppState, action: Action): AppState {
       return { ...state, greeting: { ...state.greeting, hadVoiceInput: true } };
     case 'SET_VERSION':
       return { ...state, knownVersion: action.version };
+    case 'SET_PROCESSING':
+      return { ...state, processing: action.processing };
 
     default:
       return state;

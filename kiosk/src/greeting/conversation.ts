@@ -34,9 +34,6 @@ export async function generateAIResponse(): Promise<string | null> {
   return null;
 }
 
-// True while waiting for AI response or speaking — prevents face-gone dismiss
-let _processing = false;
-export function isProcessing(): boolean { return _processing; }
 
 let startListeningFn: (() => void) | null = null;
 let dismissGreetingFn: (() => void) | null = null;
@@ -54,7 +51,7 @@ export function setConversationHandlers(handlers: {
 
 export async function handleVoiceResult(transcript: string): Promise<void> {
   userTextEl.textContent = `"${transcript}"`;
-  _processing = true;
+  dispatch({ type: 'SET_PROCESSING', processing: true });
 
   // Pause listening while processing
   pauseListeningFn?.();
@@ -94,6 +91,6 @@ export async function handleVoiceResult(transcript: string): Promise<void> {
       startListeningFn?.();
     }
   } finally {
-    _processing = false;
+    dispatch({ type: 'SET_PROCESSING', processing: false });
   }
 }

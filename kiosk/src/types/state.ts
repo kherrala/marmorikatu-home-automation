@@ -48,5 +48,6 @@ export interface AppState {
   readonly voice: VoiceState;
   readonly audioUnlocked: boolean;
   readonly micReady: boolean;
+  readonly processing: boolean;
   readonly knownVersion: string | null;
 }

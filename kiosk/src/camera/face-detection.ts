@@ -5,7 +5,6 @@ import {
   GREETING_COOLDOWN, FACE_GONE_DISMISS_MS, MIN_GREETING_ALIVE_MS,
 } from '../config/constants.js';
 import { isSpeaking } from '../audio/tts.js';
-import { isProcessing } from '../greeting/conversation.js';
 import { KioskPhase } from '../types/state.js';
 
 let detectInterval: ReturnType<typeof setInterval> | null = null;
@@ -50,7 +49,7 @@ export function startFaceDetection(): void {
           if (sinceFace >= FACE_GONE_DISMISS_MS
               && overlayAge >= MIN_GREETING_ALIVE_MS
               && !isSpeaking()
-              && !isProcessing()) {
+              && !state.processing) {
             onDismissTrigger?.();
           }
         }
