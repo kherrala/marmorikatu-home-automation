@@ -142,6 +142,9 @@ _reconnect_events: dict[str, asyncio.Event] = {}
 _DEAD_SESSION_ERRORS = (anyio.ClosedResourceError, anyio.EndOfStream, ConnectionError, BrokenPipeError)
 
 TOOL_CALL_TIMEOUT = 15  # seconds — max time for a single MCP tool call
+# Remind tools call Ollama internally (embeddings + LLM) and need more time
+REMIND_TOOL_TIMEOUT = 60
+_REMIND_TOOLS = {"remember", "recall", "consolidate", "ingest", "flush_ingest"}
 
 
 def _invalidate_session(session: ClientSession):
@@ -169,9 +172,10 @@ async def _call_tool_safe(tool_name: str, tool_input: dict, iteration: int, call
         log.error("[%s] Tool routing error: %s", caller, msg)
         return msg
     try:
+        timeout = REMIND_TOOL_TIMEOUT if tool_name in _REMIND_TOOLS else TOOL_CALL_TIMEOUT
         result = await asyncio.wait_for(
             session.call_tool(tool_name, tool_input),
-            timeout=TOOL_CALL_TIMEOUT,
+            timeout=timeout,
         )
         text = "\n".join(c.text for c in result.content if hasattr(c, "text"))
         log.info("[%s] Tool result [%d]: %s → %d chars", caller, iteration, tool_name, len(text))
