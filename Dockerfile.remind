@@ -6,4 +6,4 @@ RUN pip install --no-cache-dir "numpy>=2.0,<2.1" && \
 COPY remind-config.json /root/.remind/remind.config.json
 RUN mkdir -p /data
 EXPOSE 8765
-CMD ["remind-mcp", "--port", "8765"]
+CMD ["remind-mcp", "--host", "0.0.0.0", "--port", "8765"]
