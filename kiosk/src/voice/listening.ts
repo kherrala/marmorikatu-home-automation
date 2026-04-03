@@ -5,7 +5,7 @@ import { resumeIfSuspended } from '../audio/context.js';
 import { KioskPhase } from '../types/state.js';
 import { NativeSpeechRecognition } from './microphone.js';
 import { audioStream } from '../camera/camera.js';
-import { scheduleOverlayDismiss, scheduleDailyReport, clearSilenceTimer } from '../greeting/greeting.js';
+import { scheduleOverlayDismiss, scheduleDailyReport, clearSilenceTimer, getGreetingEpoch } from '../greeting/greeting.js';
 import {
   startNativeListening,
   activeRecognizer,
@@ -21,6 +21,8 @@ import {
   setRestartHandler as setRecorderRestartHandler,
 } from './recorder.js';
 import { handleVoiceResult } from '../greeting/conversation.js';
+
+let _jingleHandler: (() => void) | null = null;
 
 // Wire up callbacks from native-recognition and recorder to avoid circular deps
 setNativeVoiceHandler((text: string) => handleVoiceResult(text));
@@ -45,11 +47,21 @@ export function startListening(): void {
 
   // Wait for jingle to finish before opening mic
   if (!jingleAudio.paused) {
+    // Remove any previous listeners to prevent accumulation
+    if (_jingleHandler) {
+      jingleAudio.removeEventListener('ended', _jingleHandler);
+      jingleAudio.removeEventListener('pause', _jingleHandler);
+    }
+    const epoch = getGreetingEpoch();
     const onJingleDone = () => {
       jingleAudio.removeEventListener('ended', onJingleDone);
       jingleAudio.removeEventListener('pause', onJingleDone);
-      if (getState().phase === KioskPhase.GREETING) startListening();
+      _jingleHandler = null;
+      if (epoch === getGreetingEpoch() && getState().phase === KioskPhase.GREETING) {
+        startListening();
+      }
     };
+    _jingleHandler = onJingleDone;
     jingleAudio.addEventListener('ended', onJingleDone);
     jingleAudio.addEventListener('pause', onJingleDone);
     return;

@@ -14,11 +14,17 @@ import {
   userTextEl, jingleAudio, ttsAudio,
 } from '../dom/elements.js';
 
+// -- Timers --
 let overlayTimeout: ReturnType<typeof setTimeout> | null = null;
 let cooldownTimeout: ReturnType<typeof setTimeout> | null = null;
 let jingleTimeout: ReturnType<typeof setTimeout> | null = null;
 let silenceAutoSummaryTimer: ReturnType<typeof setTimeout> | null = null;
 let greetingActiveAt = 0;
+
+// Epoch counter: incremented on every new greeting. Deferred callbacks
+// compare their captured epoch to the current one to avoid acting on
+// a greeting that has already been dismissed and replaced.
+let greetingEpoch = 0;
 
 // External handlers wired up by main.ts
 let showSlideFn: ((idx: number) => void) | null = null;
@@ -42,7 +48,17 @@ export function getGreetingActiveAt(): number {
   return greetingActiveAt;
 }
 
+export function getGreetingEpoch(): number {
+  return greetingEpoch;
+}
+
 export async function triggerGreeting(): Promise<void> {
+  // Clean up any lingering state from a previous greeting
+  clearAllTimers();
+
+  greetingEpoch++;
+  const epoch = greetingEpoch;
+
   dispatch({ type: 'SET_PHASE', phase: KioskPhase.GREETING });
   const now = Date.now();
   dispatch({ type: 'GREETING_START', time: now });
@@ -60,6 +76,9 @@ export async function triggerGreeting(): Promise<void> {
   } catch {
     showSlideFn?.(NEWS_IDX);
   }
+
+  // Bail if dismissed while fetching departures
+  if (epoch !== greetingEpoch) return;
 
   userTextEl.textContent = '';
 
@@ -87,15 +106,16 @@ export async function triggerGreeting(): Promise<void> {
     reportText.textContent = quote;
     dispatch({ type: 'CONVERSATION_ADD', message: { role: 'assistant', content: quote } });
     await speakAndWait(greeting);
+    if (epoch !== greetingEpoch) return;
     await speakAndWait(quote);
   } else {
     await speakAndWait(greeting);
   }
 
+  if (epoch !== greetingEpoch) return;
+
   // Minimize avatar to bottom-right
   greetingOverlay.classList.add('minimized');
-
-  clearSilenceTimer();
   startListeningFn?.();
 }
 
@@ -116,25 +136,26 @@ export function clearOverlayTimeout(): void {
 export function dismissGreeting(): void {
   const s = getState();
   if (s.phase !== KioskPhase.GREETING) return;
-  // Don't dismiss while processing AI response — the response would play
-  // after the overlay is already hidden. Reschedule dismiss for later.
+
+  // Don't dismiss while processing AI response — defer and retry.
   if (s.processing) {
     clearOverlayTimeout();
-    overlayTimeout = setTimeout(() => dismissGreeting(), 2000);
+    const epoch = greetingEpoch;
+    overlayTimeout = setTimeout(() => {
+      if (greetingEpoch === epoch) dismissGreeting();
+    }, 2000);
     return;
   }
-  console.log('[kiosk] dismissGreeting — overlayAge=%ds',
-    Math.round((Date.now() - getState().greeting.overlayStartTime) / 1000));
 
-  const now = Date.now();
+  console.log('[kiosk] dismissGreeting — overlayAge=%ds epoch=%d',
+    Math.round((Date.now() - s.greeting.overlayStartTime) / 1000), greetingEpoch);
+
   dispatch({ type: 'SET_PHASE', phase: KioskPhase.COOLDOWN });
-  dispatch({ type: 'GREETING_DISMISS', time: now });
+  dispatch({ type: 'GREETING_DISMISS', time: Date.now() });
 
-  clearOverlayTimeout();
-  if (cooldownTimeout !== null) clearTimeout(cooldownTimeout);
+  clearAllTimers();
   stopJingle();
   stopListeningFn?.();
-  clearSilenceTimer();
   speechSynthesis.cancel();
   ttsAudio.pause();
   clearAvatar();
@@ -156,11 +177,15 @@ export function scheduleDailyReport(): void {
   }
 
   clearSilenceTimer();
+  const epoch = greetingEpoch;
   silenceAutoSummaryTimer = setTimeout(async () => {
+    silenceAutoSummaryTimer = null;
     const st = getState();
+    if (epoch !== greetingEpoch) return;
     if (st.phase !== KioskPhase.GREETING || !st.voice.listeningActive
         || st.greeting.autoSummaryGiven || st.voice.voiceInputReceived) return;
 
+    dispatch({ type: 'SET_PROCESSING', processing: true });
     pauseListeningFn?.();
     reportSpinner.classList.remove('hidden');
     try {
@@ -173,6 +198,7 @@ export function scheduleDailyReport(): void {
       });
       const summary = await generateAIResponse();
       reportSpinner.classList.add('hidden');
+      if (epoch !== greetingEpoch) return;
       if (summary) {
         dispatch({ type: 'AUTO_SUMMARY_GIVEN', date: new Date().toISOString().slice(0, 10) });
         reportText.textContent = summary;
@@ -181,8 +207,11 @@ export function scheduleDailyReport(): void {
       }
     } catch {
       reportSpinner.classList.add('hidden');
+    } finally {
+      dispatch({ type: 'SET_PROCESSING', processing: false });
     }
 
+    if (epoch !== greetingEpoch) return;
     const after = getState();
     if (after.phase === KioskPhase.GREETING
         && Date.now() - after.greeting.overlayStartTime < MAX_OVERLAY_DURATION) {
@@ -196,6 +225,12 @@ export function clearSilenceTimer(): void {
     clearTimeout(silenceAutoSummaryTimer);
     silenceAutoSummaryTimer = null;
   }
+}
+
+function clearAllTimers(): void {
+  clearOverlayTimeout();
+  clearSilenceTimer();
+  if (cooldownTimeout !== null) { clearTimeout(cooldownTimeout); cooldownTimeout = null; }
 }
 
 // -- Jingle --
