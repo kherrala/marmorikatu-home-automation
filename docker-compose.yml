@@ -48,6 +48,9 @@ services:
       - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/etc/grafana/provisioning/dashboards/building_overview.json
       # Allow embedding in iframes
       - GF_SECURITY_ALLOW_EMBEDDING=true
+      # Allow anonymous access (no login required for kiosk)
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
       # Serve from /grafana/ sub-path behind nginx HTTPS proxy
       - GF_SERVER_DOMAIN=192.168.1.160
       - GF_SERVER_ROOT_URL=%(protocol)s://%(domain)s:%(http_port)s/grafana/
