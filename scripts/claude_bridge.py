@@ -101,12 +101,19 @@ _tasks: list[asyncio.Task] = []
 claude_client: anthropic.AsyncAnthropic | None = None
 
 
-# Tools excluded from Ollama — too low-level or technical for a voice kiosk.
-# Claude fallback still gets the full set.
+# Tools excluded from Ollama — too many tools overwhelms small models.
+# Keep only the essential voice-assistant tools. Claude fallback gets the full set.
 _OLLAMA_EXCLUDED_TOOLS = {
+    # Low-level InfluxDB tools
     "describe_schema", "list_measurements", "describe_measurement",
     "query_data", "get_time_range", "get_statistics",
     "get_thermia_register_data",
+    # Remind admin/maintenance tools (keep only remember + recall)
+    "consolidate", "ingest", "flush_ingest", "inspect", "entities",
+    "inspect_entity", "stats", "update_episode", "delete_episode",
+    "restore_episode", "update_concept", "delete_concept", "restore_concept",
+    "list_deleted", "list_topics", "topic_overview",
+    "task_add", "task_update_status", "list_tasks", "list_specs", "list_plans",
 }
 
 
