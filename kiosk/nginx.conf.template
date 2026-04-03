@@ -121,15 +121,8 @@ server {
         proxy_send_timeout 86400s;
     }
 
-    # Remind memory web UI and API
-    location /remind/ {
-        set $backend_remind remind:8765;
-        proxy_pass http://$backend_remind/;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host $host;
-    }
+    # Remind memory: UI accessible directly at http://192.168.1.160:8765/ui/
+    # (SPA routing doesn't support sub-path proxy)
 
     # Claude Bridge proxy (MCP-powered AI + transcription + TTS)
     location /api/chat/ {
