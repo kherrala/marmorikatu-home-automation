@@ -539,6 +539,11 @@ async def transcribe_endpoint(request: Request) -> JSONResponse:
     if not audio_bytes:
         return JSONResponse({"error": "Empty audio data"}, status_code=400)
 
+    # Reject obviously invalid recordings (empty containers, dead mic streams)
+    if len(audio_bytes) < 1000:
+        log.warning("Transcribe: rejected %d-byte recording (too small to contain speech)", len(audio_bytes))
+        return JSONResponse({"text": ""})
+
     log.info("Transcribe: received %d bytes (%s)", len(audio_bytes), filename)
 
     try:
