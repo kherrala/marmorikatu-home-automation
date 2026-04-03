@@ -3,9 +3,9 @@
   "embedding_provider": "ollama",
   "ollama": {
     "url": "http://192.168.1.36:11434",
-    "llm_model": "qwen3.5:9b",
+    "llm_model": "qwen2.5:14b",
     "embedding_model": "nomic-embed-text",
-    "ingest_model": "qwen3.5:9b"
+    "ingest_model": "qwen2.5:14b"
   },
   "db_url": "sqlite:////data/remind.db",
   "auto_consolidate": true,
