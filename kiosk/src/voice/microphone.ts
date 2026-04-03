@@ -4,9 +4,10 @@ import { dispatch } from '../state/store.js';
 import { audioStream, setAudioStream } from '../camera/camera.js';
 
 export const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
-  || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
 
-const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent)
+  || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
 
 export const NativeSpeechRecognition: (new () => SpeechRecognition) | null =
   !isIOS && !isSafari

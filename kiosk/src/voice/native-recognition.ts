@@ -59,20 +59,9 @@ export function startNativeListening(): void {
     if (text?.trim()) {
       dispatch({ type: 'NATIVE_SILENCE_RESET' });
       onVoiceResult?.(text.trim());
-    } else {
-      const st = getState();
-      if (st.voice.listeningActive && st.phase === KioskPhase.GREETING) {
-        dispatch({ type: 'NATIVE_SILENCE_INCREMENT' });
-        const updated = getState();
-        if (updated.voice.nativeSilenceCount >= MAX_NATIVE_SILENCE) {
-          // User is genuinely silent -- stop gracefully
-          dispatch({ type: 'SET_LISTENING', active: false });
-          listeningIndicator.classList.add('hidden');
-          setListening(false);
-        } else {
-          onRestartListening?.();
-        }
-      }
+    } else if (getState().voice.listeningActive && getState().phase === KioskPhase.GREETING) {
+      // Restart listening (onerror handles silence counting and fallback)
+      onRestartListening?.();
     }
   }
 
@@ -126,10 +115,24 @@ export function startNativeListening(): void {
       if (accumulated) {
         finish(accumulated);
       } else {
-        finish(null);
+        // After MAX_NATIVE_SILENCE failures, fall back to MediaRecorder
+        // instead of just stopping (so the user still has voice input)
+        dispatch({ type: 'NATIVE_SILENCE_INCREMENT' });
+        const st = getState();
+        if (st.voice.nativeSilenceCount >= MAX_NATIVE_SILENCE) {
+          console.warn('[voice] Too many native failures — falling back to MediaRecorder');
+          dispatch({ type: 'NATIVE_FAILED' });
+          resolved = true;
+          activeRecognizer = null;
+          if (hardTimer !== null) clearTimeout(hardTimer);
+          if (pauseTimer !== null) clearTimeout(pauseTimer);
+          onFallbackToRecorder?.();
+        } else {
+          finish(null);
+        }
       }
     } else {
-      // Non-recoverable error -- fall back to MediaRecorder permanently
+      // Non-recoverable error — fall back to MediaRecorder permanently
       console.warn('[voice] Falling back to MediaRecorder + server transcription');
       dispatch({ type: 'NATIVE_FAILED' });
       resolved = true;
