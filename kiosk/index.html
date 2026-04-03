@@ -585,7 +585,7 @@
     }
     function grafanaTheme() { return isDaytime() ? 'light' : 'dark'; }
 
-    // Slide definitions: { title, src } — built dynamically from Grafana dashboards
+    // Slide definitions
     const SLIDE_DEFS = [
       { title: 'Yleiskatsaus',      src: '/grafana/d/wago-overview/building-overview?kiosk&theme=' + grafanaTheme() },
       { title: 'Sää',              src: '/weather/' },
@@ -597,93 +597,106 @@
     const NEWS_IDX  = SLIDE_DEFS.findIndex(s => s.title === 'Uutiset');
     let TOTAL = SLIDE_DEFS.length;
 
-    const FACE_DETECT_INTERVAL = 500;   // ms between detection attempts
-    const GREETING_COOLDOWN    = 30_000; // ms after overlay dismiss before next greeting
-    const MAX_OVERLAY_DURATION = 300_000; // 5 min absolute max to prevent stuck overlay
+    // =========================================================================
+    //  CONSTANTS
+    // =========================================================================
+    const FACE_DETECT_INTERVAL  = 500;
+    const DETECTIONS_REQUIRED   = 5;        // consecutive detections to trigger (was 3)
+    const GREETING_COOLDOWN     = 30_000;
+    const MAX_OVERLAY_DURATION  = 300_000;   // 5 min absolute max
+    const JINGLE_DURATION       = 30_000;
+    const FACE_GONE_DISMISS_MS  = 15_000;    // dismiss 15s after face disappears
+    const MIN_GREETING_ALIVE_MS = 30_000;    // never dismiss within first 30s
 
-    const JINGLE_DURATION     = 30_000; // ms to play the jingle
+    // =========================================================================
+    //  PLATFORM DETECTION
+    // =========================================================================
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
+      || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    // Skip native SpeechRecognition on iOS/Safari — unreliable in kiosk mode.
+    // Use MediaRecorder + server-side Whisper transcription instead.
+    const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+    const NativeSpeechRecognition = !isIOS && !isSafari
+      && (window.SpeechRecognition || window.webkitSpeechRecognition);
 
-    // == State Machine =========================================================
-    const STATES = {
-      NOT_STARTED: 'NOT_STARTED',
-      UNLOCKING: 'UNLOCKING',
-      REQUESTING_CAMERA: 'REQUESTING_CAMERA',
-      LOADING_MODEL: 'LOADING_MODEL',
-      READY: 'READY',
-      GREETING: 'GREETING',
-      GREETING_COOLDOWN: 'GREETING_COOLDOWN',
-      CAMERA_FAILED: 'CAMERA_FAILED',
-      DASHBOARD_ONLY: 'DASHBOARD_ONLY'
+    // =========================================================================
+    //  STATE MACHINE
+    // =========================================================================
+    const STATE = {
+      INIT:           'INIT',           // before setup
+      READY:          'READY',          // camera running, waiting for face
+      GREETING:       'GREETING',       // conversation active
+      COOLDOWN:       'COOLDOWN',       // post-greeting delay
+      FAILED:         'FAILED',         // camera/model init failed
+      DASHBOARD_ONLY: 'DASHBOARD_ONLY'  // user skipped camera
     };
 
-    let kioskState = STATES.NOT_STARTED;
+    let state = STATE.INIT;
 
-    function setState(newState) {
-      console.log(`[kiosk] ${kioskState} → ${newState}`);
-      kioskState = newState;
-      updateStatusIndicator();
+    function setState(next) {
+      console.log(`[kiosk] ${state} → ${next}`);
+      state = next;
+      updateStatusDot();
     }
 
-    function updateStatusIndicator() {
+    function updateStatusDot() {
       if (!cameraDot) return;
       cameraDot.classList.remove('active', 'failed');
-      if ([STATES.READY, STATES.GREETING, STATES.GREETING_COOLDOWN].includes(kioskState)) {
+      if ([STATE.READY, STATE.GREETING, STATE.COOLDOWN].includes(state)) {
         cameraDot.classList.add('active');
-      } else if (kioskState === STATES.CAMERA_FAILED) {
+      } else if (state === STATE.FAILED) {
         cameraDot.classList.add('failed');
       }
     }
 
-    // == State =================================================================
+    // =========================================================================
+    //  STATE VARIABLES
+    // =========================================================================
     let current       = 0;
     let carouselTimer = null;
     let pauseTimer    = null;
     let paused        = false;
 
-    let lastGreetingTime = 0;   // set on dismiss, for cooldown
-    let lastQuoteTime = 0;      // throttle random quotes to once per 3h
+    let lastGreetingDismissTime = 0;
+    let lastQuoteTime    = 0;
     const QUOTE_COOLDOWN = 3 * 60 * 60 * 1000;
-    let overlayStartTime = 0;   // set on trigger, for overlay duration
+    let overlayStartTime = 0;
     let detectInterval   = null;
     let overlayTimeout   = null;
     let jingleTimeout    = null;
 
-    // Voice command state
-    let recognition = null;
     let listeningActive = false;
     let conversationHistory = [];
 
-    // Random fallback system when AI is unavailable
+    // =========================================================================
+    //  UTILITIES
+    // =========================================================================
     function cryptoRand() {
       return crypto.getRandomValues(new Uint32Array(1))[0] / 4294967296;
     }
     const pick = arr => arr[Math.floor(cryptoRand() * arr.length)];
     const randInt = (min, max) => Math.floor(cryptoRand() * (max - min + 1)) + min;
 
-    // Strip LLM reasoning traces (<think>...</think>) from responses
     function stripThinkTags(text) {
       return text
         .replace(/<think>[\s\S]*?<\/think>/gi, '')
         .replace(/<\/?think\s*\/?>/gi, '')
-        .replace(/\*\*(.+?)\*\*/g, '$1')   // **bold**
-        .replace(/\*(.+?)\*/g, '$1')        // *italic*
-        .replace(/__(.+?)__/g, '$1')        // __bold__
-        .replace(/_(.+?)_/g, '$1')          // _italic_
-        .replace(/~~(.+?)~~/g, '$1')        // ~~strikethrough~~
-        .replace(/`(.+?)`/g, '$1')          // `code`
-        .replace(/^#{1,6}\s+/gm, '')        // # headings
-        .replace(/^\s*[-*+]\s+/gm, '')      // - bullet lists
-        .replace(/^\s*\d+\.\s+/gm, '')      // 1. numbered lists
-        .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // [link](url)
+        .replace(/\*\*(.+?)\*\*/g, '$1')
+        .replace(/\*(.+?)\*/g, '$1')
+        .replace(/__(.+?)__/g, '$1')
+        .replace(/_(.+?)_/g, '$1')
+        .replace(/~~(.+?)~~/g, '$1')
+        .replace(/`(.+?)`/g, '$1')
+        .replace(/^#{1,6}\s+/gm, '')
+        .replace(/^\s*[-*+]\s+/gm, '')
+        .replace(/^\s*\d+\.\s+/gm, '')
+        .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
         .trim();
     }
 
     function randomFallback() {
-      // ~40% chance: generate absurd sentence from vocabulary
       if (cryptoRand() < 0.4) return generateAbsurd();
-      // ~30% chance: existential robot musings
       if (cryptoRand() < 0.5) return generateMusing();
-      // ~30% chance: fake statistic
       return generateFakeStat();
     }
 
@@ -773,9 +786,9 @@
       return pick(templates)();
     }
 
-    // Config loaded from server (Ollama model, OpenAI key)
-
-    // == Build slides and dots from config ======================================
+    // =========================================================================
+    //  DOM REFS & SLIDES SETUP
+    // =========================================================================
     const slidesContainer = document.getElementById('slides');
     const navContainer    = document.getElementById('nav');
     SLIDE_DEFS.forEach((def, i) => {
@@ -827,8 +840,11 @@
     const initError      = document.getElementById('init-error');
     const startLabel     = startOverlay.querySelector('.label');
     const startSublabel  = startOverlay.querySelector('.sublabel');
+    const avatarEl       = document.getElementById('avatar');
 
-    // == Slide switching =======================================================
+    // =========================================================================
+    //  CAROUSEL & NAVIGATION
+    // =========================================================================
     function show(idx) {
       const next = ((idx % TOTAL) + TOTAL) % TOTAL;
       slides[current].classList.remove('active');
@@ -838,7 +854,6 @@
       dots[current].classList.add('active');
     }
 
-    // == Carousel ==============================================================
     function startCarousel() {
       clearInterval(carouselTimer);
       carouselTimer = setInterval(() => {
@@ -846,7 +861,6 @@
       }, CAROUSEL_MS);
     }
 
-    // == Interaction / pause ===================================================
     function handleInteraction() {
       paused = true;
       pauseBadge.classList.add('visible');
@@ -857,11 +871,10 @@
       }, PAUSE_MS);
     }
 
-    // == Edge click navigation ================================================
     edgeLeft.addEventListener('click', () => { handleInteraction(); show(current - 1); });
     edgeRight.addEventListener('click', () => { handleInteraction(); show(current + 1); });
 
-    // == Swipe navigation =====================================================
+    // Swipe navigation
     let swipeStartX = 0;
     let swipeStartY = 0;
     const SWIPE_THRESHOLD = 50;
@@ -880,7 +893,6 @@
         show(dx < 0 ? current + 1 : current - 1);
       }
     }
-    // Listen on edge zones (always above iframes) and document
     [edgeLeft, edgeRight, document].forEach(el => {
       el.addEventListener('touchstart', handleSwipeStart, { passive: true });
       el.addEventListener('touchend', handleSwipeEnd, { passive: true });
@@ -899,17 +911,17 @@
 
     // Keyboard navigation
     document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') dismissOverlay();
+      if (e.key === 'Escape') dismissGreeting();
       if (e.key === 'ArrowLeft')  { handleInteraction(); show(current - 1); }
       if (e.key === 'ArrowRight') { handleInteraction(); show(current + 1); }
     });
 
     // == Bus departure auto-switch =============================================
-    const BUS_CHECK_INTERVAL = 30_000; // check every 30s
-    const BUS_LEAVE_SOON_MS  = 15 * 60_000; // show Nysse when bus leaves within 15 min
+    const BUS_CHECK_INTERVAL = 30_000;
+    const BUS_LEAVE_SOON_MS  = 15 * 60_000;
 
     async function checkBusDepartures() {
-      if (paused || kioskState === STATES.GREETING) return; // don't interrupt user
+      if (paused || state === STATE.GREETING) return;
       try {
         const res = await fetch('/api/departures');
         if (!res.ok) return;
@@ -930,13 +942,10 @@
     startCarousel();
 
     // =========================================================================
-    //  FACE DETECTION, GREETING & AI REPORT
+    //  AUDIO MANAGEMENT
     // =========================================================================
-
-
-    // -- Audio unlock (must be called from a user gesture) --------------------
     let audioUnlocked = false;
-    let ttsAudioCtx = null; // persisted so it isn't GC'd and can be resumed
+    let ttsAudioCtx = null;
 
     function unlockAudio() {
       if (audioUnlocked) return;
@@ -951,25 +960,19 @@
       jingleAudio.muted = true;
       jingleAudio.play().then(() => { jingleAudio.pause(); jingleAudio.currentTime = 0; jingleAudio.muted = false; }).catch(() => { jingleAudio.muted = false; });
 
-      // Unlock persistent TTS <audio> (reused for all server TTS playback)
+      // Unlock persistent TTS <audio> with silent WAV
       ttsAudio.muted = true;
       ttsAudio.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=';
       ttsAudio.play().then(() => { ttsAudio.pause(); ttsAudio.muted = false; }).catch(() => { ttsAudio.muted = false; });
 
-      // Unlock AudioContext and route ttsAudio through a gain node.
-      // Gain > 1.0 amplifies the voice signal; the iPad OS/Safari volume mixer
-      // still controls the final output level (system volume buttons work normally).
-      // Stored in ttsAudioCtx (module-level) so it is never GC'd and can be
-      // resumed after iOS suspends it (device lock, tab background, etc.).
+      // Unlock AudioContext and route ttsAudio through a gain node
       try {
         ttsAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        // Silent buffer to unlock the AudioContext within the gesture handler
         const buf = ttsAudioCtx.createBuffer(1, 1, 22050);
         const src = ttsAudioCtx.createBufferSource();
         src.buffer = buf;
         src.connect(ttsAudioCtx.destination);
         src.start(0);
-        // Route TTS audio through a gain node so the voice is loud enough
         const ttsSource = ttsAudioCtx.createMediaElementSource(ttsAudio);
         const ttsGain = ttsAudioCtx.createGain();
         ttsGain.gain.value = 1.0;
@@ -991,101 +994,105 @@
       console.log('[audio] Unlocked all audio channels');
     }
 
-    // -- Start overlay: unlock camera + audio on iOS --------------------------
-    // iOS requires a user gesture to unlock audio — never auto-activate on iOS/iPadOS
-    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    // =========================================================================
+    //  TEXT-TO-SPEECH
+    // =========================================================================
+    function playSentence(b64wav) {
+      return new Promise(resolve => {
+        if (ttsAudioCtx?.state === 'suspended') ttsAudioCtx.resume();
+        const bytes = atob(b64wav);
+        const arr = new Uint8Array(bytes.length);
+        for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
+        const url = URL.createObjectURL(new Blob([arr], { type: 'audio/wav' }));
+        let safetyTimer;
+        const cleanup = () => {
+          clearTimeout(safetyTimer);
+          ttsAudio.onended = null;
+          ttsAudio.onerror = null;
+          URL.revokeObjectURL(url);
+        };
+        ttsAudio.src = url;
+        ttsAudio.currentTime = 0;
+        ttsAudio.play().catch(() => { cleanup(); resolve(false); });
+        avatarEl.classList.add('speaking');
+        avatarEl.classList.remove('listening');
+        safetyTimer = setTimeout(() => { cleanup(); resolve(false); }, 15_000);
+        ttsAudio.onended = () => { cleanup(); resolve(true); };
+        ttsAudio.onerror = () => { cleanup(); resolve(false); };
+      });
+    }
 
-    async function tryAutoActivate() {
-      if (isIOS) return false; // always require tap on iOS to unlock audio
+    async function speakAndWait(text) {
+      // Try server-side TTS first — streams NDJSON, one sentence per line
       try {
-        const cam = await navigator.permissions.query({ name: 'camera' });
-        const mic = await navigator.permissions.query({ name: 'microphone' });
-        if (cam.state === 'granted' && mic.state === 'granted') {
-          setState(STATES.UNLOCKING);
-          const cameraOk = await initCameraSteps();
-          if (cameraOk) {
-            unlockAudio(); // set up TTS AudioContext even on the no-tap path
-            startOverlay.classList.add('hidden');
-            initSpeechRecognition();
-            return true;
+        const res = await fetch('/api/chat/tts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text })
+        });
+        if (res.ok) {
+          const reader = res.body.getReader();
+          const decoder = new TextDecoder();
+          let buf = '';
+          let played = 0;
+
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buf += decoder.decode(value, { stream: true });
+            const lines = buf.split('\n');
+            buf = lines.pop();
+            for (const line of lines) {
+              if (!line.trim()) continue;
+              const { audio } = JSON.parse(line);
+              await playSentence(audio);
+              played++;
+            }
           }
+          if (buf.trim()) {
+            try { const { audio } = JSON.parse(buf); await playSentence(audio); played++; } catch {}
+          }
+          avatarEl.classList.remove('speaking');
+          if (played > 0) return;
         }
-      } catch {}
-      return false;
+      } catch { /* server TTS failed, fall back to browser */ }
+
+      // Fallback: browser speechSynthesis
+      speechSynthesis.cancel();
+      return new Promise(resolve => {
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = 'fi-FI';
+        const voices = speechSynthesis.getVoices();
+        const fiFemale = voices.find(v => v.lang.startsWith('fi') && /female|satu|marjut/i.test(v.name));
+        const fiVoice = fiFemale || voices.find(v => v.lang.startsWith('fi'));
+        if (fiVoice) utterance.voice = fiVoice;
+        utterance.rate = 1.0;
+        utterance.onstart = () => {
+          avatarEl.classList.add('speaking');
+          avatarEl.classList.remove('listening');
+        };
+        utterance.onend = () => { avatarEl.classList.remove('speaking'); resolve(); };
+        utterance.onerror = () => { avatarEl.classList.remove('speaking'); resolve(); };
+        speechSynthesis.speak(utterance);
+        if (isIOS) { speechSynthesis.pause(); speechSynthesis.resume(); }
+      });
     }
 
-    // Auto-activate or show the small overlay prompt
-    tryAutoActivate();
-
-    startOverlay.addEventListener('click', async function handleStart() {
-      startOverlay.removeEventListener('click', handleStart);
-      setState(STATES.UNLOCKING);
-
-      // Unlock all audio playback channels (must be in gesture handler)
-      unlockAudio();
-
-      // Show progress
-      startLabel.textContent = 'Aktivoidaan...';
-      startSublabel.textContent = '';
-      initSpinner.classList.remove('hidden');
-      startOverlay.style.cursor = 'default';
-
-      const cameraOk = await initCameraSteps();
-
-      if (cameraOk) {
-        initSpinner.classList.add('hidden');
-        startOverlay.classList.add('hidden');
-        initSpeechRecognition();
-      } else {
-        showCameraError();
-      }
-    });
-
-    function showCameraError() {
-      initSpinner.classList.add('hidden');
-      startLabel.textContent = '';
-      startSublabel.textContent = '';
-      initError.classList.add('visible');
+    function isSpeaking() {
+      return speechSynthesis.speaking || !ttsAudio.paused;
     }
 
-    document.getElementById('retry-btn').addEventListener('click', async (e) => {
-      e.stopPropagation();
-      initError.classList.remove('visible');
-      startLabel.textContent = 'Aktivoidaan kamera...';
-      startSublabel.textContent = '';
-      initSpinner.classList.remove('hidden');
-      const ok = await initCameraSteps();
-      if (ok) {
-        initSpinner.classList.add('hidden');
-        startLabel.textContent = 'Valmis!';
-        startSublabel.textContent = '';
-        await new Promise(r => setTimeout(r, 500));
-        startOverlay.classList.add('hidden');
-        initSpeechRecognition();
-      } else {
-        showCameraError();
-      }
-    });
-
-    document.getElementById('skip-btn').addEventListener('click', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      setState(STATES.DASHBOARD_ONLY);
-      startOverlay.classList.add('hidden');
-      initSpeechRecognition();
-    });
-
-    // -- Camera init (stepped) ------------------------------------------------
-    async function initCameraSteps() {
-      setState(STATES.REQUESTING_CAMERA);
+    // =========================================================================
+    //  CAMERA SETUP
+    // =========================================================================
+    async function setupCamera() {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: 'user', width: 320, height: 240 },
           audio: true
         });
         videoEl.srcObject = stream;
-        // Keep audio tracks alive — maintains iOS audio session in record mode
-        // so webkitSpeechRecognition can access the mic later without re-requesting
+        // Keep audio tracks alive but disabled — maintains iOS audio session
         stream.getAudioTracks().forEach(t => t.enabled = false);
         await videoEl.play();
       } catch (err) {
@@ -1099,50 +1106,39 @@
           await videoEl.play();
         } catch (err2) {
           console.warn('Camera init failed:', err2);
-          setState(STATES.CAMERA_FAILED);
           return false;
         }
       }
 
-      setState(STATES.LOADING_MODEL);
-      startLabel.textContent = 'Ladataan kasvojentunnistus...';
-      startSublabel.textContent = '';
       try {
         await faceapi.nets.tinyFaceDetector.loadFromUri('/face-api');
       } catch (err) {
         console.warn('Face detection model failed to load:', err);
-        setState(STATES.CAMERA_FAILED);
         return false;
       }
-
-      setState(STATES.READY);
-      startFaceDetection();
-
-      // Watch for iOS interrupting the camera (device lock, incoming call, tab switch).
-      // When any video track ends, schedule a camera restart once the page is visible.
-      function attachTrackEndedWatcher() {
-        const stream = videoEl.srcObject;
-        if (!stream) return;
-        stream.getVideoTracks().forEach(t => {
-          t.addEventListener('ended', () => {
-            console.warn('[camera] Video track ended — will restart on next visibility');
-            scheduleVideoRestart();
-          });
-        });
-      }
-      attachTrackEndedWatcher();
 
       return true;
     }
 
-    // Restart the camera stream after an iOS interruption.
+    // Watch for iOS interrupting the camera (device lock, incoming call, tab switch)
+    function watchCameraTracks() {
+      const stream = videoEl.srcObject;
+      if (!stream) return;
+      stream.getVideoTracks().forEach(t => {
+        t.addEventListener('ended', () => {
+          console.warn('[camera] Video track ended — will restart on next visibility');
+          scheduleVideoRestart();
+        });
+      });
+    }
+
     let videoRestartPending = false;
     function scheduleVideoRestart() {
       if (videoRestartPending) return;
       videoRestartPending = true;
-      async function doRestart() {
+      setTimeout(async () => {
         videoRestartPending = false;
-        if (document.visibilityState === 'hidden') return; // wait for visible event
+        if (document.visibilityState === 'hidden') return;
         console.log('[camera] Restarting camera stream after interruption');
         try {
           const stream = await navigator.mediaDevices.getUserMedia({
@@ -1152,27 +1148,26 @@
           videoEl.srcObject = stream;
           stream.getAudioTracks().forEach(t => t.enabled = false);
           await videoEl.play();
-          // Re-enable mic track in the speech recognition path
-          const existingTracks = stream.getAudioTracks();
-          if (existingTracks.length > 0 && audioStream) {
-            existingTracks.forEach(t => t.enabled = true);
-            audioStream = new MediaStream(existingTracks);
+          watchCameraTracks();
+          // Update mic stream if one was established
+          if (audioStream) {
+            const audioTracks = stream.getAudioTracks();
+            if (audioTracks.length > 0) {
+              audioTracks.forEach(t => t.enabled = true);
+              audioStream = new MediaStream(audioTracks);
+            }
           }
           console.log('[camera] Camera stream restarted');
         } catch (err) {
           console.warn('[camera] Camera restart failed:', err);
         }
-      }
-      // Give iOS a moment to release the camera before re-requesting
-      setTimeout(doRestart, 800);
+      }, 800);
     }
 
-    // iOS pauses video when the tab is hidden; resume + restart if needed on return.
-    document.addEventListener('visibilitychange', async () => {
+    // Resume AudioContext and camera on visibility change (iOS tab return)
+    document.addEventListener('visibilitychange', () => {
       if (document.visibilityState !== 'visible') return;
-      // Resume AudioContext that iOS may have suspended
       if (ttsAudioCtx?.state === 'suspended') ttsAudioCtx.resume();
-      // If video has stalled or tracks have ended, restart the stream
       const tracks = videoEl.srcObject?.getVideoTracks() ?? [];
       const needsRestart = tracks.length === 0 || tracks.some(t => t.readyState === 'ended');
       if (needsRestart) {
@@ -1182,89 +1177,64 @@
       }
     });
 
-    // -- Face detection loop --------------------------------------------------
+    // =========================================================================
+    //  FACE DETECTION
+    // =========================================================================
     let consecutiveDetections = 0;
-    const DETECTIONS_REQUIRED = 3; // require 3 consecutive detections
-    let faceWasAbsent = true; // must be true to allow greeting trigger
-    let faceVisible = false;  // tracks face presence during greeting
-    const FACE_GONE_DISMISS_MS = 15_000; // dismiss 15s after face disappears
-    const MIN_GREETING_ALIVE_MS = 30_000; // never dismiss within first 30s
-    let faceGoneTimeout = null;
-    let consecutiveFaceGone = 0;
-    const FACE_GONE_REQUIRED = 8; // require 8 consecutive non-detections (~4s)
-
-    let faceDetectRunning = false; // prevent overlapping async detections
+    let faceAbsentSinceLastGreeting = true;
+    let lastFaceSeenTime = 0;
+    let faceDetectRunning = false;
 
     function startFaceDetection() {
       detectInterval = setInterval(async () => {
-        if (![STATES.READY, STATES.GREETING, STATES.GREETING_COOLDOWN].includes(kioskState)) return;
-        if (faceDetectRunning) return; // previous detection still in-flight
+        if (![STATE.READY, STATE.GREETING, STATE.COOLDOWN].includes(state)) return;
+        if (faceDetectRunning) return;
         faceDetectRunning = true;
 
         try {
-          if (!videoEl.videoWidth) { faceDetectRunning = false; return; }
+          if (!videoEl.videoWidth) return;
 
           const detection = await faceapi.detectSingleFace(
             videoEl,
             new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.35 })
           );
 
-          if (kioskState === STATES.GREETING) {
-            // During greeting: track face to keep conversation alive
+          if (state === STATE.GREETING) {
+            // During greeting: track face for auto-dismiss via timestamp
             if (detection) {
-              faceVisible = true;
-              consecutiveFaceGone = 0;
-              // Face returned — cancel pending dismiss
-              if (faceGoneTimeout) {
-                clearTimeout(faceGoneTimeout);
-                faceGoneTimeout = null;
-              }
-            } else {
-              consecutiveFaceGone++;
-              if (consecutiveFaceGone >= FACE_GONE_REQUIRED && faceVisible) {
-                faceVisible = false;
-                // Face left — start dismiss countdown (skip if too early or already pending)
-                if (!faceGoneTimeout && Date.now() - overlayStartTime > MIN_GREETING_ALIVE_MS) {
-                  faceGoneTimeout = setTimeout(() => {
-                    faceGoneTimeout = null;
-                    if (kioskState === STATES.GREETING && !faceVisible) {
-                      // Wait for speech to finish before dismissing (covers both browser TTS and server TTS)
-                      const isSpeaking = () => speechSynthesis.speaking || !ttsAudio.paused;
-                      if (isSpeaking()) {
-                        const checkDone = setInterval(() => {
-                          if (!isSpeaking()) {
-                            clearInterval(checkDone);
-                            if (!faceVisible) dismissOverlay();
-                          }
-                        }, 300);
-                      } else {
-                        dismissOverlay();
-                      }
-                    }
-                  }, FACE_GONE_DISMISS_MS);
-                }
+              lastFaceSeenTime = Date.now();
+            } else if (lastFaceSeenTime > 0) {
+              const sinceFace = Date.now() - lastFaceSeenTime;
+              const overlayAge = Date.now() - overlayStartTime;
+              if (sinceFace >= FACE_GONE_DISMISS_MS
+                  && overlayAge >= MIN_GREETING_ALIVE_MS
+                  && !isSpeaking()) {
+                dismissGreeting();
               }
             }
             return;
           }
 
-          // READY / COOLDOWN: track face presence for next trigger
+          if (state === STATE.COOLDOWN) {
+            // During cooldown: don't update face tracking — prevents immediate
+            // re-trigger when cooldown expires with face still present.
+            return;
+          }
+
+          // STATE.READY: track face for greeting trigger
           if (detection) {
             consecutiveDetections++;
-            // Only trigger greeting when ready and cooldown has passed
             if (consecutiveDetections >= DETECTIONS_REQUIRED
-                && kioskState === STATES.READY
-                && faceWasAbsent
-                && Date.now() - lastGreetingTime >= GREETING_COOLDOWN) {
+                && faceAbsentSinceLastGreeting
+                && Date.now() - lastGreetingDismissTime >= GREETING_COOLDOWN) {
               consecutiveDetections = 0;
-              faceWasAbsent = false;
-              faceVisible = true;
-              consecutiveFaceGone = 0;
+              faceAbsentSinceLastGreeting = false;
+              lastFaceSeenTime = Date.now();
               triggerGreeting();
             }
           } else {
             consecutiveDetections = 0;
-            faceWasAbsent = true; // face gone — next appearance can trigger
+            faceAbsentSinceLastGreeting = true;
           }
         } catch (err) {
           console.warn('Face detection error:', err);
@@ -1275,14 +1245,18 @@
       }, FACE_DETECT_INTERVAL);
     }
 
-    // -- Trigger greeting sequence --------------------------------------------
+    // =========================================================================
+    //  GREETING
+    // =========================================================================
     let silenceAutoSummaryTimer = null;
     let autoSummaryGiven = false;
-    let lastReportDate = '';  // YYYY-MM-DD of last daily report
-    const SILENCE_AUTO_SUMMARY_MS = 5_000; // generate summary if no speech in 5s
+    let lastReportDate = '';
+    const SILENCE_AUTO_SUMMARY_MS = 5_000;
+    let hadVoiceInput = false;
+    let voiceInputReceived = false;
 
     async function triggerGreeting() {
-      setState(STATES.GREETING);
+      setState(STATE.GREETING);
       overlayStartTime = Date.now();
 
       // Switch to news slide, or Nysse if a bus is leaving soon
@@ -1298,30 +1272,30 @@
       } catch {
         show(NEWS_IDX);
       }
+
       conversationHistory = [];
       autoSummaryGiven = false;
       hadVoiceInput = false;
-      nativeRestartRounds = 0; // fresh restart budget for each greeting
       userTextEl.textContent = '';
 
-      // Determine time-appropriate greeting (short form)
+      // Time-appropriate greeting
       const h = new Date().getHours();
       let greeting;
       if (h >= 5 && h < 10)       greeting = 'Huomenta!';
-      else if (h >= 10 && h < 17)  greeting = 'P\u00e4iv\u00e4\u00e4!';
+      else if (h >= 10 && h < 17)  greeting = 'Päivää!';
       else if (h >= 17 && h < 22)  greeting = 'Iltaa!';
-      else                          greeting = 'Y\u00f6t\u00e4!';
+      else                          greeting = 'Yötä!';
 
-      // Start background jingle (morning only)
+      // Morning jingle
       if (h >= 5 && h < 10) startJingle();
 
-      // Show overlay with greeting
+      // Show overlay
       greetingText.textContent = greeting;
       reportText.textContent = '';
       greetingActiveAt = Date.now();
       greetingOverlay.classList.add('visible');
 
-      // Random quote only once every 3 hours
+      // Random quote (once per 3 hours)
       const now = Date.now();
       if (now - lastQuoteTime >= QUOTE_COOLDOWN) {
         lastQuoteTime = now;
@@ -1336,10 +1310,6 @@
 
       // Minimize avatar to bottom-right before entering listening mode
       minimizeOverlay();
-
-      // Enter listening mode (waits for jingle to finish if still playing)
-      // scheduleOverlayDismiss is called inside startListening after mic actually opens
-      // Daily-report timer is started inside startListening once the mic is actually open
       clearTimeout(silenceAutoSummaryTimer);
       startListening();
     }
@@ -1348,7 +1318,7 @@
       greetingOverlay.classList.add('minimized');
     }
 
-    // -- Jingle (local MP3) ---------------------------------------------------
+    // -- Jingle ---------------------------------------------------------------
     function startJingle() {
       jingleAudio.currentTime = 0;
       jingleAudio.play().catch(() => {});
@@ -1362,197 +1332,52 @@
       jingleAudio.currentTime = 0;
     }
 
-    // -- Dismiss greeting on card tap (not full overlay, so arrows stay tappable)
-    // greetingActiveAt guards against tap-through: iOS can forward a tap from an element
-    // that disappears (e.g. start-overlay) to whatever appears underneath it.
+    // -- Dismiss greeting on card tap -----------------------------------------
+    // greetingActiveAt guards against tap-through: iOS can forward a tap from an
+    // element that disappears (e.g. start-overlay) to whatever appears underneath.
     let greetingActiveAt = 0;
     greetingCard.addEventListener('click', () => {
-      if (Date.now() - greetingActiveAt < 600) return; // ignore phantom tap-throughs
-      dismissOverlay();
+      if (Date.now() - greetingActiveAt < 600) return;
+      dismissGreeting();
     });
 
-    // -- Schedule overlay dismiss ---------------------------------------------
+    // -- Schedule overlay safety net ------------------------------------------
     function scheduleOverlayDismiss() {
       clearTimeout(overlayTimeout);
-
-      // Absolute safety net (MAX_OVERLAY_DURATION); normal dismiss is face-based
-      if (Date.now() - overlayStartTime > MAX_OVERLAY_DURATION) {
-        dismissOverlay();
-        return;
-      }
-
-      overlayTimeout = setTimeout(() => {
-        dismissOverlay();
-      }, MAX_OVERLAY_DURATION - (Date.now() - overlayStartTime));
+      const remaining = MAX_OVERLAY_DURATION - (Date.now() - overlayStartTime);
+      if (remaining <= 0) { dismissGreeting(); return; }
+      overlayTimeout = setTimeout(() => dismissGreeting(), remaining);
     }
 
-    function dismissOverlay() {
-      if (kioskState !== STATES.GREETING) return;
-      console.log('[kiosk] dismissOverlay — overlayAge=%ds caller=%s',
-        Math.round((Date.now() - overlayStartTime) / 1000),
-        new Error().stack.split('\n')[2]?.trim() ?? '?');
-      setState(STATES.GREETING_COOLDOWN);
+    function dismissGreeting() {
+      if (state !== STATE.GREETING) return;
+      console.log('[kiosk] dismissGreeting — overlayAge=%ds',
+        Math.round((Date.now() - overlayStartTime) / 1000));
+      setState(STATE.COOLDOWN);
       clearTimeout(overlayTimeout);
-      clearTimeout(faceGoneTimeout);
-      faceGoneTimeout = null;
-      faceVisible = false;
-      faceWasAbsent = false; // require face to leave+return before next trigger
-      consecutiveFaceGone = 0;
       consecutiveDetections = 0;
+      faceAbsentSinceLastGreeting = false; // require face to leave+return in READY state
       stopJingle();
       stopListening();
       speechSynthesis.cancel();
-      avatarEl.classList.remove('speaking');
-      avatarEl.classList.remove('listening');
-      greetingOverlay.classList.remove('visible');
-      greetingOverlay.classList.remove('minimized');
-      lastGreetingTime = Date.now();
+      ttsAudio.pause();
+      avatarEl.classList.remove('speaking', 'listening');
+      greetingOverlay.classList.remove('visible', 'minimized');
+      lastGreetingDismissTime = Date.now();
       setTimeout(() => {
-        if (kioskState === STATES.GREETING_COOLDOWN) setState(STATES.READY);
+        if (state === STATE.COOLDOWN) setState(STATE.READY);
       }, GREETING_COOLDOWN);
     }
 
-    // -- Text-to-speech -------------------------------------------------------
-    const avatarEl = document.getElementById('avatar');
-
-    function speak(text) {
-      speakAndWait(text);
-    }
-
-    async function speakAndWait(text) {
-      // Try server-side TTS first — streams NDJSON, one sentence per line.
-      // Playing each sentence as it arrives pipelines synthesis with playback.
-      try {
-        const res = await fetch('/api/chat/tts', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text })
-        });
-        if (res.ok) {
-          const reader = res.body.getReader();
-          const decoder = new TextDecoder();
-          let buf = '';
-          let played = 0;
-
-          const playSentence = (b64wav) => new Promise(resolve => {
-            // Resume AudioContext if iOS suspended it (device lock / tab background)
-            if (ttsAudioCtx?.state === 'suspended') ttsAudioCtx.resume();
-            const bytes = atob(b64wav);
-            const arr = new Uint8Array(bytes.length);
-            for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
-            const url = URL.createObjectURL(new Blob([arr], { type: 'audio/wav' }));
-            let safetyTimer;
-            const cleanup = () => {
-              clearTimeout(safetyTimer);
-              ttsAudio.onended = null;
-              ttsAudio.onerror = null;
-              URL.revokeObjectURL(url);
-            };
-            ttsAudio.src = url;
-            ttsAudio.currentTime = 0;
-            ttsAudio.play().catch(() => { cleanup(); resolve(false); });
-            avatarEl.classList.add('speaking');
-            avatarEl.classList.remove('listening');
-            // Safety net: if onended never fires (network drop mid-stream) don't hang
-            safetyTimer = setTimeout(() => { cleanup(); resolve(false); }, 15_000);
-            ttsAudio.onended = () => { cleanup(); resolve(true); };
-            ttsAudio.onerror = () => { cleanup(); resolve(false); };
-          });
-
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            buf += decoder.decode(value, { stream: true });
-            const lines = buf.split('\n');
-            buf = lines.pop(); // keep incomplete trailing line
-            for (const line of lines) {
-              if (!line.trim()) continue;
-              const { audio } = JSON.parse(line);
-              await playSentence(audio);
-              played++;
-            }
-          }
-          // flush any remaining complete line
-          if (buf.trim()) {
-            try { const { audio } = JSON.parse(buf); await playSentence(audio); played++; } catch {}
-          }
-          avatarEl.classList.remove('speaking');
-          if (played > 0) return;
-        }
-      } catch { /* server TTS failed, fall back to browser */ }
-
-      // Fallback: browser speechSynthesis
-      speechSynthesis.cancel(); // iOS fix: clear any stuck queue
-      return new Promise(resolve => {
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.lang = 'fi-FI';
-        const voices = speechSynthesis.getVoices();
-        const fiFemale = voices.find(v => v.lang.startsWith('fi') && /female|satu|marjut/i.test(v.name));
-        const fiVoice = fiFemale || voices.find(v => v.lang.startsWith('fi'));
-        if (fiVoice) utterance.voice = fiVoice;
-        utterance.rate = 1.0;
-        utterance.onstart = () => {
-          avatarEl.classList.add('speaking');
-          avatarEl.classList.remove('listening');
-        };
-        utterance.onend = () => {
-          avatarEl.classList.remove('speaking');
-          resolve();
-        };
-        utterance.onerror = (e) => {
-          console.warn('[tts] speechSynthesis error:', e.error);
-          avatarEl.classList.remove('speaking');
-          resolve();
-        };
-        // iOS workaround: speechSynthesis.speak can silently fail if called too
-        // long after the last user gesture. Force a pause/resume cycle first.
-        speechSynthesis.speak(utterance);
-        if (isIOS) {
-          speechSynthesis.pause();
-          speechSynthesis.resume();
-        }
-      });
-    }
-
-    // -- Speech recognition ---------------------------------------------------
-    // Native Web Speech API on Chrome/Edge; MediaRecorder + Whisper on Safari
-
-    const NativeSpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    const useNativeSpeech = !!NativeSpeechRecognition;
-
-    let nativeRecognizer = null;
-    let nativeSpeechTimer = null;
-    let nativeHardTimer = null;
-    let nativeSpeechText = '';
-    let nativeFailCount = 0;
-    let nativeRestartRounds = 0;       // counts restart rounds when nativeHasWorked; capped to prevent infinite loop
-    let nativeFallenBack = false;      // sticky: once fallen back, stay on MediaRecorder
-    let nativeHasWorked = false;       // true once native API has produced a result this session
-    let recognitionEpoch = 0;          // incremented on every intentional stop — stale callbacks check this
-    const NATIVE_SPEECH_PAUSE = 2000;      // first utterance: wait 2s of silence
-    const NATIVE_SPEECH_PAUSE_SHORT = 800; // subsequent: 0.8s (conversation already going)
-    const NATIVE_HARD_TIMEOUT = 15000; // force-stop after 15s if no final result
-    const NATIVE_MAX_FAILS = 3;        // fall back to MediaRecorder after N failures
-    const NATIVE_MAX_RESTART_ROUNDS = 5; // give up restarting native after N rounds (user is silent)
-
-    let mediaRecorder = null;
-    let audioChunks = [];
-    let silenceTimer = null;
-    let audioStream = null;       // mic stream obtained during init
+    // =========================================================================
+    //  VOICE INPUT — MICROPHONE SETUP
+    // =========================================================================
+    let audioStream = null;
     let audioContext = null;
     let analyserNode = null;
-    const SILENCE_THRESHOLD = 0.015; // RMS below this = silence
-    const SILENCE_DURATION = 1500;   // ms of silence before sending (first utterance)
-    const SILENCE_DURATION_SHORT = 700; // ms of silence after first exchange
-    const MIN_RECORDING_MS = 500;    // ignore very short recordings
-    const MAX_RECORDING_MS = 10_000; // hard cap — send after 10s regardless
-    let recordingStartTime = 0;
     let micReady = false;
-    let hadVoiceInput = false;      // true after first real voice exchange; shortens silence delay
-    let voiceInputReceived = false; // true as soon as any audio/text is detected; guards daily-report timer
 
-    function initSpeechRecognition() {
-      // Always set up mic stream — needed for MediaRecorder fallback even on native path
+    function initMicrophone() {
       const existingStream = videoEl.srcObject;
       const audioTracks = existingStream?.getAudioTracks() || [];
 
@@ -1560,34 +1385,30 @@
         audioTracks.forEach(t => t.enabled = true);
         audioStream = new MediaStream(audioTracks);
         setupAudioAnalyser();
-        console.log('[voice] Mic stream ready (reused camera audio tracks)');
+        console.log('[voice] Mic ready (reused camera audio tracks)');
       } else {
         navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
           audioStream = stream;
           setupAudioAnalyser();
-          console.log('[voice] Mic stream ready (new stream)');
+          console.log('[voice] Mic ready (new stream)');
         }).catch(err => {
           console.warn('[voice] Mic not available:', err);
         });
       }
 
-      if (useNativeSpeech) {
+      if (NativeSpeechRecognition) {
         console.log('[voice] Using native Web Speech API (fi-FI), MediaRecorder as fallback');
       } else {
-        console.log('[voice] Using MediaRecorder + server transcription');
+        console.log('[voice] Using MediaRecorder + server transcription (Safari/iOS path)');
       }
-
       micReady = true;
-      recognition = true;
     }
 
     function setupAudioAnalyser() {
       try {
-        // Reuse the TTS AudioContext when available — iOS only allows a small
-        // number of simultaneous AudioContexts; keeping one prevents the other
-        // from being silently suspended.
+        // Reuse the TTS AudioContext — iOS limits simultaneous AudioContexts
         audioContext = ttsAudioCtx || new (window.AudioContext || window.webkitAudioContext)();
-        if (!ttsAudioCtx) ttsAudioCtx = audioContext; // keep a reference either way
+        if (!ttsAudioCtx) ttsAudioCtx = audioContext;
         if (audioContext.state === 'suspended') audioContext.resume();
         const source = audioContext.createMediaStreamSource(audioStream);
         analyserNode = audioContext.createAnalyser();
@@ -1607,12 +1428,26 @@
       return Math.sqrt(sum / data.length);
     }
 
+    // =========================================================================
+    //  VOICE INPUT — LISTENING MANAGEMENT
+    // =========================================================================
+    let activeRecognizer = null;  // native SpeechRecognition instance
+    let activeRecorder = null;    // MediaRecorder instance
+    let silenceTimer = null;
+    let nativeFailed = false;     // sticky: once native fails, use MediaRecorder
+    let nativeSilenceCount = 0;   // consecutive no-speech from native
+    const MAX_NATIVE_SILENCE = 5;
+
+    const SILENCE_THRESHOLD    = 0.015;
+    const SILENCE_DURATION     = 1500;   // ms of silence before sending (first utterance)
+    const SILENCE_DURATION_SHORT = 700;  // ms after first exchange
+    const MIN_RECORDING_MS     = 500;
+    const MAX_RECORDING_MS     = 10_000;
+
     function startListening() {
-      if (!micReady || kioskState !== STATES.GREETING) {
-        console.log('[voice] startListening skipped: micReady=%s, state=%s', micReady, kioskState);
-        return;
-      }
-      // Re-enable audio tracks so iOS shows the mic indicator and MediaRecorder works
+      if (!micReady || state !== STATE.GREETING) return;
+
+      // Re-enable audio tracks so iOS shows mic indicator
       videoEl.srcObject?.getAudioTracks().forEach(t => { t.enabled = true; });
 
       // Wait for jingle to finish before opening mic
@@ -1620,7 +1455,7 @@
         const onJingleDone = () => {
           jingleAudio.removeEventListener('ended', onJingleDone);
           jingleAudio.removeEventListener('pause', onJingleDone);
-          if (kioskState === STATES.GREETING) startListening();
+          if (state === STATE.GREETING) startListening();
         };
         jingleAudio.addEventListener('ended', onJingleDone);
         jingleAudio.addEventListener('pause', onJingleDone);
@@ -1634,31 +1469,18 @@
       avatarEl.classList.add('listening');
       scheduleOverlayDismiss();
 
-      // Daily-report timer: fires if user says nothing for 5 s after mic opens.
-      // Placed here (not in triggerGreeting) so the countdown starts from when the
-      // mic is actually open — including after a jingle delay.
-      // voiceInputReceived is a synchronous guard so the callback can't race with
-      // onresult / silence-detection even if both land in the event queue at once.
+      // Daily-report timer: fires if user says nothing for 5s after mic opens
       if (!autoSummaryGiven && new Date().toISOString().slice(0, 10) !== lastReportDate) {
         clearTimeout(silenceAutoSummaryTimer);
         silenceAutoSummaryTimer = setTimeout(async () => {
-          if (kioskState !== STATES.GREETING || !listeningActive || autoSummaryGiven || voiceInputReceived) return;
+          if (state !== STATE.GREETING || !listeningActive || autoSummaryGiven || voiceInputReceived) return;
 
           // Pause listening while generating summary
-          listeningActive = false;
-          listeningIndicator.classList.add('hidden');
-          avatarEl.classList.remove('listening');
-          clearTimeout(silenceTimer);
-          clearTimeout(nativeSpeechTimer);
-          clearTimeout(nativeHardTimer);
-          recognitionEpoch++;
-          if (nativeRecognizer) { try { nativeRecognizer.abort(); } catch {} nativeRecognizer = null; }
-          if (mediaRecorder && mediaRecorder.state === 'recording') { try { mediaRecorder.stop(); } catch {} }
-
+          pauseListening();
           reportSpinner.classList.remove('hidden');
           try {
             conversationHistory.push({ role: 'user', content: 'Hae päiväraportti get_daily_report-työkalulla ja tiivistä se lyhyeksi katsaukseksi. Aloita tärkeimmästä uutisesta, sitten sää, kodin tilanne ja kalenterin tapahtumat. Älä luettele lukemia, vaan kerro olennainen.' });
-            const summary = await generateConversationalResponse();
+            const summary = await generateAIResponse();
             reportSpinner.classList.add('hidden');
             if (summary) {
               autoSummaryGiven = true;
@@ -1671,297 +1493,259 @@
             reportSpinner.classList.add('hidden');
           }
 
-          if (kioskState === STATES.GREETING && Date.now() - overlayStartTime < MAX_OVERLAY_DURATION) {
+          if (state === STATE.GREETING && Date.now() - overlayStartTime < MAX_OVERLAY_DURATION) {
             startListening();
           }
         }, SILENCE_AUTO_SUMMARY_MS);
       }
 
-      if (useNativeSpeech && !nativeFallenBack) {
-        startNativeRecognition();
-      } else {
+      // Start voice recognition
+      if (NativeSpeechRecognition && !nativeFailed) {
+        startNativeListening();
+      } else if (audioStream) {
         if (audioContext?.state === 'suspended') audioContext.resume();
         startRecording();
       }
     }
 
-    // -- Native Web Speech API -----------------------------------------------
-    function fallbackToMediaRecorder() {
-      if (nativeHasWorked) {
-        nativeRestartRounds++;
-        if (nativeRestartRounds <= NATIVE_MAX_RESTART_ROUNDS) {
-          console.warn('[voice] Native failed but has worked this session — restarting native (round %d/%d)', nativeRestartRounds, NATIVE_MAX_RESTART_ROUNDS);
-          nativeFailCount = 0;
-          if (listeningActive) startNativeRecognition();
-          return;
-        }
-        // Exceeded max rounds — user is silent; stop listening gracefully
-        console.warn('[voice] Too many consecutive native failures — stopping listening');
-        nativeRestartRounds = 0;
-        listeningActive = false;
-        listeningIndicator.classList.add('hidden');
-        avatarEl.classList.remove('listening');
-        clearTimeout(nativeSpeechTimer);
-        clearTimeout(nativeHardTimer);
-        try { nativeRecognizer?.abort(); } catch {}
-        nativeRecognizer = null;
-        return;
+    function pauseListening() {
+      listeningActive = false;
+      listeningIndicator.classList.add('hidden');
+      avatarEl.classList.remove('listening');
+      clearTimeout(silenceTimer);
+      if (activeRecognizer) {
+        try { activeRecognizer.abort(); } catch {}
+        activeRecognizer = null;
       }
-      console.warn('[voice] Falling back to MediaRecorder + server transcription');
-      nativeFailCount = 0;
-      nativeFallenBack = true;
-      recognitionEpoch++; // invalidate any pending native callbacks
-      if (nativeRecognizer) { try { nativeRecognizer.abort(); } catch {} nativeRecognizer = null; }
-      if (audioStream && listeningActive) {
-        if (audioContext?.state === 'suspended') audioContext.resume();
-        startRecording();
+      if (activeRecorder?.state === 'recording') {
+        try { activeRecorder.stop(); } catch {}
       }
+      activeRecorder = null;
     }
 
-    function startNativeRecognition() {
+    function stopListening() {
+      pauseListening();
+      clearTimeout(silenceAutoSummaryTimer);
+      // Disable audio tracks — clears iOS mic indicator
+      videoEl.srcObject?.getAudioTracks().forEach(t => { t.enabled = false; });
+    }
+
+    // =========================================================================
+    //  NATIVE SPEECH RECOGNITION (Chrome/Edge only — skipped on iOS/Safari)
+    // =========================================================================
+    function startNativeListening() {
       if (!listeningActive) return;
 
-      nativeSpeechText = '';
-      clearTimeout(nativeSpeechTimer);
-      clearTimeout(nativeHardTimer);
+      const recognizer = new NativeSpeechRecognition();
+      activeRecognizer = recognizer;
+      recognizer.lang = 'fi-FI';
+      recognizer.continuous = true;
+      recognizer.interimResults = true;
+      recognizer.maxAlternatives = 1;
 
-      const myEpoch = ++recognitionEpoch; // capture — stale callbacks will see epoch mismatch
-      nativeRecognizer = new NativeSpeechRecognition();
-      nativeRecognizer.lang = 'fi-FI';
-      nativeRecognizer.continuous = true;
-      nativeRecognizer.interimResults = true;
-      nativeRecognizer.maxAlternatives = 1;
-
-      // Hard timeout: if no usable result after 15s, stop and restart/fallback
-      nativeHardTimer = setTimeout(() => {
-        if (myEpoch !== recognitionEpoch) return; // stale
-        console.warn('[voice] Native hard timeout — no final result in %ds', NATIVE_HARD_TIMEOUT / 1000);
-        try { nativeRecognizer.abort(); } catch {}
-      }, NATIVE_HARD_TIMEOUT);
-
+      let finalText = '';
       let bestInterim = '';
+      let resolved = false;
+      let pauseTimer = null;
+      let hardTimer = null;
 
-      nativeRecognizer.onresult = (event) => {
-        if (myEpoch !== recognitionEpoch) return; // stale — a newer session owns things now
-        nativeFailCount = 0; // got a result, reset fail counter
-        nativeRestartRounds = 0; // user spoke — reset restart cap
-        nativeHasWorked = true;
-        let finalText = '';
-        let interimText = '';
+      function resetHardTimer() {
+        clearTimeout(hardTimer);
+        hardTimer = setTimeout(() => {
+          if (resolved) return;
+          console.warn('[voice] Native hard timeout (15s)');
+          try { recognizer.abort(); } catch {}
+        }, 15_000);
+      }
+
+      function finish(text) {
+        if (resolved) return;
+        resolved = true;
+        activeRecognizer = null;
+        clearTimeout(hardTimer);
+        clearTimeout(pauseTimer);
+
+        if (text?.trim()) {
+          nativeSilenceCount = 0;
+          handleVoiceResult(text.trim());
+        } else if (listeningActive && state === STATE.GREETING) {
+          nativeSilenceCount++;
+          if (nativeSilenceCount >= MAX_NATIVE_SILENCE) {
+            // User is genuinely silent — stop gracefully
+            listeningActive = false;
+            listeningIndicator.classList.add('hidden');
+            avatarEl.classList.remove('listening');
+          } else {
+            startListening();
+          }
+        }
+      }
+
+      resetHardTimer();
+
+      recognizer.onresult = (event) => {
+        if (resolved) return;
+
+        finalText = '';
+        bestInterim = '';
         for (let i = 0; i < event.results.length; i++) {
           if (event.results[i].isFinal) {
             finalText += event.results[i][0].transcript;
           } else {
-            interimText += event.results[i][0].transcript;
+            bestInterim += event.results[i][0].transcript;
           }
         }
 
-        if (finalText.trim()) {
-          nativeSpeechText = finalText.trim();
-          console.log('[voice] Native final result:', nativeSpeechText);
-        }
-        if (interimText.trim()) {
-          bestInterim = interimText.trim();
-          console.log('[voice] Native interim:', bestInterim);
-        }
-
-        // Show partial result in speech bubble immediately
-        const liveText = nativeSpeechText || bestInterim;
+        const liveText = finalText || bestInterim;
         if (liveText) {
-          voiceInputReceived = true; // synchronous guard — stops daily-report timer even on race
+          voiceInputReceived = true;
+          clearTimeout(silenceAutoSummaryTimer);
           userTextEl.textContent = '\u201c' + liveText + '\u201d';
         }
 
-        // Cancel daily-report timer as soon as any speech is detected
-        clearTimeout(silenceAutoSummaryTimer);
+        clearTimeout(pauseTimer);
+        resetHardTimer();
 
         if (finalText.trim()) {
-          // isFinal=true means Chrome considers the utterance complete — process it
-          // quickly (200 ms) rather than waiting a full pause period. The long wait
-          // was the source of race conditions with onend / daily-report timer.
-          clearTimeout(nativeSpeechTimer);
-          nativeSpeechTimer = setTimeout(() => {
-            if (myEpoch !== recognitionEpoch) return;
-            const text = nativeSpeechText || bestInterim;
-            if (text && listeningActive) {
-              clearTimeout(nativeHardTimer);
-              console.log('[voice] Native speech done (final):', text);
-              try { nativeRecognizer.stop(); } catch {}
-              handleVoiceResult(text);
-            }
-          }, 200);
+          // Final result — short pause then process
+          pauseTimer = setTimeout(() => finish(finalText.trim()), 200);
         } else {
-          // Interim only — reset the sliding hard timeout and the fallback pause timer
-          clearTimeout(nativeHardTimer);
-          nativeHardTimer = setTimeout(() => {
-            if (myEpoch !== recognitionEpoch) return;
-            console.warn('[voice] Native hard timeout — 15 s since last interim');
-            try { nativeRecognizer.abort(); } catch {}
-          }, NATIVE_HARD_TIMEOUT);
-          clearTimeout(nativeSpeechTimer);
-          nativeSpeechTimer = setTimeout(() => {
-            if (myEpoch !== recognitionEpoch) return;
-            const text = nativeSpeechText || bestInterim;
-            if (text && listeningActive) {
-              clearTimeout(nativeHardTimer);
-              console.log('[voice] Native speech done (pause):', text);
-              try { nativeRecognizer.stop(); } catch {}
-              handleVoiceResult(text);
+          // Interim only — wait for pause before processing
+          pauseTimer = setTimeout(() => {
+            if (!resolved && (finalText || bestInterim)) {
+              try { recognizer.stop(); } catch {}
+              finish((finalText || bestInterim).trim());
             }
-          }, hadVoiceInput ? NATIVE_SPEECH_PAUSE_SHORT : NATIVE_SPEECH_PAUSE);
+          }, hadVoiceInput ? 800 : 2000);
         }
       };
 
-      nativeRecognizer.onerror = (event) => {
-        if (myEpoch !== recognitionEpoch) return; // stale — a newer session owns things now
-        console.warn('[voice] Native error:', event.error, 'listeningActive=', listeningActive);
+      recognizer.onerror = (event) => {
+        if (resolved) return;
+        console.warn('[voice] Native error:', event.error);
 
-        // 'aborted' when not listening is expected — we called .stop() ourselves
-        if (event.error === 'aborted' && !listeningActive) return;
-
-        clearTimeout(nativeHardTimer);
-
-        if ((event.error === 'no-speech' || event.error === 'aborted') && listeningActive && kioskState === STATES.GREETING && !nativeFallenBack) {
-          // If we accumulated text before the abort/timeout, use it now rather than restarting
-          const accumulated = nativeSpeechText || bestInterim;
+        if (event.error === 'no-speech' || event.error === 'aborted') {
+          // Use accumulated text if any
+          const accumulated = (finalText || bestInterim)?.trim();
           if (accumulated) {
-            console.log('[voice] Using accumulated text after abort:', accumulated);
-            clearTimeout(nativeSpeechTimer);
-            recognitionEpoch++; // stale the current session before handing off
-            handleVoiceResult(accumulated);
-            return;
-          }
-          nativeFailCount++;
-          if (nativeFailCount >= NATIVE_MAX_FAILS && audioStream) {
-            fallbackToMediaRecorder();
+            finish(accumulated);
           } else {
-            startNativeRecognition();
+            finish(null);
           }
-        } else if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
-          console.warn('[voice] Mic permission denied — falling back to MediaRecorder');
-          if (audioStream) fallbackToMediaRecorder();
-        } else if (event.error === 'network') {
-          console.warn('[voice] Network error — falling back to MediaRecorder');
-          if (audioStream) fallbackToMediaRecorder();
-        } else if (listeningActive && !nativeFallenBack) {
-          // Only fall back on truly unrecoverable errors while actively listening
-          console.warn('[voice] Unrecoverable native error — falling back to MediaRecorder');
-          if (audioStream) fallbackToMediaRecorder();
+        } else {
+          // Non-recoverable error — fall back to MediaRecorder permanently
+          console.warn('[voice] Falling back to MediaRecorder + server transcription');
+          nativeFailed = true;
+          resolved = true;
+          activeRecognizer = null;
+          clearTimeout(hardTimer);
+          clearTimeout(pauseTimer);
+          if (listeningActive && audioStream) {
+            if (audioContext?.state === 'suspended') audioContext.resume();
+            startRecording();
+          }
         }
       };
 
-      nativeRecognizer.onend = () => {
-        if (myEpoch !== recognitionEpoch) return; // stale callback — ignore
-        clearTimeout(nativeHardTimer);
-        // Use whatever text we have (final or interim)
-        const text = nativeSpeechText || bestInterim;
-        console.log('[voice] onend: text=%s listeningActive=%s', JSON.stringify(text), listeningActive);
-        if (text && listeningActive) {
-          clearTimeout(nativeSpeechTimer);
-          handleVoiceResult(text);
-          return;
-        }
-        if (listeningActive && kioskState === STATES.GREETING && !nativeFallenBack) {
-          nativeFailCount++;
-          if (nativeFailCount >= NATIVE_MAX_FAILS && audioStream) {
-            fallbackToMediaRecorder();
-          } else {
-            startNativeRecognition();
-          }
-        }
+      recognizer.onend = () => {
+        finish((finalText || bestInterim)?.trim() || null);
       };
 
       try {
-        nativeRecognizer.start();
-        console.log('[voice] Native recognition started (attempt %d)', nativeFailCount + 1);
+        recognizer.start();
+        console.log('[voice] Native recognition started');
       } catch (err) {
         console.warn('[voice] Native recognition start failed:', err);
-        if (audioStream) fallbackToMediaRecorder();
+        nativeFailed = true;
+        resolved = true;
+        activeRecognizer = null;
+        if (listeningActive && audioStream) startRecording();
       }
     }
-    function startRecording() {
-      if (!audioStream || !listeningActive) {
-        console.log('[voice] startRecording skipped: audioStream=%s, listeningActive=%s', !!audioStream, listeningActive);
-        return;
-      }
 
-      audioChunks = [];
-      recordingStartTime = Date.now();
+    // =========================================================================
+    //  MEDIARECORDER + WHISPER (primary path on iOS/Safari)
+    // =========================================================================
+    function startRecording() {
+      if (!audioStream || !listeningActive) return;
+
+      let audioChunks = [];
+      const recordingStartTime = Date.now();
 
       const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus'
-                      : MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm'
-                      : MediaRecorder.isTypeSupported('audio/mp4') ? 'audio/mp4'
-                      : '';
+                     : MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm'
+                     : MediaRecorder.isTypeSupported('audio/mp4') ? 'audio/mp4'
+                     : '';
 
       try {
-        mediaRecorder = new MediaRecorder(audioStream, mimeType ? { mimeType } : {});
+        const recorder = new MediaRecorder(audioStream, mimeType ? { mimeType } : {});
+        activeRecorder = recorder;
+
+        recorder.ondataavailable = (e) => {
+          if (e.data.size > 0) audioChunks.push(e.data);
+        };
+
+        recorder.onstop = async () => {
+          activeRecorder = null;
+          const duration = Date.now() - recordingStartTime;
+          if (duration < MIN_RECORDING_MS || audioChunks.length === 0) {
+            if (listeningActive && state === STATE.GREETING) startRecording();
+            return;
+          }
+
+          const ext = (recorder.mimeType || '').includes('mp4') ? 'mp4' : 'webm';
+          const blob = new Blob(audioChunks, { type: recorder.mimeType || 'audio/webm' });
+          audioChunks = [];
+
+          try {
+            const formData = new FormData();
+            formData.append('audio', blob, `recording.${ext}`);
+            const res = await fetch('/api/chat/transcribe', { method: 'POST', body: formData });
+            if (res.ok) {
+              const data = await res.json();
+              const text = data.text?.trim();
+              if (text) {
+                handleVoiceResult(text);
+                return;
+              }
+            }
+          } catch (err) {
+            console.warn('[voice] Transcription error:', err);
+          }
+
+          if (listeningActive && state === STATE.GREETING) startRecording();
+        };
+
+        recorder.start(250);
+        startSilenceDetection(recorder, recordingStartTime);
       } catch (err) {
         console.warn('[voice] MediaRecorder failed:', err);
-        return;
       }
-
-      mediaRecorder.ondataavailable = (e) => {
-        if (e.data.size > 0) audioChunks.push(e.data);
-      };
-
-      mediaRecorder.onstop = async () => {
-        const duration = Date.now() - recordingStartTime;
-        if (duration < MIN_RECORDING_MS || audioChunks.length === 0) {
-          if (listeningActive) startRecording();
-          return;
-        }
-
-        const ext = (mediaRecorder.mimeType || '').includes('mp4') ? 'mp4' : 'webm';
-        const blob = new Blob(audioChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
-        audioChunks = [];
-
-        try {
-          const formData = new FormData();
-          formData.append('audio', blob, `recording.${ext}`);
-          const res = await fetch('/api/chat/transcribe', { method: 'POST', body: formData });
-          if (res.ok) {
-            const data = await res.json();
-            const text = data.text?.trim();
-            if (text) {
-              handleVoiceResult(text);
-              return;
-            }
-          }
-        } catch (err) {
-          console.warn('[voice] Transcription error:', err);
-        }
-
-        if (listeningActive && kioskState === STATES.GREETING) startRecording();
-      };
-
-      mediaRecorder.start(250);
-      startSilenceDetection();
     }
 
-    function startSilenceDetection() {
+    function startSilenceDetection(recorder, recordingStartTime) {
       clearTimeout(silenceTimer);
       let silenceStart = null;
-
       let speechDetected = false;
 
       const check = () => {
-        if (!listeningActive || !mediaRecorder || mediaRecorder.state !== 'recording') return;
+        if (!listeningActive || !recorder || recorder.state !== 'recording') return;
 
         const elapsed = Date.now() - recordingStartTime;
 
         if (elapsed >= MAX_RECORDING_MS) {
           console.log('[voice] Max recording duration reached, stopping');
-          mediaRecorder.stop();
+          recorder.stop();
           return;
         }
 
         const rms = getRMS();
 
-        // If analyser isn't working (rms always 0), fall back to duration-based cutoff
+        // If analyser isn't working, fall back to duration-based cutoff
         if (!analyserNode) {
           if (elapsed >= 5000) {
             console.log('[voice] No analyser, stopping after 5s');
-            mediaRecorder.stop();
+            recorder.stop();
           } else {
             silenceTimer = setTimeout(check, 150);
           }
@@ -1973,12 +1757,11 @@
           speechDetected = true;
           silenceStart = null;
         } else if (speechDetected) {
-          // Only start counting silence after speech was detected
           if (!silenceStart) silenceStart = Date.now();
           const silentFor = Date.now() - silenceStart;
           if (silentFor >= (hadVoiceInput ? SILENCE_DURATION_SHORT : SILENCE_DURATION)) {
             console.log('[voice] Silence after speech, stopping recording');
-            mediaRecorder.stop();
+            recorder.stop();
             return;
           }
         }
@@ -1989,27 +1772,9 @@
       silenceTimer = setTimeout(check, 500);
     }
 
-    function stopListening() {
-      recognitionEpoch++; // invalidate any in-flight native recognition callbacks
-      listeningActive = false;
-      listeningIndicator.classList.add('hidden');
-      avatarEl.classList.remove('listening');
-      clearTimeout(silenceTimer);
-      clearTimeout(nativeSpeechTimer);
-      clearTimeout(nativeHardTimer);
-      clearTimeout(silenceAutoSummaryTimer);
-      if (nativeRecognizer) {
-        try { nativeRecognizer.abort(); } catch {}
-        nativeRecognizer = null;
-      }
-      if (mediaRecorder && mediaRecorder.state === 'recording') {
-        try { mediaRecorder.stop(); } catch { /* ignore */ }
-      }
-      // Disable audio tracks so the iOS mic indicator clears between sessions.
-      // Tracks are re-enabled at the start of startListening().
-      videoEl.srcObject?.getAudioTracks().forEach(t => { t.enabled = false; });
-    }
-
+    // =========================================================================
+    //  VOICE RESULT HANDLING & AI
+    // =========================================================================
     const FAREWELL_PATTERNS = /\b(heippa|heihei|hei\s*hei|näkemiin|nähdään|moi\s*moi|moikka|kiitos\s+siitä|kiitos\s+paljon|selvä\s+homma|hyvää\s+päivän\s*jatkoa|hyvää\s+yötä|hyvää\s+iltaa|bye|goodbye|see\s*you)\b/i;
 
     function isFarewell(text) {
@@ -2017,46 +1782,28 @@
     }
 
     async function handleVoiceResult(transcript) {
-      // Show what the user said
       userTextEl.textContent = `"${transcript}"`;
-
-      // Cancel idle dismiss / auto-summary timers while processing
       clearTimeout(overlayTimeout);
       clearTimeout(silenceAutoSummaryTimer);
 
       // Pause listening while processing + speaking
-      listeningActive = false;
-      listeningIndicator.classList.add('hidden');
-      avatarEl.classList.remove('listening');
-      clearTimeout(silenceTimer);
-      clearTimeout(nativeSpeechTimer);
-      clearTimeout(nativeHardTimer);
-      if (nativeRecognizer) {
-        try { nativeRecognizer.abort(); } catch {}
-        nativeRecognizer = null;
-      }
-      if (mediaRecorder && mediaRecorder.state === 'recording') {
-        try { mediaRecorder.stop(); } catch { /* ignore */ }
-      }
+      pauseListening();
 
-      // Detect farewell — say goodbye and dismiss
+      // Farewell detection
       if (isFarewell(transcript)) {
         const goodbye = pick(['Heippa!', 'Nähdään!', 'Moikka!', 'Hei hei!']);
         reportSpinner.classList.add('hidden');
         reportText.textContent = goodbye;
         await speakAndWait(goodbye);
-        dismissOverlay();
+        dismissGreeting();
         return;
       }
 
-      // Add to conversation history
       conversationHistory.push({ role: 'user', content: transcript });
-
-      // Show spinner while generating response
       reportSpinner.classList.remove('hidden');
 
       try {
-        const response = await generateConversationalResponse() || randomFallback();
+        const response = await generateAIResponse() || randomFallback();
         reportSpinner.classList.add('hidden');
         reportText.textContent = response;
         conversationHistory.push({ role: 'assistant', content: response });
@@ -2069,14 +1816,13 @@
         await speakAndWait(fallback);
       }
 
-      // Resume listening if still within max duration and face is present
-      if (Date.now() - overlayStartTime < MAX_OVERLAY_DURATION && kioskState === STATES.GREETING) {
+      // Resume listening if still within max duration
+      if (Date.now() - overlayStartTime < MAX_OVERLAY_DURATION && state === STATE.GREETING) {
         startListening();
       }
     }
 
-    async function generateConversationalResponse() {
-      // Claude Bridge handles Ollama → Claude fallback internally with MCP tools
+    async function generateAIResponse() {
       try {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 30000);
@@ -2093,11 +1839,98 @@
           if (text) return stripThinkTags(text);
         }
       } catch { /* Bridge unavailable */ }
-
       return null;
     }
 
-    // -- Auto-reload on backend version change ------------------------------
+    // =========================================================================
+    //  INITIALIZATION
+    // =========================================================================
+    async function tryAutoActivate() {
+      if (isIOS) return false; // always require tap on iOS to unlock audio
+      try {
+        const cam = await navigator.permissions.query({ name: 'camera' });
+        const mic = await navigator.permissions.query({ name: 'microphone' });
+        if (cam.state === 'granted' && mic.state === 'granted') {
+          const cameraOk = await setupCamera();
+          if (cameraOk) {
+            unlockAudio();
+            startOverlay.classList.add('hidden');
+            initMicrophone();
+            setState(STATE.READY);
+            startFaceDetection();
+            watchCameraTracks();
+            return true;
+          }
+        }
+      } catch {}
+      return false;
+    }
+
+    tryAutoActivate();
+
+    startOverlay.addEventListener('click', async function handleStart() {
+      startOverlay.removeEventListener('click', handleStart);
+      unlockAudio();
+
+      startLabel.textContent = 'Aktivoidaan...';
+      startSublabel.textContent = '';
+      initSpinner.classList.remove('hidden');
+      startOverlay.style.cursor = 'default';
+
+      const cameraOk = await setupCamera();
+      if (cameraOk) {
+        initSpinner.classList.add('hidden');
+        startOverlay.classList.add('hidden');
+        initMicrophone();
+        setState(STATE.READY);
+        startFaceDetection();
+        watchCameraTracks();
+      } else {
+        showCameraError();
+      }
+    });
+
+    function showCameraError() {
+      setState(STATE.FAILED);
+      initSpinner.classList.add('hidden');
+      startLabel.textContent = '';
+      startSublabel.textContent = '';
+      initError.classList.add('visible');
+    }
+
+    document.getElementById('retry-btn').addEventListener('click', async (e) => {
+      e.stopPropagation();
+      initError.classList.remove('visible');
+      startLabel.textContent = 'Aktivoidaan kamera...';
+      startSublabel.textContent = '';
+      initSpinner.classList.remove('hidden');
+      const ok = await setupCamera();
+      if (ok) {
+        initSpinner.classList.add('hidden');
+        startLabel.textContent = 'Valmis!';
+        startSublabel.textContent = '';
+        await new Promise(r => setTimeout(r, 500));
+        startOverlay.classList.add('hidden');
+        initMicrophone();
+        setState(STATE.READY);
+        startFaceDetection();
+        watchCameraTracks();
+      } else {
+        showCameraError();
+      }
+    });
+
+    document.getElementById('skip-btn').addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setState(STATE.DASHBOARD_ONLY);
+      startOverlay.classList.add('hidden');
+      initMicrophone();
+    });
+
+    // =========================================================================
+    //  AUTO-RELOAD ON VERSION CHANGE
+    // =========================================================================
     let knownVersion = null;
 
     async function checkVersion() {
@@ -2107,7 +1940,7 @@
         const version = (await res.text()).trim();
         if (knownVersion === null) {
           knownVersion = version;
-        } else if (version !== knownVersion && kioskState !== STATES.GREETING) {
+        } else if (version !== knownVersion && state !== STATE.GREETING) {
           window.location.reload();
         }
       } catch { /* network error — skip */ }
