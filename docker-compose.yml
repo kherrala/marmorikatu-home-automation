@@ -179,7 +179,7 @@ services:
     ports:
       - "8765:8765"
     volumes:
-      - remind-data:/data
+      - remind-data:/root/.remind
     extra_hosts:
       - "host.docker.internal:host-gateway"
     healthcheck:
