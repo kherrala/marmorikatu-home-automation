@@ -186,6 +186,15 @@ async def _call_tool_safe(tool_name: str, tool_input: dict, iteration: int, call
         return msg
 
 
+async def _consolidate_memory():
+    """Trigger remind consolidation after a remember call."""
+    try:
+        result = await _call_tool_safe("consolidate", {"force": True}, 0, "auto-consolidate")
+        log.info("Memory consolidation: %s", result[:100])
+    except Exception as e:
+        log.warning("Memory consolidation failed: %s", e)
+
+
 def _tools_to_openai(tools: list[dict]) -> list[dict]:
     """Convert Anthropic-format tool defs to OpenAI function-calling format."""
     return [
@@ -392,23 +401,29 @@ async def chat_endpoint(request: Request) -> JSONResponse:
         return JSONResponse({"error": "No messages provided"}, status_code=400)
 
     # Try Ollama first (with reduced tool set), fall back to Claude (full tools)
+    result = None
     try:
         log.info("Trying Ollama (%s) with %d tools...", OLLAMA_MODEL, len(ollama_tools))
         result = await run_ollama_agentic_loop(messages, ollama_tools)
-        return JSONResponse(result)
     except Exception as e:
         log.warning("Ollama failed (%s), falling back to Claude", e)
 
-    try:
-        log.info("Falling back to Claude (%s) with %d tools...", CLAUDE_MODEL, len(all_tools))
-        result = await run_claude_agentic_loop(messages, all_tools)
-        return JSONResponse(result)
-    except anthropic.APIError as e:
-        log.error("Claude API error: %s", e)
-        return JSONResponse({"error": f"Claude API error: {e.message}"}, status_code=502)
-    except Exception as e:
-        log.error("Unexpected error: %s", e)
-        return JSONResponse({"error": str(e)}, status_code=500)
+    if result is None:
+        try:
+            log.info("Falling back to Claude (%s) with %d tools...", CLAUDE_MODEL, len(all_tools))
+            result = await run_claude_agentic_loop(messages, all_tools)
+        except anthropic.APIError as e:
+            log.error("Claude API error: %s", e)
+            return JSONResponse({"error": f"Claude API error: {e.message}"}, status_code=502)
+        except Exception as e:
+            log.error("Unexpected error: %s", e)
+            return JSONResponse({"error": str(e)}, status_code=500)
+
+    # Trigger memory consolidation in background if any remember calls were made
+    if result and any(tc.get("tool") == "remember" for tc in result.get("tool_calls", [])):
+        asyncio.create_task(_consolidate_memory())
+
+    return JSONResponse(result)
 
 
 def _pcm_to_wav(pcm: bytes, sample_rate: int) -> bytes:

@@ -9,7 +9,7 @@
   },
   "db_url": "sqlite:////data/remind.db",
   "auto_consolidate": true,
-  "consolidation_threshold": 5,
+  "consolidation_threshold": 3,
   "decay": {
     "enabled": true,
     "decay_interval": 604800,
