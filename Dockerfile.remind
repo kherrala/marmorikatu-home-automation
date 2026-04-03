@@ -1,0 +1,7 @@
+FROM python:3.12-slim
+WORKDIR /app
+RUN pip install --no-cache-dir remind-mcp
+COPY remind-config.json /root/.remind/remind.config.json
+RUN mkdir -p /data
+EXPOSE 8765
+CMD ["remind-mcp", "--port", "8765"]

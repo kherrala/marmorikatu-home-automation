@@ -121,6 +121,16 @@ server {
         proxy_send_timeout 86400s;
     }
 
+    # Remind memory web UI and API
+    location /remind/ {
+        set $backend_remind remind:8765;
+        proxy_pass http://$backend_remind/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+    }
+
     # Claude Bridge proxy (MCP-powered AI + transcription + TTS)
     location /api/chat/ {
         set $backend_bridge claude-bridge:3002;

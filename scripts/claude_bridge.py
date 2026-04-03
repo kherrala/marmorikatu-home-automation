@@ -76,7 +76,12 @@ def get_system_prompt() -> str:
         f"Vastaa lyhyesti suomeksi ilman muotoilua.\n"
         f"Vastauksesi luetaan ääneen — pidä ne lyhyinä ja selkeinä.\n"
         f"Käyttäjä on kotona.\n"
-        f"Kellarin lämpötila on tarkoituksella alempi kuin muissa kerroksissa — se ei ole ongelma."
+        f"Kellarin lämpötila on tarkoituksella alempi kuin muissa kerroksissa — se ei ole ongelma.\n"
+        f"\n"
+        f"Muisti:\n"
+        f"- Käytä 'recall'-työkalua jokaisen keskustelun alussa muistaaksesi käyttäjästä tietoja.\n"
+        f"- Käytä 'remember'-työkalua tallentaaksesi tärkeitä asioita käyttäjästä (mieltymykset, tottumukset, perheenjäsenet).\n"
+        f"- Älä mainitse muistijärjestelmää käyttäjälle ellei hän kysy."
     )
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
