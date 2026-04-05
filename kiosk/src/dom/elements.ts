@@ -31,3 +31,5 @@ export const slidesContainer = getEl<HTMLDivElement>('slides');
 export const navContainer = getEl<HTMLDivElement>('nav');
 export const screenshotBubble = getEl<HTMLDivElement>('screenshot-bubble');
 export const screenshotImg = getEl<HTMLImageElement>('screenshot-img');
+export const screenshotFullscreen = getEl<HTMLDivElement>('screenshot-fullscreen');
+export const screenshotFullscreenImg = getEl<HTMLImageElement>('screenshot-fullscreen-img');

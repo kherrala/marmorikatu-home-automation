@@ -9,7 +9,7 @@ import {
 import { NYSSE_IDX, NEWS_IDX } from '../config/slides.js';
 import { speakAndWait } from '../audio/tts.js';
 import { randomFallback } from '../content/fallbacks.js';
-import { generateAIResponse } from './conversation.js';
+import { generateAIResponse, hideScreenshot } from './conversation.js';
 import { clearAvatar } from '../dom/avatar.js';
 import {
   greetingOverlay, greetingText, reportText, reportSpinner,
@@ -182,6 +182,7 @@ export function dismissGreeting(): void {
   speechSynthesis.cancel();
   ttsAudio.pause();
   clearAvatar();
+  hideScreenshot();
   greetingOverlay.classList.remove('visible', 'minimized');
 }
 

@@ -4,27 +4,35 @@ import { randomFallback } from '../content/fallbacks.js';
 import { pick } from '../content/text-utils.js';
 import { speakAndWait, playSentence } from '../audio/tts.js';
 import { setSpeaking } from '../dom/avatar.js';
-import { reportText, reportSpinner, userTextEl, screenshotBubble, screenshotImg } from '../dom/elements.js';
+import {
+  reportText, reportSpinner, userTextEl,
+  screenshotBubble, screenshotImg,
+  screenshotFullscreen, screenshotFullscreenImg,
+} from '../dom/elements.js';
 import { KioskPhase } from '../types/state.js';
 import { captureFrame, isVisionRequest } from '../camera/capture.js';
 import { greetingAbortController } from './greeting.js';
 
-let screenshotHideTimer: ReturnType<typeof setTimeout> | null = null;
-
 function showScreenshot(dataUri: string): void {
   screenshotImg.src = dataUri;
   screenshotBubble.classList.remove('hidden');
-  if (screenshotHideTimer) clearTimeout(screenshotHideTimer);
-  screenshotHideTimer = setTimeout(hideScreenshot, 10000);
 }
 
-function hideScreenshot(): void {
+export function hideScreenshot(): void {
   screenshotBubble.classList.add('hidden');
-  if (screenshotHideTimer) {
-    clearTimeout(screenshotHideTimer);
-    screenshotHideTimer = null;
-  }
+  screenshotFullscreen.classList.add('hidden');
 }
+
+// Click thumbnail → fullscreen
+screenshotBubble.addEventListener('click', () => {
+  screenshotFullscreenImg.src = screenshotImg.src;
+  screenshotFullscreen.classList.remove('hidden');
+});
+
+// Click fullscreen → close
+screenshotFullscreen.addEventListener('click', () => {
+  screenshotFullscreen.classList.add('hidden');
+});
 
 // Only match short farewell-only utterances (max ~30 chars).
 const FAREWELL_PATTERNS = /^(heippa|heihei|hei\s*hei|näkemiin|nähdään|moi\s*moi|moikka|kiitos|bye|goodbye|see\s*you)[.!]?\s*$/i;
@@ -96,7 +104,6 @@ async function streamChatWithTTS(
         }
 
         if (parsed.text) {
-          hideScreenshot();
           onSentence(parsed.text);
         }
         if (parsed.audio) {

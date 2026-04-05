@@ -403,27 +403,47 @@ html, body {
   width: 28px; height: 28px;
 }
 
-/* -- Screenshot bubble ------------------------------------------------- */
+/* -- Screenshot thumbnail (left of mini avatar) ------------------------ */
 #screenshot-bubble {
   position: fixed;
-  bottom: 280px;
-  right: 20px;
-  max-width: 600px;
-  max-height: 400px;
+  bottom: 64px;
+  right: auto;
+  left: 20px;
+  max-width: 320px;
   z-index: 600;
   background: rgba(0,0,0,0.85);
   border-radius: 16px;
   padding: 8px;
   box-shadow: 0 8px 40px rgba(0,0,0,0.5);
   border: 1px solid rgba(255,255,255,0.15);
-  transition: opacity 0.5s ease;
+  cursor: pointer;
+  transition: opacity 0.3s ease;
 }
 #screenshot-bubble.hidden { display: none; }
 #screenshot-bubble img {
   max-width: 100%;
-  max-height: 380px;
+  max-height: 220px;
   border-radius: 10px;
   display: block;
+}
+
+/* -- Fullscreen screenshot overlay ------------------------------------ */
+#screenshot-fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 1500;
+  background: rgba(0,0,0,0.92);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+#screenshot-fullscreen.hidden { display: none; }
+#screenshot-fullscreen img {
+  max-width: 95vw;
+  max-height: 95vh;
+  border-radius: 12px;
+  box-shadow: 0 0 60px rgba(0,0,0,0.8);
 }
 
 /* -- Listening indicator ----------------------------------------------- */
