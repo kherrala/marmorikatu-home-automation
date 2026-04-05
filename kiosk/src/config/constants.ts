@@ -1,6 +1,6 @@
 export const FACE_DETECT_INTERVAL = 500;
 export const DETECTIONS_REQUIRED = 5;
-export const GREETING_COOLDOWN = 30_000;
+export const GREETING_COOLDOWN = 10_000;
 export const JINGLE_DURATION = 30_000;
 export const FACE_GONE_DISMISS_MS = 30_000;
 export const MIN_GREETING_ALIVE_MS = 30_000;
