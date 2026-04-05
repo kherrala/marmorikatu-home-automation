@@ -73,9 +73,9 @@ async function streamChatWithTTS(
         // SSE format: "data: {...}" — extract JSON after "data: " prefix
         const trimmed = line.trim();
         if (!trimmed || !trimmed.startsWith('data: ')) continue;
-        const jsonStr = trimmed.slice(6); // strip "data: "
+        const jsonStr = trimmed.slice(6);
         if (!jsonStr) continue;
-        const parsed = JSON.parse(jsonStr) as {
+        let parsed: {
           audio?: string;
           text?: string;
           done?: boolean;
@@ -84,6 +84,13 @@ async function streamChatWithTTS(
           tool_use?: string;
           screenshot?: string;
         };
+        try {
+          parsed = JSON.parse(jsonStr);
+        } catch {
+          // Incomplete JSON from chunked SSE — put back in buffer
+          buf = line + '\n' + buf;
+          continue;
+        }
 
         if (parsed.tool_use) {
           onToolUse?.(parsed.tool_use);
