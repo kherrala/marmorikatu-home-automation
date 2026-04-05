@@ -6,6 +6,7 @@ datasources:
     type: influxdb
     access: proxy
     url: http://influxdb:8086
+    orgId: 2
     jsonData:
       version: Flux
       organization: wago
