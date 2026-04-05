@@ -501,10 +501,9 @@ async def chat_stream_endpoint(request: Request) -> Response:
             msg["images"] = m["images"]
         ollama_messages.append(msg)
 
-    # If a previous conversation turn used browser tools, inject current page context
-    # so the model remembers what's on screen
-    _has_browser_history = any("browser_" in str(m.get("content", "")) for m in messages)
-    if _has_browser_history and _find_session("browser_snapshot"):
+    # Inject current browser page context so the model knows what's on screen.
+    # Always try — if no page is open, snapshot returns short/empty and gets skipped.
+    if _find_session("browser_snapshot"):
         try:
             snapshot = await asyncio.wait_for(
                 _call_tool_safe("browser_snapshot", {}, 0, "auto-context"),
