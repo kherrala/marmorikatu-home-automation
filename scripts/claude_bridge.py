@@ -574,14 +574,14 @@ async def chat_stream_endpoint(request: Request) -> Response:
                     if img_match:
                         yield f"data: {json.dumps({'screenshot': img_match.group(1)})}\n\n"
                         result_text = re.sub(r'\n?\[IMAGE:data:image/[^\]]+\]', '', result_text)
-                    # Before appending new snapshot, truncate older ones to save context
+                    # Truncate all PREVIOUS snapshot results (keep only the latest one full)
                     if tool_name == "browser_snapshot" and len(result_text) > 500:
-                        for j, m in enumerate(ollama_messages):
+                        for j, m in enumerate(ollama_messages[:-1]):  # skip last (current snapshot not appended yet)
                             if (m.get("role") == "tool"
                                     and isinstance(m.get("content"), str)
                                     and len(m["content"]) > 500
-                                    and "Page URL:" in m["content"]):
-                                # Extract just the URL line from old snapshots
+                                    and "Page URL:" in m["content"]
+                                    and "ref=" in m["content"]):
                                 url_line = next((l for l in m["content"].split("\n") if "Page URL:" in l), "")
                                 ollama_messages[j] = {"role": "tool", "content": f"[Aiempi sivu: {url_line}]"}
                     ollama_messages.append({"role": "tool", "content": result_text})
