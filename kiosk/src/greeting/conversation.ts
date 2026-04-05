@@ -2,18 +2,96 @@ import { dispatch, getState } from '../state/store.js';
 import { stripThinkTags } from '../content/text-utils.js';
 import { randomFallback } from '../content/fallbacks.js';
 import { pick } from '../content/text-utils.js';
-import { speakAndWait } from '../audio/tts.js';
+import { speakAndWait, playSentence } from '../audio/tts.js';
+import { setSpeaking } from '../dom/avatar.js';
 import { reportText, reportSpinner, userTextEl } from '../dom/elements.js';
 import { KioskPhase } from '../types/state.js';
 
 // Only match short farewell-only utterances (max ~30 chars).
-// Prevents false matches in longer sentences like "kiitos paljon tiedosta".
 const FAREWELL_PATTERNS = /^(heippa|heihei|hei\s*hei|näkemiin|nähdään|moi\s*moi|moikka|kiitos|bye|goodbye|see\s*you)[.!]?\s*$/i;
 
 export function isFarewell(text: string): boolean {
   return FAREWELL_PATTERNS.test(text);
 }
 
+/** Stream AI response with inline TTS — plays first sentence while LLM still generates. */
+async function streamChatWithTTS(
+  onSentence: (text: string) => void,
+): Promise<{ response: string; toolCalls: Array<{ tool: string }> } | null> {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 180000);
+    const { greeting } = getState();
+    const res = await fetch('/api/chat/chat/stream', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages: greeting.conversationHistory }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    if (!res.ok) return null;
+
+    const reader = res.body!.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+    let fullResponse = '';
+    let toolCalls: Array<{ tool: string }> = [];
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const lines = buf.split('\n');
+      buf = lines.pop()!;
+
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        const parsed = JSON.parse(line) as {
+          audio?: string;
+          text?: string;
+          done?: boolean;
+          response?: string;
+          tool_calls?: Array<{ tool: string }>;
+        };
+
+        if (parsed.done) {
+          fullResponse = parsed.response ?? fullResponse;
+          toolCalls = parsed.tool_calls ?? toolCalls;
+          setSpeaking(false);
+          continue;
+        }
+
+        if (parsed.text) {
+          onSentence(parsed.text);
+        }
+        if (parsed.audio) {
+          await playSentence(parsed.audio);
+        }
+      }
+    }
+
+    // Flush remaining
+    if (buf.trim()) {
+      try {
+        const parsed = JSON.parse(buf) as { done?: boolean; response?: string; audio?: string; text?: string; tool_calls?: Array<{ tool: string }> };
+        if (parsed.done) {
+          fullResponse = parsed.response ?? fullResponse;
+          toolCalls = parsed.tool_calls ?? toolCalls;
+        } else if (parsed.audio) {
+          if (parsed.text) onSentence(parsed.text);
+          await playSentence(parsed.audio);
+        }
+      } catch { /* incomplete line */ }
+    }
+
+    setSpeaking(false);
+    return { response: stripThinkTags(fullResponse), toolCalls };
+  } catch {
+    return null;
+  }
+}
+
+/** Non-streaming chat (used by daily report + fallback). */
 export async function generateAIResponse(): Promise<string | null> {
   try {
     const controller = new AbortController();
@@ -54,7 +132,6 @@ export async function handleVoiceResult(transcript: string): Promise<void> {
   userTextEl.textContent = `"${transcript}"`;
   dispatch({ type: 'SET_PROCESSING', processing: true });
 
-  // Pause listening while processing
   pauseListeningFn?.();
 
   try {
@@ -71,23 +148,29 @@ export async function handleVoiceResult(transcript: string): Promise<void> {
     dispatch({ type: 'CONVERSATION_ADD', message: { role: 'user', content: transcript } });
     reportSpinner.classList.remove('hidden');
 
-    try {
+    // Try streaming (plays first sentence while LLM generates the rest)
+    const streamResult = await streamChatWithTTS((sentence) => {
+      reportSpinner.classList.add('hidden');
+      userTextEl.textContent = '';
+      reportText.textContent = sentence;
+    });
+
+    if (streamResult) {
+      reportSpinner.classList.add('hidden');
+      dispatch({ type: 'CONVERSATION_ADD', message: { role: 'assistant', content: streamResult.response } });
+      dispatch({ type: 'SET_HAD_VOICE_INPUT' });
+    } else {
+      // Fallback: non-streaming
       const response = await generateAIResponse() || randomFallback();
       reportSpinner.classList.add('hidden');
-      userTextEl.textContent = ''; // hide user prompt during response
+      userTextEl.textContent = '';
       dispatch({ type: 'CONVERSATION_ADD', message: { role: 'assistant', content: response } });
       dispatch({ type: 'SET_HAD_VOICE_INPUT' });
       await speakAndWait(response, (sentence) => {
         reportText.textContent = sentence;
       });
-    } catch {
-      const fallback = randomFallback();
-      reportSpinner.classList.add('hidden');
-      reportText.textContent = fallback;
-      await speakAndWait(fallback);
     }
 
-    // Resume listening if still in greeting
     if (getState().phase === KioskPhase.GREETING) {
       startListeningFn?.();
     }

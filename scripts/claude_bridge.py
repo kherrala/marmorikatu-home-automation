@@ -453,6 +453,143 @@ async def chat_endpoint(request: Request) -> JSONResponse:
     return JSONResponse(result)
 
 
+async def chat_stream_endpoint(request: Request) -> Response:
+    """POST /chat/stream — like /chat but streams TTS as the LLM generates text.
+
+    Returns NDJSON: each line is {"audio": "base64...", "text": "sentence"}
+    followed by a final {"done": true, "response": "full text", "tool_calls": [...]}.
+
+    The LLM runs with stream=true. As tokens arrive, sentences are detected,
+    synthesized, and streamed immediately — so the user hears the first sentence
+    while the LLM is still generating the rest.
+    """
+    import httpx
+
+    all_tools = _aggregated_tools()
+    ollama_tools = _aggregated_tools(for_ollama=True)
+
+    if not all_tools:
+        return JSONResponse({"error": "No MCP servers connected"}, status_code=503)
+
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "Invalid JSON"}, status_code=400)
+
+    messages = body.get("messages", [])
+    if not messages:
+        return JSONResponse({"error": "No messages provided"}, status_code=400)
+
+    # Phase 1: Run tool calls (non-streamed) until we get a text-only response
+    openai_tools = _tools_to_openai(ollama_tools)
+    ollama_messages = [{"role": "system", "content": get_system_prompt()}]
+    for m in messages:
+        ollama_messages.append({"role": m["role"], "content": m["content"]})
+
+    all_tool_calls: list[dict] = []
+
+    async with httpx.AsyncClient(timeout=120) as client:
+        for iteration in range(MAX_TOOL_ITERATIONS):
+            resp = await client.post(
+                f"{OLLAMA_URL}/api/chat",
+                json={
+                    "model": OLLAMA_MODEL,
+                    "messages": ollama_messages,
+                    "tools": openai_tools,
+                    "stream": False,
+                    "options": {"num_ctx": OLLAMA_NUM_CTX, "temperature": 0.3, "repeat_penalty": 1.0},
+                },
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            msg = data["message"]
+            tool_calls_raw = msg.get("tool_calls") or []
+
+            if not tool_calls_raw:
+                # No tool calls — this is the final text response.
+                # Re-request with streaming to get token-by-token output.
+                break
+
+            # Execute tool calls
+            ollama_messages.append(msg)
+            for tc in tool_calls_raw:
+                tool_name = tc["function"]["name"]
+                tool_input = tc["function"].get("arguments") or {}
+                if isinstance(tool_input, str):
+                    try:
+                        tool_input = json.loads(tool_input)
+                    except (json.JSONDecodeError, TypeError):
+                        tool_input = {}
+                log.info("Stream tool call [%d]: %s", iteration + 1, tool_name)
+                all_tool_calls.append({"tool": tool_name, "input": tool_input})
+                result_text = await _call_tool_safe(tool_name, tool_input, iteration + 1, "Stream")
+                ollama_messages.append({"role": "tool", "content": result_text})
+
+    # Phase 2: Stream the final text response with inline TTS
+    async def generate():
+        sentence_buf = ""
+        full_text = ""
+
+        async with httpx.AsyncClient(timeout=120) as client:
+            async with client.stream(
+                "POST",
+                f"{OLLAMA_URL}/api/chat",
+                json={
+                    "model": OLLAMA_MODEL,
+                    "messages": ollama_messages,
+                    "tools": openai_tools,
+                    "stream": True,
+                    "options": {"num_ctx": OLLAMA_NUM_CTX, "temperature": 0.3, "repeat_penalty": 1.0},
+                },
+            ) as resp:
+                async for line in resp.aiter_lines():
+                    if not line.strip():
+                        continue
+                    chunk = json.loads(line)
+                    token = chunk.get("message", {}).get("content", "")
+                    if not token:
+                        continue
+
+                    sentence_buf += token
+                    full_text += token
+
+                    # Check for sentence boundary
+                    parts = re.split(r'(?<=[.!?])\s+(?=[A-ZÄÖÅ])', sentence_buf)
+                    while len(parts) > 1:
+                        sentence = parts.pop(0).strip()
+                        if sentence:
+                            try:
+                                wav = await _piper_synthesize(sentence)
+                                yield json.dumps({"audio": base64.b64encode(wav).decode(), "text": sentence}) + "\n"
+                            except Exception as e:
+                                log.error("Stream TTS error: %s", e)
+                    sentence_buf = parts[0] if parts else ""
+
+        # Flush remaining text
+        if sentence_buf.strip():
+            try:
+                wav = await _piper_synthesize(sentence_buf.strip())
+                yield json.dumps({"audio": base64.b64encode(wav).decode(), "text": sentence_buf.strip()}) + "\n"
+            except Exception as e:
+                log.error("Stream TTS flush error: %s", e)
+            full_text_final = full_text.strip()
+        else:
+            full_text_final = full_text.strip()
+
+        # Final metadata line
+        yield json.dumps({"done": True, "response": full_text_final, "tool_calls": all_tool_calls}) + "\n"
+
+        # Trigger consolidation in background if any remember calls
+        if any(tc.get("tool") == "remember" for tc in all_tool_calls):
+            asyncio.create_task(_consolidate_memory())
+
+    return StreamingResponse(
+        generate(),
+        media_type="application/x-ndjson",
+        headers={"X-Accel-Buffering": "no"},
+    )
+
+
 def _pcm_to_wav(pcm: bytes, sample_rate: int) -> bytes:
     """Wrap raw 16-bit mono PCM in a WAV container."""
     buf = io.BytesIO()
@@ -696,6 +833,7 @@ async def lifespan(app):
 app = Starlette(
     routes=[
         Route("/chat", chat_endpoint, methods=["POST"]),
+        Route("/chat/stream", chat_stream_endpoint, methods=["POST"]),
         Route("/tts", tts_endpoint, methods=["POST"]),
         Route("/transcribe", transcribe_endpoint, methods=["POST"]),
         Route("/health", health_endpoint),
