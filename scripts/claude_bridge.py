@@ -595,44 +595,80 @@ async def chat_stream_endpoint(request: Request) -> Response:
                         if ss_match:
                             yield f"data: {json.dumps({'screenshot': ss_match.group(1)})}\n\n"
 
-        # Phase 2: Stream final text response with inline TTS
-        log.info("Stream Phase 2: %d messages, streaming response", len(ollama_messages))
-        async with httpx.AsyncClient(timeout=120) as client:
-            async with client.stream(
-                "POST",
-                f"{OLLAMA_URL}/api/chat",
-                json={
-                    "model": OLLAMA_MODEL,
-                    "messages": ollama_messages,
-                    # No tools in Phase 2 — force text-only response (tool calls handled in Phase 1)
-                    "stream": True,
-                    "think": False,
-                    "options": {"num_ctx": OLLAMA_NUM_CTX, "num_predict": 500, "temperature": 0.3, "repeat_penalty": 1.0},
-                },
-            ) as resp:
-                async for line in resp.aiter_lines():
-                    if not line.strip():
-                        continue
-                    chunk = json.loads(line)
-                    token = chunk.get("message", {}).get("content", "")
-                    if not token:
-                        continue
+        # Phase 2: Stream text response with inline TTS + handle tool calls
+        for phase2_iter in range(MAX_TOOL_ITERATIONS):
+            log.info("Stream Phase 2 [%d]: %d messages", phase2_iter + 1, len(ollama_messages))
+            stream_tool_calls = []
 
-                    sentence_buf += token
-                    full_text += token
+            async with httpx.AsyncClient(timeout=120) as client:
+                async with client.stream(
+                    "POST",
+                    f"{OLLAMA_URL}/api/chat",
+                    json={
+                        "model": OLLAMA_MODEL,
+                        "messages": ollama_messages,
+                        "tools": openai_tools,
+                        "stream": True,
+                        "think": False,
+                        "options": {"num_ctx": OLLAMA_NUM_CTX, "num_predict": 500, "temperature": 0.3, "repeat_penalty": 1.0},
+                    },
+                ) as resp:
+                    async for line in resp.aiter_lines():
+                        if not line.strip():
+                            continue
+                        chunk = json.loads(line)
+                        msg = chunk.get("message", {})
 
-                    # Check for sentence boundary
-                    parts = re.split(r'(?<=[.!?])\s+(?=[A-ZÄÖÅ])', sentence_buf)
-                    while len(parts) > 1:
-                        sentence = parts.pop(0).strip()
-                        if sentence:
-                            try:
-                                wav = await _piper_synthesize(sentence)
-                                log.info("Stream sentence: %s", sentence[:60])
-                                yield f"data: {json.dumps({'audio': base64.b64encode(wav).decode(), 'text': sentence})}\n\n"
-                            except Exception as e:
-                                log.error("Stream TTS error: %s", e)
-                    sentence_buf = parts[0] if parts else ""
+                        # Collect tool calls from streaming response
+                        if msg.get("tool_calls"):
+                            stream_tool_calls.extend(msg["tool_calls"])
+
+                        token = msg.get("content", "")
+                        if not token:
+                            continue
+
+                        sentence_buf += token
+                        full_text += token
+
+                        parts = re.split(r'(?<=[.!?])\s+(?=[A-ZÄÖÅ])', sentence_buf)
+                        while len(parts) > 1:
+                            sentence = parts.pop(0).strip()
+                            if sentence:
+                                try:
+                                    wav = await _piper_synthesize(sentence)
+                                    log.info("Stream sentence: %s", sentence[:60])
+                                    yield f"data: {json.dumps({'audio': base64.b64encode(wav).decode(), 'text': sentence})}\n\n"
+                                except Exception as e:
+                                    log.error("Stream TTS error: %s", e)
+                        sentence_buf = parts[0] if parts else ""
+
+            # If streaming response made tool calls, execute them and loop
+            if stream_tool_calls:
+                ollama_messages.append({"role": "assistant", "content": full_text, "tool_calls": stream_tool_calls})
+                for tc in stream_tool_calls:
+                    tool_name = tc["function"]["name"]
+                    tool_input = tc["function"].get("arguments") or {}
+                    if isinstance(tool_input, str):
+                        try: tool_input = json.loads(tool_input)
+                        except: tool_input = {}
+                    log.info("Stream Phase 2 tool call: %s", tool_name)
+                    all_tool_calls.append({"tool": tool_name, "input": tool_input})
+                    yield f"data: {json.dumps({'tool_use': tool_name})}\n\n"
+                    result_text = await _call_tool_safe(tool_name, tool_input, phase2_iter + 1, "Stream-P2")
+                    img_match = re.search(r'\[IMAGE:(data:image/[^;]+;base64,[A-Za-z0-9+/=]+)\]', result_text)
+                    if img_match:
+                        yield f"data: {json.dumps({'screenshot': img_match.group(1)})}\n\n"
+                        result_text = re.sub(r'\n?\[IMAGE:data:image/[^\]]+\]', '', result_text)
+                    ollama_messages.append({"role": "tool", "content": result_text})
+                    if tool_name in ("browser_navigate", "browser_click", "browser_hover"):
+                        ss_result = await _call_tool_safe("browser_take_screenshot", {}, phase2_iter + 1, "Stream-P2")
+                        ss_match = re.search(r'\[IMAGE:(data:image/[^;]+;base64,[A-Za-z0-9+/=]+)\]', ss_result)
+                        if ss_match:
+                            yield f"data: {json.dumps({'screenshot': ss_match.group(1)})}\n\n"
+                sentence_buf = ""
+                continue  # loop back for more streaming
+            else:
+                break  # no tool calls — response is complete
 
         # Flush remaining text
         if sentence_buf.strip():
@@ -641,9 +677,7 @@ async def chat_stream_endpoint(request: Request) -> Response:
                 yield f"data: {json.dumps({'audio': base64.b64encode(wav).decode(), 'text': sentence_buf.strip()})}\n\n"
             except Exception as e:
                 log.error("Stream TTS flush error: %s", e)
-            full_text_final = full_text.strip()
-        else:
-            full_text_final = full_text.strip()
+        full_text_final = full_text.strip()
 
         # Final metadata line
         yield f"data: {json.dumps({'done': True, 'response': full_text_final, 'tool_calls': all_tool_calls})}\n\n"
