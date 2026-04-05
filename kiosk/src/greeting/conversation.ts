@@ -18,6 +18,7 @@ export function isFarewell(text: string): boolean {
 /** Stream AI response with inline TTS — plays first sentence while LLM still generates. */
 async function streamChatWithTTS(
   onSentence: (text: string) => void,
+  onToolUse?: (toolName: string) => void,
 ): Promise<{ response: string; toolCalls: Array<{ tool: string }> } | null> {
   try {
     const controller = new AbortController();
@@ -53,7 +54,13 @@ async function streamChatWithTTS(
           done?: boolean;
           response?: string;
           tool_calls?: Array<{ tool: string }>;
+          tool_use?: string;
         };
+
+        if (parsed.tool_use) {
+          onToolUse?.(parsed.tool_use);
+          continue;
+        }
 
         if (parsed.done) {
           fullResponse = parsed.response ?? fullResponse;
@@ -155,11 +162,18 @@ export async function handleVoiceResult(transcript: string): Promise<void> {
     reportSpinner.classList.remove('hidden');
 
     // Try streaming (plays first sentence while LLM generates the rest)
-    const streamResult = await streamChatWithTTS((sentence) => {
-      reportSpinner.classList.add('hidden');
-      userTextEl.textContent = '';
-      reportText.textContent = sentence;
-    });
+    const streamResult = await streamChatWithTTS(
+      (sentence) => {
+        reportSpinner.classList.add('hidden');
+        userTextEl.textContent = '';
+        reportText.textContent = sentence;
+      },
+      (toolName) => {
+        // Show which tool is being used during processing
+        reportSpinner.classList.remove('hidden');
+        userTextEl.textContent = `🔧 ${toolName}`;
+      },
+    );
 
     if (streamResult) {
       reportSpinner.classList.add('hidden');

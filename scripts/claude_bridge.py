@@ -130,6 +130,7 @@ _OLLAMA_ALLOWED_TOOLS = {
     "remember", "recall",
     # Web browsing
     "browser_navigate", "browser_snapshot", "browser_click", "browser_handle_dialog",
+    "browser_take_screenshot",
 }
 
 
@@ -484,59 +485,59 @@ async def chat_stream_endpoint(request: Request) -> Response:
     if not messages:
         return JSONResponse({"error": "No messages provided"}, status_code=400)
 
-    # Phase 1: Run tool calls (non-streamed) until we get a text-only response
     openai_tools = _tools_to_openai(ollama_tools)
     ollama_messages = [{"role": "system", "content": get_system_prompt()}]
     for m in messages:
         msg = {"role": m["role"], "content": m["content"]}
         if m.get("images"):
-            msg["images"] = m["images"]  # base64 JPEG frames for vision
+            msg["images"] = m["images"]
         ollama_messages.append(msg)
 
-    all_tool_calls: list[dict] = []
-
-    async with httpx.AsyncClient(timeout=120) as client:
-        for iteration in range(MAX_TOOL_ITERATIONS):
-            resp = await client.post(
-                f"{OLLAMA_URL}/api/chat",
-                json={
-                    "model": OLLAMA_MODEL,
-                    "messages": ollama_messages,
-                    "tools": openai_tools,
-                    "stream": False,
-                    "options": {"num_ctx": OLLAMA_NUM_CTX, "temperature": 0.3, "repeat_penalty": 1.0},
-                },
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            msg = data["message"]
-            tool_calls_raw = msg.get("tool_calls") or []
-
-            if not tool_calls_raw:
-                # No tool calls — this is the final text response.
-                # Re-request with streaming to get token-by-token output.
-                break
-
-            # Execute tool calls
-            ollama_messages.append(msg)
-            for tc in tool_calls_raw:
-                tool_name = tc["function"]["name"]
-                tool_input = tc["function"].get("arguments") or {}
-                if isinstance(tool_input, str):
-                    try:
-                        tool_input = json.loads(tool_input)
-                    except (json.JSONDecodeError, TypeError):
-                        tool_input = {}
-                log.info("Stream tool call [%d]: %s", iteration + 1, tool_name)
-                all_tool_calls.append({"tool": tool_name, "input": tool_input})
-                result_text = await _call_tool_safe(tool_name, tool_input, iteration + 1, "Stream")
-                ollama_messages.append({"role": "tool", "content": result_text})
-
-    # Phase 2: Stream the final text response with inline TTS
+    # Everything inside the generator so tool progress streams immediately
     async def generate():
+        all_tool_calls: list[dict] = []
         sentence_buf = ""
         full_text = ""
 
+        # Phase 1: Tool calls (non-streamed LLM, but progress events stream to client)
+        async with httpx.AsyncClient(timeout=120) as client:
+            for iteration in range(MAX_TOOL_ITERATIONS):
+                resp = await client.post(
+                    f"{OLLAMA_URL}/api/chat",
+                    json={
+                        "model": OLLAMA_MODEL,
+                        "messages": ollama_messages,
+                        "tools": openai_tools,
+                        "stream": False,
+                        "think": False,
+                        "options": {"num_ctx": OLLAMA_NUM_CTX, "temperature": 0.3, "repeat_penalty": 1.0},
+                    },
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                msg = data["message"]
+                tool_calls_raw = msg.get("tool_calls") or []
+
+                if not tool_calls_raw:
+                    break
+
+                ollama_messages.append(msg)
+                for tc in tool_calls_raw:
+                    tool_name = tc["function"]["name"]
+                    tool_input = tc["function"].get("arguments") or {}
+                    if isinstance(tool_input, str):
+                        try:
+                            tool_input = json.loads(tool_input)
+                        except (json.JSONDecodeError, TypeError):
+                            tool_input = {}
+                    log.info("Stream tool call [%d]: %s", iteration + 1, tool_name)
+                    all_tool_calls.append({"tool": tool_name, "input": tool_input})
+                    # Stream tool progress to client immediately
+                    yield json.dumps({"tool_use": tool_name}) + "\n"
+                    result_text = await _call_tool_safe(tool_name, tool_input, iteration + 1, "Stream")
+                    ollama_messages.append({"role": "tool", "content": result_text})
+
+        # Phase 2: Stream final text response with inline TTS
         async with httpx.AsyncClient(timeout=120) as client:
             async with client.stream(
                 "POST",
