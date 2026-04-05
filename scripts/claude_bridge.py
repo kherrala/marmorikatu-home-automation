@@ -548,7 +548,7 @@ async def chat_stream_endpoint(request: Request) -> Response:
                     ollama_messages.append({"role": "tool", "content": result_text})
 
         # Phase 2: Stream final text response with inline TTS
-        log.info("Stream Phase 2: starting streamed LLM response (%d messages)", len(ollama_messages))
+        log.info("Stream Phase 2: %d messages, streaming response", len(ollama_messages))
         async with httpx.AsyncClient(timeout=120) as client:
             async with client.stream(
                 "POST",
