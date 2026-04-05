@@ -595,7 +595,11 @@ async def chat_stream_endpoint(request: Request) -> Response:
     return StreamingResponse(
         generate(),
         media_type="application/x-ndjson",
-        headers={"X-Accel-Buffering": "no"},
+        headers={
+            "X-Accel-Buffering": "no",
+            "Cache-Control": "no-cache, no-transform",
+            "Transfer-Encoding": "chunked",
+        },
     )
 
 

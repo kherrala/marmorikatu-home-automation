@@ -74,6 +74,8 @@ async function streamChatWithTTS(
         }
         if (parsed.audio) {
           await playSentence(parsed.audio);
+          // Brief pause between sentences for natural rhythm
+          await new Promise(r => setTimeout(r, 50));
         }
       }
     }
