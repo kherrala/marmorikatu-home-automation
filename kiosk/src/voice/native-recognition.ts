@@ -41,19 +41,16 @@ export function startNativeListening(): void {
   let hardTimer: ReturnType<typeof setTimeout> | null = null;
 
   function resetHardTimer(): void {
-    if (hardTimer !== null) clearTimeout(hardTimer);
-    hardTimer = setTimeout(() => {
-      if (resolved) return;
-      console.warn('[voice] Native hard timeout (15s)');
-      try { recognizer.abort(); } catch {}
-    }, 15_000);
+    // No hard timeout — sessions are unlimited. The recognizer runs
+    // continuously until the user speaks or the greeting is dismissed.
+    // This prevents the abort/restart cycle from losing the first word.
   }
 
   function finish(text: string | null): void {
     if (resolved) return;
     resolved = true;
     activeRecognizer = null;
-    if (hardTimer !== null) clearTimeout(hardTimer);
+    if (hardTimer !== null) clearTimeout(hardTimer); // no-op with disabled hard timer
     if (pauseTimer !== null) clearTimeout(pauseTimer);
 
     if (text?.trim()) {
@@ -120,7 +117,7 @@ export function startNativeListening(): void {
       dispatch({ type: 'NATIVE_FAILED' });
       resolved = true;
       activeRecognizer = null;
-      if (hardTimer !== null) clearTimeout(hardTimer);
+      if (hardTimer !== null) clearTimeout(hardTimer); // no-op with disabled hard timer
       if (pauseTimer !== null) clearTimeout(pauseTimer);
       onFallbackToRecorder?.();
     }
