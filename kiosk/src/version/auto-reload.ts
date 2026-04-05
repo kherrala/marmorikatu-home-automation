@@ -14,7 +14,9 @@ export function initVersionCheck(): void {
       if (s.knownVersion === null) {
         dispatch({ type: 'SET_VERSION', version });
       } else if (version !== s.knownVersion) {
+        console.log('[version] New version detected:', version, '(was:', s.knownVersion, ')');
         if (s.phase !== KioskPhase.GREETING) {
+          console.log('[version] Reloading now');
           window.location.reload();
         } else {
           // Queue reload for when greeting ends
