@@ -69,7 +69,8 @@ async function streamChatWithTTS(
         if (parsed.done) {
           fullResponse = parsed.response ?? fullResponse;
           toolCalls = parsed.tool_calls ?? toolCalls;
-          setSpeaking(false);
+          // Don't call setSpeaking(false) here — the last playSentence
+          // might still be playing. It clears itself when onended fires.
           continue;
         }
 
@@ -100,6 +101,8 @@ async function streamChatWithTTS(
     }
 
     setSpeaking(false);
+    // Brief pause to ensure audio playback is fully complete before mic opens
+    await new Promise(r => setTimeout(r, 200));
     return { response: stripThinkTags(fullResponse), toolCalls };
   } catch {
     return null;
