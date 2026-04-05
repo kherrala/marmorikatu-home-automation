@@ -164,7 +164,7 @@ services:
       - CLAUDE_MODEL=claude-haiku-4-5-20251001
       - OLLAMA_URL=http://192.168.1.36:11434
       - OLLAMA_MODEL=gemma4:e4b
-      - OLLAMA_NUM_CTX=32768
+      - OLLAMA_NUM_CTX=65536
       - BRIDGE_PORT=3002
     extra_hosts:
       - "host.docker.internal:host-gateway"
