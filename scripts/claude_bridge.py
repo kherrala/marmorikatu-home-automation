@@ -548,6 +548,7 @@ async def chat_stream_endpoint(request: Request) -> Response:
                     ollama_messages.append({"role": "tool", "content": result_text})
 
         # Phase 2: Stream final text response with inline TTS
+        log.info("Stream Phase 2: starting streamed LLM response (%d messages)", len(ollama_messages))
         async with httpx.AsyncClient(timeout=120) as client:
             async with client.stream(
                 "POST",
@@ -579,6 +580,7 @@ async def chat_stream_endpoint(request: Request) -> Response:
                         if sentence:
                             try:
                                 wav = await _piper_synthesize(sentence)
+                                log.info("Stream sentence: %s", sentence[:60])
                                 yield f"data: {json.dumps({'audio': base64.b64encode(wav).decode(), 'text': sentence})}\n\n"
                             except Exception as e:
                                 log.error("Stream TTS error: %s", e)
