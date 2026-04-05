@@ -92,6 +92,7 @@ def get_system_prompt() -> str:
         f"- Käytä 'browser_navigate' + 'browser_snapshot' hakeaksesi tietoa verkosta.\n"
         f"- Käytä hakuun: https://html.duckduckgo.com/html/?q=hakusana (ei estä headless-selainta).\n"
         f"- Käytä 'browser_snapshot' lukeaksesi sivun sisällön.\n"
+        f"- Käytä 'browser_take_screenshot' AINA verkkosivulla navigoinnin jälkeen — kuvakaappaus näytetään käyttäjälle.\n"
         f"- Jos sivu näyttää evästebannerin, hyväksy se 'browser_click'-työkalulla.\n"
         f"- Jos sivu näyttää 'Just a moment' tai muun esteen, yritä toista sivustoa."
     )
