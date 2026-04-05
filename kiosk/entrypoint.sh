@@ -21,4 +21,7 @@ fi
 mkdir -p /usr/share/nginx/cert
 cp /etc/nginx/ssl/kiosk.cer /usr/share/nginx/cert/kiosk.cer
 
+# Generate version stamp at container start (changes on every restart → triggers auto-reload)
+date +%s > /usr/share/nginx/html/version.txt
+
 exec nginx -g 'daemon off;'

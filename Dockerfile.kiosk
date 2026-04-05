@@ -25,7 +25,6 @@ RUN chmod +x /entrypoint.sh
 # Copy Vite build output
 COPY --from=build /app/dist/ /usr/share/nginx/html/
 
-# Build version stamp (changes on every rebuild for auto-reload detection)
-RUN date +%s > /usr/share/nginx/html/version.txt
-
+# Version stamp generated at container start (not build time — build cache
+# would keep the same timestamp across rebuilds with unchanged layers)
 ENTRYPOINT ["/entrypoint.sh"]
