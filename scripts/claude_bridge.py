@@ -325,6 +325,7 @@ async def run_ollama_agentic_loop(messages: list[dict], tools: list[dict]) -> di
                     "messages": ollama_messages,
                     "tools": openai_tools,
                     "stream": False,
+                    "think": False,
                     "options": {
                         "num_ctx": OLLAMA_NUM_CTX,
                         "temperature": 0.3,
@@ -539,6 +540,7 @@ async def chat_stream_endpoint(request: Request) -> Response:
                     "messages": ollama_messages,
                     "tools": openai_tools,
                     "stream": True,
+                    "think": False,
                     "options": {"num_ctx": OLLAMA_NUM_CTX, "temperature": 0.3, "repeat_penalty": 1.0},
                 },
             ) as resp:
