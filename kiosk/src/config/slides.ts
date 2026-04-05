@@ -2,7 +2,7 @@ import { grafanaTheme } from './sun.js';
 import type { SlideDefinition } from '../types/config.js';
 
 export const SLIDE_DEFS: readonly SlideDefinition[] = [
-  { title: 'Yleiskatsaus', src: '/grafana/d/wago-overview/building-overview?kiosk&theme=' + grafanaTheme() },
+  { title: 'Yleiskatsaus', src: '/grafana/d/wago-overview/yleiskuva?kiosk&theme=' + grafanaTheme() },
   { title: 'Sää', src: '/weather/' },
   { title: 'Uutiset', src: '/news/' },
   { title: 'Kalenteri', src: '/calendar/' },

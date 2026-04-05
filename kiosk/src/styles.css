@@ -359,7 +359,7 @@ html, body {
   position: fixed;
   bottom: 64px;
   right: 20px;
-  max-width: 460px;
+  max-width: 700px;
   width: auto;
   padding: 14px 18px 14px 14px;
   border-radius: 20px;
@@ -380,7 +380,7 @@ html, body {
 #greeting-overlay.minimized #greeting-content {
   align-items: flex-start;
   gap: 4px;
-  max-width: 360px;
+  max-width: 520px;
 }
 #greeting-overlay.minimized #greeting-text { display: none; }
 #greeting-overlay.minimized #report-row { gap: 6px; }
@@ -388,10 +388,6 @@ html, body {
   font-size: 26px;
   line-height: 1.35;
   text-align: left;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
 }
 #greeting-overlay.minimized #user-text {
   font-size: 24px;

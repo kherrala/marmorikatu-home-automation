@@ -74,6 +74,7 @@ export async function handleVoiceResult(transcript: string): Promise<void> {
     try {
       const response = await generateAIResponse() || randomFallback();
       reportSpinner.classList.add('hidden');
+      userTextEl.textContent = ''; // hide user prompt during response
       dispatch({ type: 'CONVERSATION_ADD', message: { role: 'assistant', content: response } });
       dispatch({ type: 'SET_HAD_VOICE_INPUT' });
       await speakAndWait(response, (sentence) => {
