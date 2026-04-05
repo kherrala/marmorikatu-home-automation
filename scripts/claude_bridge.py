@@ -501,6 +501,26 @@ async def chat_stream_endpoint(request: Request) -> Response:
             msg["images"] = m["images"]
         ollama_messages.append(msg)
 
+    # If browser was used previously, inject current page context
+    if _find_session("browser_snapshot"):
+        try:
+            snapshot = await asyncio.wait_for(
+                _call_tool_safe("browser_snapshot", {}, 0, "auto-context"),
+                timeout=5,
+            )
+            # Only inject if there's actual page content (not empty/error)
+            if snapshot and len(snapshot) > 50 and not snapshot.startswith("Error"):
+                # Truncate to avoid flooding context
+                if len(snapshot) > 3000:
+                    snapshot = snapshot[:3000] + "\n[...truncated]"
+                ollama_messages.append({
+                    "role": "system",
+                    "content": f"Selaimen nykyinen sivu:\n{snapshot}",
+                })
+                log.info("Stream: injected browser context (%d chars)", len(snapshot))
+        except Exception:
+            pass  # browser not available or no page open
+
     # Everything inside the generator so tool progress streams immediately
     async def generate():
         all_tool_calls: list[dict] = []
