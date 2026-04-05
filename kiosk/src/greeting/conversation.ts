@@ -236,10 +236,15 @@ export async function handleVoiceResult(transcript: string): Promise<void> {
       });
     }
 
+    // Clear processing BEFORE starting listening (guard checks it)
+    dispatch({ type: 'SET_PROCESSING', processing: false });
     if (getState().phase === KioskPhase.GREETING) {
       startListeningFn?.();
     }
   } finally {
-    dispatch({ type: 'SET_PROCESSING', processing: false });
+    // Ensure processing is always cleared even on error
+    if (getState().processing) {
+      dispatch({ type: 'SET_PROCESSING', processing: false });
+    }
   }
 }

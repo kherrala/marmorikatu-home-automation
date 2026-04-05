@@ -40,7 +40,7 @@ setRecorderRestartHandler(() => startRecording());
 
 export function startListening(): void {
   const s = getState();
-  if (!s.micReady || s.phase !== KioskPhase.GREETING) return;
+  if (!s.micReady || s.phase !== KioskPhase.GREETING || s.processing) return;
 
   // Re-enable audio tracks so iOS shows mic indicator
   (videoEl.srcObject as MediaStream | null)?.getAudioTracks().forEach(t => { t.enabled = true; });
