@@ -604,7 +604,7 @@ async def chat_stream_endpoint(request: Request) -> Response:
                 json={
                     "model": OLLAMA_MODEL,
                     "messages": ollama_messages,
-                    "tools": openai_tools,
+                    # No tools in Phase 2 — force text-only response (tool calls handled in Phase 1)
                     "stream": True,
                     "think": False,
                     "options": {"num_ctx": OLLAMA_NUM_CTX, "num_predict": 500, "temperature": 0.3, "repeat_penalty": 1.0},
