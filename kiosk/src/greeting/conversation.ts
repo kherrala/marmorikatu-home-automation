@@ -47,8 +47,12 @@ async function streamChatWithTTS(
       buf = lines.pop()!;
 
       for (const line of lines) {
-        if (!line.trim()) continue;
-        const parsed = JSON.parse(line) as {
+        // SSE format: "data: {...}" — extract JSON after "data: " prefix
+        const trimmed = line.trim();
+        if (!trimmed || !trimmed.startsWith('data: ')) continue;
+        const jsonStr = trimmed.slice(6); // strip "data: "
+        if (!jsonStr) continue;
+        const parsed = JSON.parse(jsonStr) as {
           audio?: string;
           text?: string;
           done?: boolean;
@@ -80,10 +84,11 @@ async function streamChatWithTTS(
       }
     }
 
-    // Flush remaining
-    if (buf.trim()) {
+    // Flush remaining SSE data
+    const remaining = buf.trim().startsWith('data: ') ? buf.trim().slice(6) : buf.trim();
+    if (remaining) {
       try {
-        const parsed = JSON.parse(buf) as { done?: boolean; response?: string; audio?: string; text?: string; tool_calls?: Array<{ tool: string }> };
+        const parsed = JSON.parse(remaining) as { done?: boolean; response?: string; audio?: string; text?: string; tool_calls?: Array<{ tool: string }> };
         if (parsed.done) {
           fullResponse = parsed.response ?? fullResponse;
           toolCalls = parsed.tool_calls ?? toolCalls;

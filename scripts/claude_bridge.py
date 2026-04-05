@@ -533,7 +533,7 @@ async def chat_stream_endpoint(request: Request) -> Response:
                     log.info("Stream tool call [%d]: %s", iteration + 1, tool_name)
                     all_tool_calls.append({"tool": tool_name, "input": tool_input})
                     # Stream tool progress to client immediately
-                    yield json.dumps({"tool_use": tool_name}) + "\n"
+                    yield f"data: {json.dumps({'tool_use': tool_name})}\n\n"
                     result_text = await _call_tool_safe(tool_name, tool_input, iteration + 1, "Stream")
                     ollama_messages.append({"role": "tool", "content": result_text})
 
@@ -569,7 +569,7 @@ async def chat_stream_endpoint(request: Request) -> Response:
                         if sentence:
                             try:
                                 wav = await _piper_synthesize(sentence)
-                                yield json.dumps({"audio": base64.b64encode(wav).decode(), "text": sentence}) + "\n"
+                                yield f"data: {json.dumps({'audio': base64.b64encode(wav).decode(), 'text': sentence})}\n\n"
                             except Exception as e:
                                 log.error("Stream TTS error: %s", e)
                     sentence_buf = parts[0] if parts else ""
@@ -578,7 +578,7 @@ async def chat_stream_endpoint(request: Request) -> Response:
         if sentence_buf.strip():
             try:
                 wav = await _piper_synthesize(sentence_buf.strip())
-                yield json.dumps({"audio": base64.b64encode(wav).decode(), "text": sentence_buf.strip()}) + "\n"
+                yield f"data: {json.dumps({'audio': base64.b64encode(wav).decode(), 'text': sentence_buf.strip()})}\n\n"
             except Exception as e:
                 log.error("Stream TTS flush error: %s", e)
             full_text_final = full_text.strip()
@@ -586,7 +586,7 @@ async def chat_stream_endpoint(request: Request) -> Response:
             full_text_final = full_text.strip()
 
         # Final metadata line
-        yield json.dumps({"done": True, "response": full_text_final, "tool_calls": all_tool_calls}) + "\n"
+        yield f"data: {json.dumps({'done': True, 'response': full_text_final, 'tool_calls': all_tool_calls})}\n\n"
 
         # Trigger consolidation in background if any remember calls
         if any(tc.get("tool") == "remember" for tc in all_tool_calls):
@@ -594,11 +594,11 @@ async def chat_stream_endpoint(request: Request) -> Response:
 
     return StreamingResponse(
         generate(),
-        media_type="application/x-ndjson",
+        media_type="text/event-stream",
         headers={
             "X-Accel-Buffering": "no",
-            "Cache-Control": "no-cache, no-transform",
-            "Transfer-Encoding": "chunked",
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
         },
     )
 
