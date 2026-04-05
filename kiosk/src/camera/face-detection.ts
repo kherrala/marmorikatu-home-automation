@@ -8,6 +8,7 @@ import {
 } from '../config/constants.js';
 import { isSpeaking } from '../audio/tts.js';
 import { KioskPhase } from '../types/state.js';
+import { screenshotBubble } from '../dom/elements.js';
 
 let subscription: Subscription | null = null;
 
@@ -37,10 +38,12 @@ async function runDetection(): Promise<void> {
     } else if (state.faceDetection.lastFaceSeenTime > 0) {
       const sinceFace = Date.now() - state.faceDetection.lastFaceSeenTime;
       const overlayAge = Date.now() - state.greeting.overlayStartTime;
+      const screenshotVisible = !screenshotBubble.classList.contains('hidden');
       if (sinceFace >= FACE_GONE_DISMISS_MS
           && overlayAge >= MIN_GREETING_ALIVE_MS
           && !isSpeaking()
-          && !state.processing) {
+          && !state.processing
+          && !screenshotVisible) {
         onDismissTrigger?.();
       }
     }
