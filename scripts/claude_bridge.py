@@ -502,30 +502,9 @@ async def chat_stream_endpoint(request: Request) -> Response:
             msg["images"] = m["images"]
         ollama_messages.append(msg)
 
-    # Inject minimal browser context (just URL + title, not full snapshot)
-    # Full snapshot is too large (~3KB) and fills the context after a few turns.
-    # The model can call browser_snapshot itself if it needs the full page content.
-    if _find_session("browser_snapshot"):
-        try:
-            snapshot = await asyncio.wait_for(
-                _call_tool_safe("browser_snapshot", {}, 0, "auto-context"),
-                timeout=5,
-            )
-            if (snapshot and len(snapshot) > 50
-                    and not snapshot.startswith("Error")
-                    and "about:blank" not in snapshot):
-                # Extract just URL and title (first 2-3 lines of snapshot)
-                lines = snapshot.split("\n")
-                summary_lines = [l for l in lines[:6] if l.startswith("- Page") or l.startswith("### Page")]
-                if summary_lines:
-                    summary = "\n".join(summary_lines)
-                    ollama_messages.append({
-                        "role": "system",
-                        "content": f"Selaimessa auki:\n{summary}\nKäytä browser_snapshot nähdäksesi sivun sisällön.",
-                    })
-                    log.info("Stream: injected browser URL context")
-        except Exception:
-            pass
+    # No auto-injected browser context — the model calls browser_snapshot
+    # when it needs page content. Auto-injection was confusing the model
+    # into thinking it already had the data and skipping navigation/clicks.
 
     # Everything inside the generator so tool progress streams immediately
     async def generate():
