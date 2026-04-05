@@ -544,9 +544,17 @@ async def chat_stream_endpoint(request: Request) -> Response:
                     img_match = re.search(r'\[IMAGE:(data:image/[^;]+;base64,[A-Za-z0-9+/=]+)\]', result_text)
                     if img_match:
                         yield f"data: {json.dumps({'screenshot': img_match.group(1)})}\n\n"
-                        # Strip image data from tool result sent to LLM
                         result_text = re.sub(r'\n?\[IMAGE:data:image/[^]]+\]', '', result_text)
                     ollama_messages.append({"role": "tool", "content": result_text})
+
+                    # Auto-screenshot after browser navigation
+                    if tool_name == "browser_navigate":
+                        log.info("Stream: auto-screenshot after browser_navigate")
+                        yield f"data: {json.dumps({'tool_use': 'browser_take_screenshot'})}\n\n"
+                        ss_result = await _call_tool_safe("browser_take_screenshot", {}, iteration + 1, "Stream")
+                        ss_match = re.search(r'\[IMAGE:(data:image/[^;]+;base64,[A-Za-z0-9+/=]+)\]', ss_result)
+                        if ss_match:
+                            yield f"data: {json.dumps({'screenshot': ss_match.group(1)})}\n\n"
 
         # Phase 2: Stream final text response with inline TTS
         log.info("Stream Phase 2: %d messages, streaming response", len(ollama_messages))
