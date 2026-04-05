@@ -135,8 +135,8 @@ async function streamChatWithTTS(
     }
 
     setSpeaking(false);
-    // Brief pause to ensure audio playback is fully complete before mic opens
-    await new Promise(r => setTimeout(r, 200));
+    // Pause to ensure audio playback is fully complete before mic opens
+    await new Promise(r => setTimeout(r, 500));
     return { response: stripThinkTags(fullResponse), toolCalls };
   } catch {
     return null;
