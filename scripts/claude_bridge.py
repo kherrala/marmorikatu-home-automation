@@ -91,9 +91,9 @@ def get_system_prompt() -> str:
         f"Verkkohaku:\n"
         f"- Käytä 'browser_navigate' + 'browser_snapshot' hakeaksesi tietoa verkosta.\n"
         f"- Käytä hakuun: https://html.duckduckgo.com/html/?q=hakusana (ei estä headless-selainta).\n"
-        f"- Käytä 'browser_snapshot' lukeaksesi sivun sisällön.\n"
-        f"- Käytä 'browser_take_screenshot' AINA verkkosivulla navigoinnin jälkeen — kuvakaappaus näytetään käyttäjälle.\n"
-        f"- Selainistunto säilyy pyyntöjen välillä — edellinen sivu on yhä auki. Käytä 'browser_snapshot' lukeaksesi nykyisen sivun.\n"
+        f"- Käytä 'browser_snapshot' lukeaksesi sivun sisällön — se palauttaa elementit [ref=eN] tunnisteilla.\n"
+        f"- Klikkaa linkkejä/nappeja: 'browser_click' parametrilla {{\"ref\": \"eN\"}} (ref-tunnus snapshotista).\n"
+        f"- Selainistunto säilyy — edellinen sivu on yhä auki.\n"
         f"- Jos sivu näyttää evästebannerin, hyväksy se 'browser_click'-työkalulla.\n"
         f"- Jos sivu näyttää 'Just a moment' tai muun esteen, yritä toista sivustoa."
     )
