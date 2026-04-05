@@ -7,7 +7,9 @@ import { reportText, reportSpinner, userTextEl } from '../dom/elements.js';
 import { MAX_OVERLAY_DURATION } from '../config/constants.js';
 import { KioskPhase } from '../types/state.js';
 
-const FAREWELL_PATTERNS = /\b(heippa|heihei|hei\s*hei|näkemiin|nähdään|moi\s*moi|moikka|kiitos\s+siitä|kiitos\s+paljon|selvä\s+homma|hyvää\s+päivän\s*jatkoa|hyvää\s+yötä|hyvää\s+iltaa|bye|goodbye|see\s*you)\b/i;
+// Only match short farewell-only utterances (max ~30 chars).
+// Prevents false matches in longer sentences like "kiitos paljon tiedosta".
+const FAREWELL_PATTERNS = /^(heippa|heihei|hei\s*hei|näkemiin|nähdään|moi\s*moi|moikka|kiitos|bye|goodbye|see\s*you)[.!]?\s*$/i;
 
 export function isFarewell(text: string): boolean {
   return FAREWELL_PATTERNS.test(text);

@@ -1,7 +1,7 @@
 export const FACE_DETECT_INTERVAL = 500;
 export const DETECTIONS_REQUIRED = 5;
 export const GREETING_COOLDOWN = 30_000;
-export const MAX_OVERLAY_DURATION = 300_000;
+export const MAX_OVERLAY_DURATION = 600_000; // 10 min (was 5 min)
 export const JINGLE_DURATION = 30_000;
 export const FACE_GONE_DISMISS_MS = 15_000;
 export const MIN_GREETING_ALIVE_MS = 30_000;
@@ -9,7 +9,7 @@ export const CAROUSEL_MS = 30_000;
 export const PAUSE_MS = 30_000;
 export const PEAK_START = 6;
 export const PEAK_END = 9;
-export const QUOTE_COOLDOWN = 3 * 60 * 60 * 1000;
+export const QUOTE_COOLDOWN = 12 * 60 * 60 * 1000; // 12 hours (was 3 hours)
 export const SILENCE_AUTO_SUMMARY_MS = 5_000;
 export const BUS_CHECK_INTERVAL = 30_000;
 export const BUS_LEAVE_SOON_MS = 15 * 60_000;
