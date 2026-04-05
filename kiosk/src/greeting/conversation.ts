@@ -66,14 +66,14 @@ async function streamChatWithTTS(
       const { done, value } = await reader.read();
       if (done) break;
       buf += decoder.decode(value, { stream: true });
-      const lines = buf.split('\n');
-      buf = lines.pop()!;
+      // SSE events are separated by \n\n — split on double newline
+      const events = buf.split('\n\n');
+      buf = events.pop()!; // keep incomplete last chunk
 
-      for (const line of lines) {
-        // SSE format: "data: {...}" — extract JSON after "data: " prefix
-        const trimmed = line.trim();
-        if (!trimmed || !trimmed.startsWith('data: ')) continue;
-        const jsonStr = trimmed.slice(6);
+      for (const event of events) {
+        const line = event.trim();
+        if (!line || !line.startsWith('data: ')) continue;
+        const jsonStr = line.slice(6);
         if (!jsonStr) continue;
         let parsed: {
           audio?: string;
@@ -87,9 +87,7 @@ async function streamChatWithTTS(
         try {
           parsed = JSON.parse(jsonStr);
         } catch {
-          // Incomplete JSON from chunked SSE — put back in buffer
-          buf = line + '\n' + buf;
-          continue;
+          continue; // malformed event, skip
         }
 
         if (parsed.tool_use) {
