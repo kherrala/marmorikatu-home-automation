@@ -14,6 +14,7 @@ import { captureFrame, isVisionRequest } from '../camera/capture.js';
 import { greetingAbortController } from './greeting.js';
 
 function showScreenshot(dataUri: string): void {
+  console.log('[screenshot] showing, data length:', dataUri.length);
   screenshotImg.src = dataUri;
   screenshotBubble.classList.remove('hidden');
 }
@@ -73,6 +74,7 @@ async function streamChatWithTTS(
       for (const event of events) {
         const line = event.trim();
         if (!line || !line.startsWith('data: ')) continue;
+        console.log('[stream] event type:', line.slice(6, 30).replace(/"[^"]{20,}"/, '"..."'));
         const jsonStr = line.slice(6);
         if (!jsonStr) continue;
         let parsed: {
@@ -87,7 +89,8 @@ async function streamChatWithTTS(
         try {
           parsed = JSON.parse(jsonStr);
         } catch {
-          continue; // malformed event, skip
+          console.warn('[stream] JSON parse failed, skipping:', jsonStr.slice(0, 80));
+          continue;
         }
 
         if (parsed.tool_use) {

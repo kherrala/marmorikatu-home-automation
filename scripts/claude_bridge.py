@@ -501,16 +501,19 @@ async def chat_stream_endpoint(request: Request) -> Response:
             msg["images"] = m["images"]
         ollama_messages.append(msg)
 
-    # If browser was used previously, inject current page context
-    if _find_session("browser_snapshot"):
+    # If a previous conversation turn used browser tools, inject current page context
+    # so the model remembers what's on screen
+    _has_browser_history = any("browser_" in str(m.get("content", "")) for m in messages)
+    if _has_browser_history and _find_session("browser_snapshot"):
         try:
             snapshot = await asyncio.wait_for(
                 _call_tool_safe("browser_snapshot", {}, 0, "auto-context"),
                 timeout=5,
             )
-            # Only inject if there's actual page content (not empty/error)
-            if snapshot and len(snapshot) > 50 and not snapshot.startswith("Error"):
-                # Truncate to avoid flooding context
+            # Only inject if there's real page content (not blank page or error)
+            if (snapshot and len(snapshot) > 100
+                    and not snapshot.startswith("Error")
+                    and "about:blank" not in snapshot):
                 if len(snapshot) > 3000:
                     snapshot = snapshot[:3000] + "\n[...truncated]"
                 ollama_messages.append({
@@ -519,7 +522,7 @@ async def chat_stream_endpoint(request: Request) -> Response:
                 })
                 log.info("Stream: injected browser context (%d chars)", len(snapshot))
         except Exception:
-            pass  # browser not available or no page open
+            pass
 
     # Everything inside the generator so tool progress streams immediately
     async def generate():
@@ -567,11 +570,11 @@ async def chat_stream_endpoint(request: Request) -> Response:
                     img_match = re.search(r'\[IMAGE:(data:image/[^;]+;base64,[A-Za-z0-9+/=]+)\]', result_text)
                     if img_match:
                         yield f"data: {json.dumps({'screenshot': img_match.group(1)})}\n\n"
-                        result_text = re.sub(r'\n?\[IMAGE:data:image/[^]]+\]', '', result_text)
+                        result_text = re.sub(r'\n?\[IMAGE:data:image/[^\]]+\]', '', result_text)
                     ollama_messages.append({"role": "tool", "content": result_text})
 
-                    # Auto-screenshot after any browser tool (navigate, snapshot, click)
-                    if tool_name.startswith("browser_") and tool_name != "browser_take_screenshot":
+                    # Auto-screenshot after page-changing browser actions only
+                    if tool_name in ("browser_navigate", "browser_click", "browser_hover"):
                         log.info("Stream: auto-screenshot after %s", tool_name)
                         yield f"data: {json.dumps({'tool_use': 'browser_take_screenshot'})}\n\n"
                         ss_result = await _call_tool_safe("browser_take_screenshot", {}, iteration + 1, "Stream")
