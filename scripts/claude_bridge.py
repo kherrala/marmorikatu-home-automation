@@ -195,6 +195,10 @@ async def _call_tool_safe(tool_name: str, tool_input: dict, iteration: int, call
             timeout=timeout,
         )
         text = "\n".join(c.text for c in result.content if hasattr(c, "text"))
+        # Include base64 image data for screenshot tools
+        for c in result.content:
+            if hasattr(c, "data") and hasattr(c, "mimeType"):
+                text += f"\n[IMAGE:data:{c.mimeType};base64,{c.data}]"
         log.info("[%s] Tool result [%d]: %s → %d chars", caller, iteration, tool_name, len(text))
         return text
     except _DEAD_SESSION_ERRORS:
@@ -535,6 +539,12 @@ async def chat_stream_endpoint(request: Request) -> Response:
                     # Stream tool progress to client immediately
                     yield f"data: {json.dumps({'tool_use': tool_name})}\n\n"
                     result_text = await _call_tool_safe(tool_name, tool_input, iteration + 1, "Stream")
+                    # Extract and stream screenshot image if present
+                    img_match = re.search(r'\[IMAGE:(data:image/[^;]+;base64,[A-Za-z0-9+/=]+)\]', result_text)
+                    if img_match:
+                        yield f"data: {json.dumps({'screenshot': img_match.group(1)})}\n\n"
+                        # Strip image data from tool result sent to LLM
+                        result_text = re.sub(r'\n?\[IMAGE:data:image/[^]]+\]', '', result_text)
                     ollama_messages.append({"role": "tool", "content": result_text})
 
         # Phase 2: Stream final text response with inline TTS

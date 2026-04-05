@@ -25,6 +25,8 @@ let greetingActiveAt = 0;
 let greetingEpoch = 0;
 let jingleTimeout: ReturnType<typeof setTimeout> | null = null;
 
+export let greetingAbortController: AbortController | null = null;
+
 // Active RxJS subscriptions for the current greeting session
 let greetingSubs = new Subscription();
 
@@ -61,6 +63,7 @@ export async function triggerGreeting(): Promise<void> {
   greetingEpoch++;
   const epoch = greetingEpoch;
   greetingSubs = new Subscription();
+  greetingAbortController = new AbortController();
 
   dispatch({ type: 'SET_PHASE', phase: KioskPhase.GREETING });
   const now = Date.now();
@@ -172,6 +175,8 @@ export function dismissGreeting(): void {
   // Actually, the cooldown timer uses takeUntil(greetingEnd$), so we must NOT
   // emit greetingEnd$ here. It's emitted only when a NEW greeting starts.
 
+  greetingAbortController?.abort();
+  greetingAbortController = null;
   stopJingle();
   stopListeningFn?.();
   speechSynthesis.cancel();

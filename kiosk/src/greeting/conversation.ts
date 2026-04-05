@@ -4,9 +4,27 @@ import { randomFallback } from '../content/fallbacks.js';
 import { pick } from '../content/text-utils.js';
 import { speakAndWait, playSentence } from '../audio/tts.js';
 import { setSpeaking } from '../dom/avatar.js';
-import { reportText, reportSpinner, userTextEl } from '../dom/elements.js';
+import { reportText, reportSpinner, userTextEl, screenshotBubble, screenshotImg } from '../dom/elements.js';
 import { KioskPhase } from '../types/state.js';
 import { captureFrame, isVisionRequest } from '../camera/capture.js';
+import { greetingAbortController } from './greeting.js';
+
+let screenshotHideTimer: ReturnType<typeof setTimeout> | null = null;
+
+function showScreenshot(dataUri: string): void {
+  screenshotImg.src = dataUri;
+  screenshotBubble.classList.remove('hidden');
+  if (screenshotHideTimer) clearTimeout(screenshotHideTimer);
+  screenshotHideTimer = setTimeout(hideScreenshot, 10000);
+}
+
+function hideScreenshot(): void {
+  screenshotBubble.classList.add('hidden');
+  if (screenshotHideTimer) {
+    clearTimeout(screenshotHideTimer);
+    screenshotHideTimer = null;
+  }
+}
 
 // Only match short farewell-only utterances (max ~30 chars).
 const FAREWELL_PATTERNS = /^(heippa|heihei|hei\s*hei|näkemiin|nähdään|moi\s*moi|moikka|kiitos|bye|goodbye|see\s*you)[.!]?\s*$/i;
@@ -21,16 +39,13 @@ async function streamChatWithTTS(
   onToolUse?: (toolName: string) => void,
 ): Promise<{ response: string; toolCalls: Array<{ tool: string }> } | null> {
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 180000);
     const { greeting } = getState();
     const res = await fetch('/api/chat/chat/stream', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ messages: greeting.conversationHistory }),
-      signal: controller.signal,
+      signal: greetingAbortController?.signal,
     });
-    clearTimeout(timeoutId);
     if (!res.ok) return null;
 
     const reader = res.body!.getReader();
@@ -59,10 +74,16 @@ async function streamChatWithTTS(
           response?: string;
           tool_calls?: Array<{ tool: string }>;
           tool_use?: string;
+          screenshot?: string;
         };
 
         if (parsed.tool_use) {
           onToolUse?.(parsed.tool_use);
+          continue;
+        }
+
+        if (parsed.screenshot) {
+          showScreenshot(parsed.screenshot);
           continue;
         }
 
@@ -75,6 +96,7 @@ async function streamChatWithTTS(
         }
 
         if (parsed.text) {
+          hideScreenshot();
           onSentence(parsed.text);
         }
         if (parsed.audio) {

@@ -29,3 +29,5 @@ export const startSublabel = startOverlay.querySelector('.sublabel') as HTMLDivE
 export const avatarEl = document.getElementById('avatar')!;
 export const slidesContainer = getEl<HTMLDivElement>('slides');
 export const navContainer = getEl<HTMLDivElement>('nav');
+export const screenshotBubble = getEl<HTMLDivElement>('screenshot-bubble');
+export const screenshotImg = getEl<HTMLImageElement>('screenshot-img');
