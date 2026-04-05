@@ -541,7 +541,7 @@ async def chat_stream_endpoint(request: Request) -> Response:
                         "tools": openai_tools,
                         "stream": False,
                         "think": False,
-                        "options": {"num_ctx": OLLAMA_NUM_CTX, "num_predict": 200, "temperature": 0.3, "repeat_penalty": 1.0},
+                        "options": {"num_ctx": OLLAMA_NUM_CTX, "num_predict": 500, "temperature": 0.3, "repeat_penalty": 1.0},
                     },
                 )
                 resp.raise_for_status()
@@ -594,7 +594,7 @@ async def chat_stream_endpoint(request: Request) -> Response:
                     "tools": openai_tools,
                     "stream": True,
                     "think": False,
-                    "options": {"num_ctx": OLLAMA_NUM_CTX, "num_predict": 200, "temperature": 0.3, "repeat_penalty": 1.0},
+                    "options": {"num_ctx": OLLAMA_NUM_CTX, "num_predict": 500, "temperature": 0.3, "repeat_penalty": 1.0},
                 },
             ) as resp:
                 async for line in resp.aiter_lines():
