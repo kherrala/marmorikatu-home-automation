@@ -453,9 +453,17 @@ async def chat_endpoint(request: Request) -> JSONResponse:
             log.error("Unexpected error: %s", e)
             return JSONResponse({"error": str(e)}, status_code=500)
 
-    # Trigger memory consolidation in background if any remember calls were made
-    if result and any(tc.get("tool") == "remember" for tc in result.get("tool_calls", [])):
-        asyncio.create_task(_consolidate_memory())
+    # Auto-remember: if user said "muista" but model didn't call remember, force it
+    if result:
+        last_msg = messages[-1].get("content", "") if messages else ""
+        called_remember = any(tc.get("tool") == "remember" for tc in result.get("tool_calls", []))
+        if not called_remember and re.search(r'\bmuista\b', last_msg, re.IGNORECASE):
+            log.info("Auto-remember: user said 'muista' but model didn't call remember")
+            await _call_tool_safe("remember", {"content": last_msg}, 0, "auto-remember")
+            result["tool_calls"].append({"tool": "remember", "input": {"content": last_msg}})
+
+        if any(tc.get("tool") == "remember" for tc in result.get("tool_calls", [])):
+            asyncio.create_task(_consolidate_memory())
 
     return JSONResponse(result)
 
@@ -665,7 +673,14 @@ async def chat_stream_endpoint(request: Request) -> Response:
         # Final metadata line
         yield f"data: {json.dumps({'done': True, 'response': full_text_final, 'tool_calls': all_tool_calls})}\n\n"
 
-        # Trigger consolidation in background if any remember calls
+        # Auto-remember: if user said "muista" but model didn't call remember
+        last_msg = messages[-1].get("content", "") if messages else ""
+        called_remember = any(tc.get("tool") == "remember" for tc in all_tool_calls)
+        if not called_remember and re.search(r'\bmuista\b', last_msg, re.IGNORECASE):
+            log.info("Stream auto-remember: user said 'muista'")
+            await _call_tool_safe("remember", {"content": last_msg}, 0, "auto-remember")
+            all_tool_calls.append({"tool": "remember", "input": {"content": last_msg}})
+
         if any(tc.get("tool") == "remember" for tc in all_tool_calls):
             asyncio.create_task(_consolidate_memory())
 
