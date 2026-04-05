@@ -1,9 +1,9 @@
-import { Subject, Subscription, timer, EMPTY } from 'rxjs';
+import { Subject, Subscription, timer } from 'rxjs';
 import { switchMap, takeUntil, filter } from 'rxjs/operators';
 import { dispatch, getState, select } from '../state/store.js';
 import { KioskPhase } from '../types/state.js';
 import {
-  GREETING_COOLDOWN, MAX_OVERLAY_DURATION, JINGLE_DURATION,
+  GREETING_COOLDOWN, JINGLE_DURATION,
   QUOTE_COOLDOWN, SILENCE_AUTO_SUMMARY_MS, BUS_LEAVE_SOON_MS,
 } from '../config/constants.js';
 import { NYSSE_IDX, NEWS_IDX } from '../config/slides.js';
@@ -20,9 +20,6 @@ import {
 // Emits when the current greeting ends (dismiss or new greeting).
 // All greeting-scoped timers use takeUntil(greetingEnd$) for auto-cleanup.
 const greetingEnd$ = new Subject<void>();
-
-// Emits to (re)schedule the overlay safety timeout
-const scheduleOverlay$ = new Subject<void>();
 
 let greetingActiveAt = 0;
 let greetingEpoch = 0;
@@ -71,17 +68,7 @@ export async function triggerGreeting(): Promise<void> {
 
   // -- Set up RxJS timers for this greeting session --
 
-  // Overlay safety timeout: auto-dismiss after MAX_OVERLAY_DURATION.
-  // Re-schedulable via scheduleOverlay$.next() (called from startListening).
-  greetingSubs.add(
-    scheduleOverlay$.pipe(
-      switchMap(() => {
-        const remaining = MAX_OVERLAY_DURATION - (Date.now() - getState().greeting.overlayStartTime);
-        return remaining > 0 ? timer(remaining) : EMPTY;
-      }),
-      takeUntil(greetingEnd$),
-    ).subscribe(() => dismissGreeting()),
-  );
+  // No overlay safety timeout — sessions last until farewell or face-gone.
 
   // Cooldown → READY transition (activated when phase enters COOLDOWN)
   greetingSubs.add(
@@ -158,10 +145,6 @@ export async function triggerGreeting(): Promise<void> {
   startListeningFn?.();
 }
 
-// Trigger to reschedule the overlay safety timeout
-export function scheduleOverlayDismiss(): void {
-  scheduleOverlay$.next();
-}
 
 // Signal for deferred dismiss retries
 const deferredDismiss$ = new Subject<void>();
@@ -252,8 +235,7 @@ export function scheduleDailyReport(): void {
 
       if (epoch !== greetingEpoch) return;
       const after = getState();
-      if (after.phase === KioskPhase.GREETING
-          && Date.now() - after.greeting.overlayStartTime < MAX_OVERLAY_DURATION) {
+      if (after.phase === KioskPhase.GREETING) {
         startListeningFn?.();
       }
     }),

@@ -4,7 +4,6 @@ import { randomFallback } from '../content/fallbacks.js';
 import { pick } from '../content/text-utils.js';
 import { speakAndWait } from '../audio/tts.js';
 import { reportText, reportSpinner, userTextEl } from '../dom/elements.js';
-import { MAX_OVERLAY_DURATION } from '../config/constants.js';
 import { KioskPhase } from '../types/state.js';
 
 // Only match short farewell-only utterances (max ~30 chars).
@@ -87,10 +86,8 @@ export async function handleVoiceResult(transcript: string): Promise<void> {
       await speakAndWait(fallback);
     }
 
-    // Resume listening if still within max duration
-    const s = getState();
-    if (Date.now() - s.greeting.overlayStartTime < MAX_OVERLAY_DURATION
-        && s.phase === KioskPhase.GREETING) {
+    // Resume listening if still in greeting
+    if (getState().phase === KioskPhase.GREETING) {
       startListeningFn?.();
     }
   } finally {

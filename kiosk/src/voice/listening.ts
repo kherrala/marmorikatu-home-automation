@@ -5,7 +5,7 @@ import { resumeIfSuspended } from '../audio/context.js';
 import { KioskPhase } from '../types/state.js';
 import { NativeSpeechRecognition } from './microphone.js';
 import { audioStream } from '../camera/camera.js';
-import { scheduleOverlayDismiss, scheduleDailyReport, clearSilenceTimer, getGreetingEpoch } from '../greeting/greeting.js';
+import { scheduleDailyReport, clearSilenceTimer, getGreetingEpoch } from '../greeting/greeting.js';
 import {
   startNativeListening,
   activeRecognizer,
@@ -71,8 +71,6 @@ export function startListening(): void {
   reportText.textContent = '';
   listeningIndicator.classList.remove('hidden');
   setListening(true);
-  scheduleOverlayDismiss();
-
   // Daily-report timer: fires if user says nothing for 5s after mic opens
   scheduleDailyReport();
 
