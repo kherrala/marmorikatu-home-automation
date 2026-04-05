@@ -547,9 +547,9 @@ async def chat_stream_endpoint(request: Request) -> Response:
                         result_text = re.sub(r'\n?\[IMAGE:data:image/[^]]+\]', '', result_text)
                     ollama_messages.append({"role": "tool", "content": result_text})
 
-                    # Auto-screenshot after browser navigation
-                    if tool_name == "browser_navigate":
-                        log.info("Stream: auto-screenshot after browser_navigate")
+                    # Auto-screenshot after any browser tool (navigate, snapshot, click)
+                    if tool_name.startswith("browser_") and tool_name != "browser_take_screenshot":
+                        log.info("Stream: auto-screenshot after %s", tool_name)
                         yield f"data: {json.dumps({'tool_use': 'browser_take_screenshot'})}\n\n"
                         ss_result = await _call_tool_safe("browser_take_screenshot", {}, iteration + 1, "Stream")
                         ss_match = re.search(r'\[IMAGE:(data:image/[^;]+;base64,[A-Za-z0-9+/=]+)\]', ss_result)
