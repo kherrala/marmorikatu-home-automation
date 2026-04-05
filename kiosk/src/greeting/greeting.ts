@@ -7,7 +7,7 @@ import {
   QUOTE_COOLDOWN, SILENCE_AUTO_SUMMARY_MS, BUS_LEAVE_SOON_MS,
 } from '../config/constants.js';
 import { NYSSE_IDX, NEWS_IDX } from '../config/slides.js';
-import { speakAndWait } from '../audio/tts.js';
+import { speakAndWait, playSentence } from '../audio/tts.js';
 import { randomFallback } from '../content/fallbacks.js';
 import { generateAIResponse, hideScreenshot } from './conversation.js';
 import { clearAvatar } from '../dom/avatar.js';
@@ -113,33 +113,55 @@ export async function triggerGreeting(): Promise<void> {
 
   userTextEl.textContent = '';
 
-  // Time-appropriate greeting
   const h = new Date().getHours();
-  let greeting: string;
-  if (h >= 5 && h < 10) greeting = 'Huomenta!';
-  else if (h >= 10 && h < 17) greeting = 'Päivää!';
-  else if (h >= 17 && h < 22) greeting = 'Iltaa!';
-  else greeting = 'Yötä!';
-
   if (h >= 5 && h < 10) startJingle();
 
-  greetingText.textContent = greeting;
   reportText.textContent = '';
   greetingActiveAt = Date.now();
   greetingOverlay.classList.add('visible');
 
-  // Random quote (once per 3 hours)
+  // Use pre-cached greeting from backend (instant playback)
+  try {
+    const res = await fetch('/api/chat/cached/greeting');
+    if (res.ok) {
+      const cached = await res.json() as { text: string; audio: Array<{ audio: string; text: string }> };
+      greetingText.textContent = cached.text;
+      for (const part of cached.audio) {
+        if (epoch !== greetingEpoch) return;
+        await playSentence(part.audio);
+      }
+    }
+  } catch {
+    // Fallback: generate greeting locally
+    let greeting: string;
+    if (h >= 5 && h < 10) greeting = 'Huomenta!';
+    else if (h >= 10 && h < 17) greeting = 'Päivää!';
+    else if (h >= 17 && h < 22) greeting = 'Iltaa!';
+    else greeting = 'Yötä!';
+    greetingText.textContent = greeting;
+    await speakAndWait(greeting);
+  }
+
+  if (epoch !== greetingEpoch) return;
+
+  // Play pre-cached random quote (skip if not available)
   const s = getState();
   if (now - s.greeting.lastQuoteTime >= QUOTE_COOLDOWN) {
-    dispatch({ type: 'SET_QUOTE_TIME', time: now });
-    const quote = randomFallback();
-    reportText.textContent = quote;
-    dispatch({ type: 'CONVERSATION_ADD', message: { role: 'assistant', content: quote } });
-    await speakAndWait(greeting);
-    if (epoch !== greetingEpoch) return;
-    await speakAndWait(quote);
-  } else {
-    await speakAndWait(greeting);
+    try {
+      const quoteRes = await fetch('/api/chat/cached/quote');
+      if (quoteRes.ok) {
+        const quote = await quoteRes.json() as { text: string; audio: Array<{ audio: string; text: string }> };
+        if (quote.text && quote.audio.length > 0) {
+          dispatch({ type: 'SET_QUOTE_TIME', time: now });
+          reportText.textContent = quote.text;
+          dispatch({ type: 'CONVERSATION_ADD', message: { role: 'assistant', content: quote.text } });
+          for (const part of quote.audio) {
+            if (epoch !== greetingEpoch) return;
+            await playSentence(part.audio);
+          }
+        }
+      }
+    } catch { /* skip */ }
   }
 
   if (epoch !== greetingEpoch) return;
@@ -217,21 +239,36 @@ export function scheduleDailyReport(): void {
       pauseListeningFn?.();
       reportSpinner.classList.remove('hidden');
       try {
-        dispatch({
-          type: 'CONVERSATION_ADD',
-          message: {
-            role: 'user',
-            content: 'Hae päiväraportti get_daily_report-työkalulla ja tiivistä se lyhyeksi katsaukseksi. Aloita tärkeimmästä uutisesta, sitten sää, kodin tilanne ja kalenterin tapahtumat. Älä luettele lukemia, vaan kerro olennainen.',
-          },
-        });
-        const summary = await generateAIResponse();
-        reportSpinner.classList.add('hidden');
-        if (epoch !== greetingEpoch) return;
-        if (summary) {
-          dispatch({ type: 'AUTO_SUMMARY_GIVEN', date: new Date().toISOString().slice(0, 10) });
-          reportText.textContent = summary;
-          dispatch({ type: 'CONVERSATION_ADD', message: { role: 'assistant', content: summary } });
-          await speakAndWait(summary);
+        // Try pre-cached daily report first (instant playback)
+        const cachedRes = await fetch('/api/chat/cached/report');
+        if (cachedRes.ok) {
+          const cached = await cachedRes.json() as { text: string; audio: Array<{ audio: string; text: string }> };
+          if (cached.text && cached.audio.length > 0) {
+            reportSpinner.classList.add('hidden');
+            if (epoch !== greetingEpoch) return;
+            dispatch({ type: 'AUTO_SUMMARY_GIVEN', date: new Date().toISOString().slice(0, 10) });
+            dispatch({ type: 'CONVERSATION_ADD', message: { role: 'assistant', content: cached.text } });
+            for (const part of cached.audio) {
+              if (epoch !== greetingEpoch) return;
+              reportText.textContent = part.text;
+              await playSentence(part.audio);
+            }
+          } else {
+            // No cached report — generate on demand
+            dispatch({
+              type: 'CONVERSATION_ADD',
+              message: { role: 'user', content: 'Hae päiväraportti get_daily_report-työkalulla ja tiivistä se lyhyeksi katsaukseksi.' },
+            });
+            const summary = await generateAIResponse();
+            reportSpinner.classList.add('hidden');
+            if (epoch !== greetingEpoch) return;
+            if (summary) {
+              dispatch({ type: 'AUTO_SUMMARY_GIVEN', date: new Date().toISOString().slice(0, 10) });
+              reportText.textContent = summary;
+              dispatch({ type: 'CONVERSATION_ADD', message: { role: 'assistant', content: summary } });
+              await speakAndWait(summary);
+            }
+          }
         }
       } catch {
         reportSpinner.classList.add('hidden');

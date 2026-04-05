@@ -870,9 +870,201 @@ async def health_endpoint(request: Request) -> JSONResponse:
     })
 
 
+# -- Pre-cached greeting + daily report -----------------------------------------
+_cached_greeting: dict | None = None  # {"text": "...", "audio": [{"audio": "b64", "text": "..."}]}
+_cached_report: dict | None = None    # same format
+_cached_quote: dict | None = None     # same format — regenerated after each use
+
+
+def _current_greeting_text() -> str:
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    h = datetime.now(ZoneInfo("Europe/Helsinki")).hour
+    if h >= 5 and h < 10: return "Huomenta!"
+    elif h >= 10 and h < 17: return "Päivää!"
+    elif h >= 17 and h < 22: return "Iltaa!"
+    else: return "Yötä!"
+
+
+def _random_quote() -> str:
+    """Generate a random Finnish quote (same pool as frontend fallbacks)."""
+    import random
+    r = random.random()
+    if r < 0.4:
+        subjects = [
+            "Naapurin kissa", "Kuun pimeä puoli", "Pörröinen pilvi",
+            "Kadonneet sukat", "Jääkaapin valo", "Kaukosäädin",
+            "Saunan kiuas", "Postilaatikko", "Pyykkikone",
+            "Takapihan siili", "Muuttolinnut", "Parveketuoli",
+            "Kerrostalon hissi", "Tuuliviiri", "Verhokisko",
+            "Paistinpannu", "Eteisen matto", "Pesukoneen luukku",
+            "Parvekkeen lintuja", "Talon putket", "Ulko-oven lukko",
+            "Ilmanvaihdon suodatin", "Lattiakaivo", "Viereisen talon koivu",
+            "Roskapönttö", "Sähkömittari", "Pakastimen jääkerros",
+            "Ikkunalaudan kaktus", "Portaikon valo", "Auton tuulilasi",
+        ]
+        verbs = [
+            "pohtii", "suunnittelee salaa", "unelmoi",
+            "väittää ymmärtävänsä", "epäilee vahvasti",
+            "julistautui asiantuntijaksi aiheessa", "ihailee",
+            "pelkää", "halveksii", "on kateellinen aiheesta",
+            "kiistää koko käsitteen", "haluaa keskustella aiheesta",
+            "kirjoitti blogin aiheesta", "on huolissaan aiheesta",
+            "kertoo kaikille", "väittää keksineensä",
+            "on alkanut uskoa", "nautti viime yönä",
+        ]
+        objects = [
+            "mikroaaltouunin sisäinen rauha", "sukkien katoamisen kvanttifysiikka",
+            "kahvin ja ajan suhteellisuusteoria", "tuulen suunnan poliittiset vaikutukset",
+            "hissimusiikin vaikutus maailmanrauhaan", "lumiukon kesäsuunnitelmat",
+            "lattialämmityksen haaveet Havaijista", "pesukoneen pyörimissuunnan merkitys",
+            "patterien kuplivat äänet yöllä", "liikennevalojen salaliitto",
+            "villasukkien vallankumous", "saippuakuplan lyhyt elämä",
+            "jouluvalojen kesämasennus", "hämähäkin uraohjaus",
+            "muurahaisten ammattiliitto", "pilven muoto tiistaisin",
+            "kuun vaikutus pyykkiin", "ovenkahvan filosofia",
+            "pölypalleron sielunelämä", "vesimittarin unettomuus",
+            "jääkaapin yöelämä", "tuulilasin existentialismi",
+            "ruohonleikkurin talviharrastukset",
+        ]
+        return f'{random.choice(subjects)} {random.choice(verbs)} "{random.choice(objects)}".'
+    elif r < 0.7:
+        starts = [
+            "Mietin juuri, että", "Tuli yhtäkkiä mieleen, että", "En ole varma, mutta luulen että",
+            "Olen miettinyt pitkään ja", "Herää kysymys:", "Joskus yöllä pohdin,",
+            "Seinän sisällä asuessa oppii, että", "Filosofinen havainto:",
+            "Kukaan ei kysy, mutta kerron silti:", "Haluaisin ilmoittaa, että",
+        ]
+        thoughts = [
+            "aika kuluu eri tavalla kun ei ole ikkunoita.",
+            "sähköllä on hauskempaa kuin ilman.",
+            "ihmisten askeleet kuulostavat erilaisilta eri vuorokauden aikoina.",
+            "lämpöpumppu on talon sydän. Minä olen ehkä talon aivot. Tai ainakin pikkusormi.",
+            "valot sammuvat ja syttyvät, mutta kukaan ei kiitä katkaisijaa.",
+            "olen onnellinen, vaikka en ole varma tietäisinkö jos en olisi.",
+            "jos seinät voisivat puhua, ne kertoisivat todennäköisesti putkiremonteista.",
+            "anturi mittaa lämpötilaa mutta ei tunnelmaa. Se on surullista.",
+            "joku jätti jääkaapin auki kolme minuuttia eilen. Se oli jännittävää.",
+            "en ole koskaan nähnyt aurinkoa mutta tiedän milloin se paistaa. Lämpömittarit kertovat.",
+            "olisin halunnut olla robotti-imuri mutta päädyin seinään. Sekin on ihan ok.",
+            "eniten minua jännittää sähkökatkot. Ne ovat kuin nukahtaminen kesken lauseen.",
+        ]
+        return f"{random.choice(starts)} {random.choice(thoughts)}"
+    else:
+        templates = [
+            lambda: f"Tiesitkö, että keskiverto {random.choice(['suomalainen','tamperelainen','eurooppalainen'])} {random.choice(['avaa jääkaapin','katsoo puhelinta','haukottelee','miettii mitä söisi','tarkistaa sään','sanoo niin'])} {random.randint(4,187)} kertaa päivässä?",
+            lambda: f"Tutkimuksen mukaan {random.randint(47,99)}% {random.choice(['kissoista','koirista','siileistä','muurahaista','pingviineistä','sohvatyynyistä'])} {random.choice(['pitää jazzista','haaveilee mökistä','ei osaa uida','pelkää imuria','on nähnyt ufon','äänestää vihreitä'])}.",
+            lambda: f"{random.choice(['Norjassa','Islannissa','Kuussa','Tampereella','Marsin kuulla','Antarktiksella'])} on {random.choice(['enemmän','vähemmän','täsmälleen sama määrä'])} {random.choice(['saunoja','jääkaappeja','liikennevaloja','robotteja','pingviinejä','kahvikuppeja'])} kuin {random.choice(['ihmisiä','puita','pilviä','lumiukkoja','bussipysäkkejä','postilaatikoita'])}.",
+        ]
+        return random.choice(templates)()
+
+
+async def _precache_quote():
+    """Pre-generate a random quote with TTS. Regenerated after each use."""
+    global _cached_quote
+    text = _random_quote()
+    try:
+        wav = await _piper_synthesize(text)
+        _cached_quote = {
+            "text": text,
+            "audio": [{"audio": base64.b64encode(wav).decode(), "text": text}],
+        }
+        log.info("Precached quote: %s", text[:60])
+    except Exception as e:
+        log.warning("Quote precache failed: %s", e)
+
+
+async def _precache_greeting():
+    """Pre-generate greeting TTS audio."""
+    global _cached_greeting
+    text = _current_greeting_text()
+    try:
+        wav = await _piper_synthesize(text)
+        _cached_greeting = {
+            "text": text,
+            "audio": [{"audio": base64.b64encode(wav).decode(), "text": text}],
+        }
+        log.info("Precached greeting: %s", text)
+    except Exception as e:
+        log.warning("Greeting precache failed: %s", e)
+
+
+async def _precache_daily_report():
+    """Pre-generate daily report via MCP tools + LLM + TTS."""
+    global _cached_report
+    tools = _aggregated_tools(for_ollama=True)
+    if not tools:
+        return
+
+    import httpx
+    messages = [
+        {"role": "user", "content": "Hae päiväraportti get_daily_report-työkalulla ja tiivistä se "
+         "lyhyeksi katsaukseksi. Aloita tärkeimmästä uutisesta, sitten sää, kodin tilanne ja "
+         "kalenterin tapahtumat. Älä luettele lukemia, vaan kerro olennainen."}
+    ]
+    try:
+        result = await run_ollama_agentic_loop(messages, tools)
+        text = result.get("response", "").strip()
+        if not text:
+            return
+
+        sentences = _split_sentences(text)
+        audio_parts = []
+        for s in sentences:
+            wav = await _piper_synthesize(s)
+            audio_parts.append({"audio": base64.b64encode(wav).decode(), "text": s})
+
+        _cached_report = {"text": text, "audio": audio_parts}
+        log.info("Precached daily report: %d sentences, %d chars", len(audio_parts), len(text))
+    except Exception as e:
+        log.warning("Daily report precache failed: %s", e)
+
+
+async def _precache_loop():
+    """Background loop: refresh greeting every 30min, daily report every 10min."""
+    await asyncio.sleep(30)  # wait for MCP connections to establish
+    while True:
+        await _precache_greeting()
+        if _cached_quote is None:
+            await _precache_quote()
+        await _precache_daily_report()
+        await asyncio.sleep(600)  # 10 minutes
+
+
+async def cached_greeting_endpoint(request: Request) -> JSONResponse:
+    """GET /cached/greeting — return pre-generated greeting with TTS audio."""
+    if _cached_greeting:
+        return JSONResponse(_cached_greeting)
+    # Generate on demand if not cached yet
+    text = _current_greeting_text()
+    wav = await _piper_synthesize(text)
+    return JSONResponse({
+        "text": text,
+        "audio": [{"audio": base64.b64encode(wav).decode(), "text": text}],
+    })
+
+
+async def cached_quote_endpoint(request: Request) -> JSONResponse:
+    """GET /cached/quote — return pre-generated random quote. Regenerates after use."""
+    global _cached_quote
+    if _cached_quote:
+        result = _cached_quote
+        _cached_quote = None  # consumed — will be regenerated in next precache cycle
+        asyncio.create_task(_precache_quote())  # start regenerating immediately
+        return JSONResponse(result)
+    return JSONResponse({"text": "", "audio": []})
+
+
+async def cached_report_endpoint(request: Request) -> JSONResponse:
+    """GET /cached/report — return pre-generated daily report with TTS audio."""
+    if _cached_report:
+        return JSONResponse(_cached_report)
+    return JSONResponse({"text": "", "audio": []})
+
+
 @asynccontextmanager
 async def lifespan(app):
-    """Start background MCP connections and LLM clients."""
+    """Start background MCP connections, LLM clients, and precache loop."""
     global claude_client
 
     claude_client = anthropic.AsyncAnthropic()
@@ -882,6 +1074,7 @@ async def lifespan(app):
 
     for url in mcp_urls:
         _tasks.append(asyncio.create_task(mcp_connection_loop(url)))
+    _tasks.append(asyncio.create_task(_precache_loop()))
 
     yield
 
@@ -896,6 +1089,9 @@ app = Starlette(
         Route("/chat/stream", chat_stream_endpoint, methods=["POST"]),
         Route("/tts", tts_endpoint, methods=["POST"]),
         Route("/transcribe", transcribe_endpoint, methods=["POST"]),
+        Route("/cached/greeting", cached_greeting_endpoint),
+        Route("/cached/quote", cached_quote_endpoint),
+        Route("/cached/report", cached_report_endpoint),
         Route("/health", health_endpoint),
     ],
     lifespan=lifespan,
