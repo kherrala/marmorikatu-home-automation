@@ -130,7 +130,8 @@ _OLLAMA_ALLOWED_TOOLS = {
     # Memory
     "remember", "recall",
     # Web browsing
-    "browser_navigate", "browser_snapshot", "browser_click", "browser_handle_dialog",
+    "browser_navigate", "browser_navigate_back", "browser_snapshot",
+    "browser_click", "browser_hover", "browser_handle_dialog",
     "browser_take_screenshot",
 }
 
