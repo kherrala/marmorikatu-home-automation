@@ -1,7 +1,7 @@
 export const FACE_DETECT_INTERVAL = 500;
 export const DETECTIONS_REQUIRED = 5;
 export const GREETING_COOLDOWN = 30_000;
-export const MAX_OVERLAY_DURATION = 600_000; // 10 min (was 5 min)
+export const MAX_OVERLAY_DURATION = Infinity; // no time limit — session ends only via farewell or face-gone
 export const JINGLE_DURATION = 30_000;
 export const FACE_GONE_DISMISS_MS = 15_000;
 export const MIN_GREETING_ALIVE_MS = 30_000;
