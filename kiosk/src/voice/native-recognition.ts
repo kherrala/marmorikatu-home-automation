@@ -110,27 +110,10 @@ export function startNativeListening(): void {
     console.warn('[voice] Native error:', event.error);
 
     if (event.error === 'no-speech' || event.error === 'aborted') {
-      // Use accumulated text if any
+      // no-speech = silence, aborted = we called stop(). Both are normal.
+      // Just use any accumulated text or restart — never fall back to MediaRecorder.
       const accumulated = (finalText || bestInterim)?.trim();
-      if (accumulated) {
-        finish(accumulated);
-      } else {
-        // After MAX_NATIVE_SILENCE failures, fall back to MediaRecorder
-        // instead of just stopping (so the user still has voice input)
-        dispatch({ type: 'NATIVE_SILENCE_INCREMENT' });
-        const st = getState();
-        if (st.voice.nativeSilenceCount >= MAX_NATIVE_SILENCE) {
-          console.warn('[voice] Too many native failures — falling back to MediaRecorder');
-          dispatch({ type: 'NATIVE_FAILED' });
-          resolved = true;
-          activeRecognizer = null;
-          if (hardTimer !== null) clearTimeout(hardTimer);
-          if (pauseTimer !== null) clearTimeout(pauseTimer);
-          onFallbackToRecorder?.();
-        } else {
-          finish(null);
-        }
-      }
+      finish(accumulated || null);
     } else {
       // Non-recoverable error — fall back to MediaRecorder permanently
       console.warn('[voice] Falling back to MediaRecorder + server transcription');
