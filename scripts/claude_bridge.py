@@ -595,9 +595,11 @@ async def chat_stream_endpoint(request: Request) -> Response:
                         if ss_match:
                             yield f"data: {json.dumps({'screenshot': ss_match.group(1)})}\n\n"
 
-        # Phase 2: Stream text response with inline TTS + handle tool calls
-        for phase2_iter in range(MAX_TOOL_ITERATIONS):
-            log.info("Stream Phase 2 [%d]: %d messages", phase2_iter + 1, len(ollama_messages))
+        # Phase 2: Stream text response with TTS. If the model makes tool calls
+        # during streaming, execute them and go back to Phase 1 for the next round.
+        keep_going = True
+        while keep_going:
+            log.info("Stream Phase 2: %d messages", len(ollama_messages))
             stream_tool_calls = []
 
             async with httpx.AsyncClient(timeout=120) as client:
@@ -619,7 +621,6 @@ async def chat_stream_endpoint(request: Request) -> Response:
                         chunk = json.loads(line)
                         msg = chunk.get("message", {})
 
-                        # Collect tool calls from streaming response
                         if msg.get("tool_calls"):
                             stream_tool_calls.extend(msg["tool_calls"])
 
@@ -633,48 +634,56 @@ async def chat_stream_endpoint(request: Request) -> Response:
                         parts = re.split(r'(?<=[.!?])\s+(?=[A-ZÄÖÅ])', sentence_buf)
                         while len(parts) > 1:
                             sentence = parts.pop(0).strip()
-                            if sentence:
-                                try:
-                                    wav = await _piper_synthesize(sentence)
-                                    log.info("Stream sentence: %s", sentence[:60])
-                                    yield f"data: {json.dumps({'audio': base64.b64encode(wav).decode(), 'text': sentence})}\n\n"
-                                except Exception as e:
-                                    log.error("Stream TTS error: %s", e)
+                            if not sentence or re.search(r'browser_\w+\(', sentence):
+                                continue
+                            try:
+                                wav = await _piper_synthesize(sentence)
+                                log.info("Stream sentence: %s", sentence[:60])
+                                yield f"data: {json.dumps({'audio': base64.b64encode(wav).decode(), 'text': sentence})}\n\n"
+                            except Exception as e:
+                                log.error("Stream TTS error: %s", e)
                         sentence_buf = parts[0] if parts else ""
 
-            # If streaming response made tool calls, execute them and loop
-            if stream_tool_calls:
-                ollama_messages.append({"role": "assistant", "content": full_text, "tool_calls": stream_tool_calls})
-                for tc in stream_tool_calls:
-                    tool_name = tc["function"]["name"]
-                    tool_input = tc["function"].get("arguments") or {}
-                    if isinstance(tool_input, str):
-                        try: tool_input = json.loads(tool_input)
-                        except: tool_input = {}
-                    log.info("Stream Phase 2 tool call: %s", tool_name)
-                    all_tool_calls.append({"tool": tool_name, "input": tool_input})
-                    yield f"data: {json.dumps({'tool_use': tool_name})}\n\n"
-                    result_text = await _call_tool_safe(tool_name, tool_input, phase2_iter + 1, "Stream-P2")
-                    img_match = re.search(r'\[IMAGE:(data:image/[^;]+;base64,[A-Za-z0-9+/=]+)\]', result_text)
-                    if img_match:
-                        yield f"data: {json.dumps({'screenshot': img_match.group(1)})}\n\n"
-                        result_text = re.sub(r'\n?\[IMAGE:data:image/[^\]]+\]', '', result_text)
-                    ollama_messages.append({"role": "tool", "content": result_text})
-                    if tool_name in ("browser_navigate", "browser_click", "browser_hover"):
-                        ss_result = await _call_tool_safe("browser_take_screenshot", {}, phase2_iter + 1, "Stream-P2")
-                        ss_match = re.search(r'\[IMAGE:(data:image/[^;]+;base64,[A-Za-z0-9+/=]+)\]', ss_result)
-                        if ss_match:
-                            yield f"data: {json.dumps({'screenshot': ss_match.group(1)})}\n\n"
-                sentence_buf = ""
-                continue  # loop back for more streaming
-            else:
-                break  # no tool calls — response is complete
+            if not stream_tool_calls:
+                keep_going = False
+                continue
+
+            # Tool calls detected — execute them (same as Phase 1) then loop back
+            ollama_messages.append({"role": "assistant", "content": full_text or "", "tool_calls": stream_tool_calls})
+            sentence_buf = ""
+            for tc in stream_tool_calls:
+                tool_name = tc["function"]["name"]
+                tool_input = tc["function"].get("arguments") or {}
+                if isinstance(tool_input, str):
+                    try: tool_input = json.loads(tool_input)
+                    except: tool_input = {}
+                log.info("Stream tool call (from Phase 2): %s", tool_name)
+                all_tool_calls.append({"tool": tool_name, "input": tool_input})
+                yield f"data: {json.dumps({'tool_use': tool_name})}\n\n"
+                result_text = await _call_tool_safe(tool_name, tool_input, 0, "Stream")
+                img_match = re.search(r'\[IMAGE:(data:image/[^;]+;base64,[A-Za-z0-9+/=]+)\]', result_text)
+                if img_match:
+                    yield f"data: {json.dumps({'screenshot': img_match.group(1)})}\n\n"
+                    result_text = re.sub(r'\n?\[IMAGE:data:image/[^\]]+\]', '', result_text)
+                if tool_name == "browser_snapshot" and len(result_text) > 500:
+                    for j, m in enumerate(ollama_messages):
+                        if (m.get("role") == "tool" and isinstance(m.get("content"), str)
+                                and len(m["content"]) > 500 and "Page URL:" in m["content"]):
+                            url_line = next((l for l in m["content"].split("\n") if "Page URL:" in l), "")
+                            ollama_messages[j] = {"role": "tool", "content": f"[Aiempi sivu: {url_line}]"}
+                ollama_messages.append({"role": "tool", "content": result_text})
+                if tool_name in ("browser_navigate", "browser_click", "browser_hover"):
+                    ss_result = await _call_tool_safe("browser_take_screenshot", {}, 0, "Stream")
+                    ss_match = re.search(r'\[IMAGE:(data:image/[^;]+;base64,[A-Za-z0-9+/=]+)\]', ss_result)
+                    if ss_match:
+                        yield f"data: {json.dumps({'screenshot': ss_match.group(1)})}\n\n"
 
         # Flush remaining text
-        if sentence_buf.strip():
+        flush_text = sentence_buf.strip()
+        if flush_text and not re.search(r'browser_\w+\(', flush_text):
             try:
-                wav = await _piper_synthesize(sentence_buf.strip())
-                yield f"data: {json.dumps({'audio': base64.b64encode(wav).decode(), 'text': sentence_buf.strip()})}\n\n"
+                wav = await _piper_synthesize(flush_text)
+                yield f"data: {json.dumps({'audio': base64.b64encode(wav).decode(), 'text': flush_text})}\n\n"
             except Exception as e:
                 log.error("Stream TTS flush error: %s", e)
         full_text_final = full_text.strip()
