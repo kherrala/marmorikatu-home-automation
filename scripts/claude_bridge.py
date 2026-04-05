@@ -314,7 +314,10 @@ async def run_ollama_agentic_loop(messages: list[dict], tools: list[dict]) -> di
     # Build messages with system prompt
     ollama_messages = [{"role": "system", "content": get_system_prompt()}]
     for m in messages:
-        ollama_messages.append({"role": m["role"], "content": m["content"]})
+        msg = {"role": m["role"], "content": m["content"]}
+        if m.get("images"):
+            msg["images"] = m["images"]  # base64 JPEG frames for vision
+        ollama_messages.append(msg)
 
     async with httpx.AsyncClient(timeout=120) as client:
         for iteration in range(MAX_TOOL_ITERATIONS):
@@ -485,7 +488,10 @@ async def chat_stream_endpoint(request: Request) -> Response:
     openai_tools = _tools_to_openai(ollama_tools)
     ollama_messages = [{"role": "system", "content": get_system_prompt()}]
     for m in messages:
-        ollama_messages.append({"role": m["role"], "content": m["content"]})
+        msg = {"role": m["role"], "content": m["content"]}
+        if m.get("images"):
+            msg["images"] = m["images"]  # base64 JPEG frames for vision
+        ollama_messages.append(msg)
 
     all_tool_calls: list[dict] = []
 

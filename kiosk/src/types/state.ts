@@ -10,6 +10,7 @@ export enum KioskPhase {
 export interface ConversationMessage {
   readonly role: 'user' | 'assistant';
   readonly content: string;
+  readonly images?: readonly string[]; // base64 JPEG frames for vision
 }
 
 export interface CarouselState {

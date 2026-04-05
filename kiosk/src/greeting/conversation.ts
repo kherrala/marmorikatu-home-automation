@@ -6,6 +6,7 @@ import { speakAndWait, playSentence } from '../audio/tts.js';
 import { setSpeaking } from '../dom/avatar.js';
 import { reportText, reportSpinner, userTextEl } from '../dom/elements.js';
 import { KioskPhase } from '../types/state.js';
+import { captureFrame, isVisionRequest } from '../camera/capture.js';
 
 // Only match short farewell-only utterances (max ~30 chars).
 const FAREWELL_PATTERNS = /^(heippa|heihei|hei\s*hei|näkemiin|nähdään|moi\s*moi|moikka|kiitos|bye|goodbye|see\s*you)[.!]?\s*$/i;
@@ -145,7 +146,12 @@ export async function handleVoiceResult(transcript: string): Promise<void> {
       return;
     }
 
-    dispatch({ type: 'CONVERSATION_ADD', message: { role: 'user', content: transcript } });
+    // Capture camera frame if user asks for vision analysis
+    const visionFrame = isVisionRequest(transcript) ? captureFrame() : null;
+    const message = visionFrame
+      ? { role: 'user' as const, content: transcript, images: [visionFrame] }
+      : { role: 'user' as const, content: transcript };
+    dispatch({ type: 'CONVERSATION_ADD', message });
     reportSpinner.classList.remove('hidden');
 
     // Try streaming (plays first sentence while LLM generates the rest)
