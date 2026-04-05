@@ -536,7 +536,7 @@ async def tts_endpoint(request: Request) -> Response:
         for sentence in sentences:
             try:
                 wav = await _piper_synthesize(sentence)
-                yield json.dumps({"audio": base64.b64encode(wav).decode()}) + "\n"
+                yield json.dumps({"audio": base64.b64encode(wav).decode(), "text": sentence}) + "\n"
             except Exception as e:
                 log.error("Piper TTS error for sentence %r: %s", sentence[:40], e)
 

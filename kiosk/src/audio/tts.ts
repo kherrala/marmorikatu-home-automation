@@ -29,7 +29,10 @@ export function playSentence(b64wav: string): Promise<boolean> {
   });
 }
 
-export async function speakAndWait(text: string): Promise<void> {
+export async function speakAndWait(
+  text: string,
+  onSentence?: (sentence: string) => void,
+): Promise<void> {
   // Try server-side TTS first -- streams NDJSON, one sentence per line
   try {
     const res = await fetch('/api/chat/tts', {
@@ -51,15 +54,17 @@ export async function speakAndWait(text: string): Promise<void> {
         buf = lines.pop()!;
         for (const line of lines) {
           if (!line.trim()) continue;
-          const { audio } = JSON.parse(line) as { audio: string };
-          await playSentence(audio);
+          const parsed = JSON.parse(line) as { audio: string; text?: string };
+          if (parsed.text) onSentence?.(parsed.text);
+          await playSentence(parsed.audio);
           played++;
         }
       }
       if (buf.trim()) {
         try {
-          const { audio } = JSON.parse(buf) as { audio: string };
-          await playSentence(audio);
+          const parsed = JSON.parse(buf) as { audio: string; text?: string };
+          if (parsed.text) onSentence?.(parsed.text);
+          await playSentence(parsed.audio);
           played++;
         } catch {}
       }

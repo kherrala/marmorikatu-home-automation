@@ -75,10 +75,11 @@ export async function handleVoiceResult(transcript: string): Promise<void> {
     try {
       const response = await generateAIResponse() || randomFallback();
       reportSpinner.classList.add('hidden');
-      reportText.textContent = response;
       dispatch({ type: 'CONVERSATION_ADD', message: { role: 'assistant', content: response } });
       dispatch({ type: 'SET_HAD_VOICE_INPUT' });
-      await speakAndWait(response);
+      await speakAndWait(response, (sentence) => {
+        reportText.textContent = sentence;
+      });
     } catch {
       const fallback = randomFallback();
       reportSpinner.classList.add('hidden');
