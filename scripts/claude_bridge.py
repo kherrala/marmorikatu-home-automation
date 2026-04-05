@@ -319,11 +319,12 @@ async def run_ollama_agentic_loop(messages: list[dict], tools: list[dict]) -> di
     all_tool_calls = []
     openai_tools = _tools_to_openai(tools)
 
-    # Build messages with system prompt
+    # Build messages with system prompt — limit to last 8 to prevent context overflow
+    recent = messages[-8:] if len(messages) > 8 else messages
     ollama_messages = [{"role": "system", "content": get_system_prompt()}]
-    for i, m in enumerate(messages):
+    for i, m in enumerate(recent):
         msg = {"role": m["role"], "content": m["content"]}
-        if m.get("images") and i == len(messages) - 1:
+        if m.get("images") and i == len(recent) - 1:
             msg["images"] = m["images"]
         ollama_messages.append(msg)
 
@@ -493,11 +494,12 @@ async def chat_stream_endpoint(request: Request) -> Response:
         return JSONResponse({"error": "No messages provided"}, status_code=400)
 
     openai_tools = _tools_to_openai(ollama_tools)
+    # Limit conversation history to last 8 messages to prevent context overflow
+    recent = messages[-8:] if len(messages) > 8 else messages
     ollama_messages = [{"role": "system", "content": get_system_prompt()}]
-    for i, m in enumerate(messages):
+    for i, m in enumerate(recent):
         msg = {"role": m["role"], "content": m["content"]}
-        # Only include images on the last message (current request) — older images waste context
-        if m.get("images") and i == len(messages) - 1:
+        if m.get("images") and i == len(recent) - 1:
             msg["images"] = m["images"]
         ollama_messages.append(msg)
 
