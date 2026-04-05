@@ -176,9 +176,10 @@ export async function handleVoiceResult(transcript: string): Promise<void> {
         reportText.textContent = sentence;
       },
       (toolName) => {
-        // Show which tool is being used during processing
-        reportSpinner.classList.remove('hidden');
-        userTextEl.textContent = `🔧 ${toolName}`;
+        // Show which tool is being used in the main text area
+        reportSpinner.classList.add('hidden');
+        userTextEl.textContent = '';
+        reportText.textContent = `🔧 ${toolName}`;
       },
     );
 
