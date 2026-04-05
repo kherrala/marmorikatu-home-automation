@@ -321,10 +321,10 @@ async def run_ollama_agentic_loop(messages: list[dict], tools: list[dict]) -> di
 
     # Build messages with system prompt
     ollama_messages = [{"role": "system", "content": get_system_prompt()}]
-    for m in messages:
+    for i, m in enumerate(messages):
         msg = {"role": m["role"], "content": m["content"]}
-        if m.get("images"):
-            msg["images"] = m["images"]  # base64 JPEG frames for vision
+        if m.get("images") and i == len(messages) - 1:
+            msg["images"] = m["images"]
         ollama_messages.append(msg)
 
     async with httpx.AsyncClient(timeout=120) as client:
@@ -494,9 +494,10 @@ async def chat_stream_endpoint(request: Request) -> Response:
 
     openai_tools = _tools_to_openai(ollama_tools)
     ollama_messages = [{"role": "system", "content": get_system_prompt()}]
-    for m in messages:
+    for i, m in enumerate(messages):
         msg = {"role": m["role"], "content": m["content"]}
-        if m.get("images"):
+        # Only include images on the last message (current request) — older images waste context
+        if m.get("images") and i == len(messages) - 1:
             msg["images"] = m["images"]
         ollama_messages.append(msg)
 
