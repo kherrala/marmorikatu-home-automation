@@ -74,7 +74,7 @@ def get_system_prompt() -> str:
         f"- ÄLÄ keksi säätietoja, uutisia, lämpötiloja tai kalenterimerkintöjä.\n"
         f"- Kerro vain se mitä työkalut palauttavat.\n"
         f"\n"
-        f"Vastaa lyhyesti suomeksi ilman muotoilua.\n"
+        f"Vastaa lyhyesti suomeksi. ÄLÄ käytä markdown-muotoilua (ei **tähtiä**, ei #otsikoita, ei -listoja).\n"
         f"Vastauksesi luetaan ääneen — pidä ne lyhyinä ja selkeinä.\n"
         f"Käyttäjä on kotona.\n"
         f"Kellarin lämpötila on tarkoituksella alempi kuin muissa kerroksissa — se ei ole ongelma.\n"
