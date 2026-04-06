@@ -95,18 +95,18 @@ export async function triggerGreeting(): Promise<void> {
     ).subscribe(() => dismissGreeting()),
   );
 
-  // Switch to relevant slide
+  // Switch to building automation overview (slide 0), or Nysse if bus leaves soon
   try {
     const res = await fetch('/api/departures');
     if (res.ok) {
       const departures = await res.json() as Array<{ departureMs: number }>;
       const busSoon = departures.some(d => d.departureMs > 0 && d.departureMs <= BUS_LEAVE_SOON_MS);
-      showSlideFn?.(busSoon && NYSSE_IDX >= 0 ? NYSSE_IDX : NEWS_IDX);
+      showSlideFn?.(busSoon && NYSSE_IDX >= 0 ? NYSSE_IDX : 0);
     } else {
-      showSlideFn?.(NEWS_IDX);
+      showSlideFn?.(0);
     }
   } catch {
-    showSlideFn?.(NEWS_IDX);
+    showSlideFn?.(0);
   }
 
   if (epoch !== greetingEpoch) return;
