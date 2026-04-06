@@ -916,6 +916,49 @@ async def health_endpoint(request: Request) -> JSONResponse:
 
 
 # -- Pre-cached greeting + daily report -----------------------------------------
+# -- Debug log for remote session diagnosis ------------------------------------
+from collections import deque
+_debug_sessions: dict[str, dict] = {}  # session_id → {ua, entries: deque}
+_DEBUG_MAX_ENTRIES = 100
+_DEBUG_MAX_SESSIONS = 20
+
+
+async def debug_endpoint(request: Request) -> Response:
+    """POST /debug — receive debug log from kiosk client.
+    GET /debug — return all active sessions with logs (HTML).
+    """
+    if request.method == "POST":
+        try:
+            body = await request.json()
+            sid = body.get("session", "?")
+            msg = body.get("msg", "")
+            ua = body.get("ua", "")
+            if sid not in _debug_sessions:
+                if len(_debug_sessions) >= _DEBUG_MAX_SESSIONS:
+                    oldest = next(iter(_debug_sessions))
+                    del _debug_sessions[oldest]
+                _debug_sessions[sid] = {"ua": ua, "entries": deque(maxlen=_DEBUG_MAX_ENTRIES)}
+            from datetime import datetime
+            _debug_sessions[sid]["entries"].append(
+                f"{datetime.now().strftime('%H:%M:%S')} {msg}"
+            )
+        except Exception:
+            pass
+        return Response("ok")
+
+    # GET — render HTML page with all sessions
+    html = "<html><head><meta charset='utf-8'><title>Kiosk Debug</title>"
+    html += "<meta http-equiv='refresh' content='5'>"
+    html += "<style>body{font:13px monospace;background:#111;color:#eee}h3{color:#4caf50;margin:20px 0 5px}"
+    html += "pre{background:#1a1a1a;padding:8px;border-radius:6px;max-height:400px;overflow:auto}</style></head><body>"
+    html += f"<h2>Kiosk Debug — {len(_debug_sessions)} sessions</h2>"
+    for sid, data in reversed(list(_debug_sessions.items())):
+        html += f"<h3>{sid} — {data['ua'][:60]}</h3>"
+        html += "<pre>" + "\n".join(data["entries"]) + "</pre>"
+    html += "</body></html>"
+    return Response(html, media_type="text/html")
+
+
 _cached_greeting: dict | None = None  # {"text": "...", "audio": [{"audio": "b64", "text": "..."}]}
 _cached_report: dict | None = None    # same format
 _cached_quote: dict | None = None     # same format — regenerated after each use
@@ -1137,6 +1180,7 @@ app = Starlette(
         Route("/cached/greeting", cached_greeting_endpoint),
         Route("/cached/quote", cached_quote_endpoint),
         Route("/cached/report", cached_report_endpoint),
+        Route("/debug", debug_endpoint, methods=["GET", "POST"]),
         Route("/health", health_endpoint),
     ],
     lifespan=lifespan,

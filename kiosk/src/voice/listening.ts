@@ -3,9 +3,10 @@ import { videoEl, listeningIndicator, jingleAudio, reportText } from '../dom/ele
 import { setListening } from '../dom/avatar.js';
 import { resumeIfSuspended } from '../audio/context.js';
 import { KioskPhase } from '../types/state.js';
-import { NativeSpeechRecognition } from './microphone.js';
+import { NativeSpeechRecognition, isIOS } from './microphone.js';
 import { audioStream } from '../camera/camera.js';
 import { scheduleDailyReport, clearSilenceTimer, getGreetingEpoch } from '../greeting/greeting.js';
+import { debugLog } from '../debug.js';
 import {
   startNativeListening,
   activeRecognizer,
@@ -76,9 +77,11 @@ export function startListening(): void {
 
   // Start voice recognition
   const state = getState();
+  debugLog(`startListening: native=${!!NativeSpeechRecognition} failed=${state.voice.nativeFailed} audioStream=${!!audioStream} isIOS=${isIOS}`);
   if (NativeSpeechRecognition && !state.voice.nativeFailed) {
     startNativeListening();
   } else if (audioStream) {
+    debugLog('Using MediaRecorder path');
     resumeIfSuspended();
     startRecording();
   }
