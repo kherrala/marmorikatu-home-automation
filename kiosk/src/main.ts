@@ -1,4 +1,5 @@
 import './styles.css';
+import './debug.js'; // initialize debug log (window.__kioskDebug)
 
 import { dispatch, getState, select } from './state/store.js';
 import { KioskPhase } from './types/state.js';

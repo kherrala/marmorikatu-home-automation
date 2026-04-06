@@ -1,5 +1,6 @@
 import { getState, dispatch } from '../state/store.js';
 import { KioskPhase } from '../types/state.js';
+import { debugLog } from '../debug.js';
 import { userTextEl, listeningIndicator } from '../dom/elements.js';
 import { setListening } from '../dom/avatar.js';
 import { NativeSpeechRecognition } from './microphone.js';
@@ -41,9 +42,14 @@ export function startNativeListening(): void {
   let hardTimer: ReturnType<typeof setTimeout> | null = null;
 
   function resetHardTimer(): void {
-    // No hard timeout — sessions are unlimited. The recognizer runs
-    // continuously until the user speaks or the greeting is dismissed.
-    // This prevents the abort/restart cycle from losing the first word.
+    if (hardTimer !== null) clearTimeout(hardTimer);
+    // 30s hard timeout — on mobile browsers the recognizer can hang
+    // without firing any events. Restart cleans up the stale session.
+    hardTimer = setTimeout(() => {
+      if (resolved) return;
+      debugLog('Native hard timeout (30s)');
+      try { recognizer.abort(); } catch {}
+    }, 30_000);
   }
 
   function finish(text: string | null): void {
@@ -104,7 +110,7 @@ export function startNativeListening(): void {
 
   recognizer.onerror = (event: SpeechRecognitionErrorEvent) => {
     if (resolved) return;
-    console.warn('[voice] Native error:', event.error);
+    debugLog(`Native error: ${event.error}`);
 
     if (event.error === 'no-speech' || event.error === 'aborted') {
       // no-speech = silence, aborted = we called stop(). Both are normal.
@@ -129,9 +135,9 @@ export function startNativeListening(): void {
 
   try {
     recognizer.start();
-    console.log('[voice] Native recognition started');
+    debugLog('Native recognition started');
   } catch (err) {
-    console.warn('[voice] Native recognition start failed:', err);
+    debugLog(`Native recognition start failed: ${err}`);
     dispatch({ type: 'NATIVE_FAILED' });
     resolved = true;
     activeRecognizer = null;
