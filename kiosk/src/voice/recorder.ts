@@ -1,6 +1,7 @@
 import { getState, dispatch } from '../state/store.js';
 import { audioStream } from '../camera/camera.js';
 import { analyserNode, getRMS } from './microphone.js';
+import { debugLog } from '../debug.js';
 import {
   SILENCE_THRESHOLD, SILENCE_DURATION, SILENCE_DURATION_SHORT,
   MIN_RECORDING_MS, MAX_RECORDING_MS,
@@ -21,7 +22,10 @@ export function setRestartHandler(fn: () => void): void {
 }
 
 export function startRecording(): void {
-  if (!audioStream || !getState().voice.listeningActive) return;
+  if (!audioStream || !getState().voice.listeningActive) {
+    debugLog(`startRecording skipped: stream=${!!audioStream} listening=${getState().voice.listeningActive}`);
+    return;
+  }
 
   let audioChunks: Blob[] = [];
   const recordingStartTime = Date.now();
@@ -30,6 +34,8 @@ export function startRecording(): void {
                  : MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm'
                  : MediaRecorder.isTypeSupported('audio/mp4') ? 'audio/mp4'
                  : '';
+
+  debugLog(`startRecording: mime=${mimeType || 'default'} tracks=${audioStream.getAudioTracks().length}`);
 
   try {
     const recorder = new MediaRecorder(audioStream, mimeType ? { mimeType } : {});
@@ -42,6 +48,8 @@ export function startRecording(): void {
     recorder.onstop = async () => {
       activeRecorder = null;
       const duration = Date.now() - recordingStartTime;
+      const totalSize = audioChunks.reduce((s, c) => s + c.size, 0);
+      debugLog(`recorder.onstop: duration=${duration}ms chunks=${audioChunks.length} size=${totalSize}b`);
       if (duration < MIN_RECORDING_MS || audioChunks.length === 0) {
         const s = getState();
         if (s.voice.listeningActive && s.phase === KioskPhase.GREETING) {
@@ -57,17 +65,21 @@ export function startRecording(): void {
       try {
         const formData = new FormData();
         formData.append('audio', blob, `recording.${ext}`);
+        debugLog(`Sending ${blob.size}b to transcribe`);
         const res = await fetch('/api/chat/transcribe', { method: 'POST', body: formData });
         if (res.ok) {
           const data = await res.json() as { text?: string };
           const text = data.text?.trim();
+          debugLog(`Transcription: "${text || '(empty)'}"`);
           if (text) {
             onVoiceResult?.(text);
             return;
           }
+        } else {
+          debugLog(`Transcription HTTP ${res.status}`);
         }
       } catch (err) {
-        console.warn('[voice] Transcription error:', err);
+        debugLog(`Transcription error: ${err}`);
       }
 
       const s = getState();
