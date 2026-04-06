@@ -977,7 +977,7 @@
             "type": "influxdb",
             "uid": "influxdb"
           },
-          "query": "import \"array\"\n\nkeittio = from(bucket: \"building_automation\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"ruuvi\" and r.sensor_name == \"Keittiö\")\n  |> filter(fn: (r) => r._field == \"pressure\")\n  |> last()\n  |> findRecord(fn: (key) => true, idx: 0)\n\ntakka = from(bucket: \"building_automation\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"ruuvi\" and r.sensor_name == \"Takka\")\n  |> filter(fn: (r) => r._field == \"pressure\")\n  |> last()\n  |> findRecord(fn: (key) => true, idx: 0)\n\nval = if exists keittio._value and exists takka._value then keittio._value - takka._value else 0.0\n\narray.from(rows: [{_time: now(), _value: val, _field: \"IVK tila\"}])",
+          "query": "import \"array\"\n\nkeittio = from(bucket: \"building_automation\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"ruuvi\" and r.sensor_name == \"Keittiö\")\n  |> filter(fn: (r) => r._field == \"pressure\")\n  |> last()\n  |> findRecord(fn: (key) => true, idx: 0)\n\nulko = from(bucket: \"building_automation\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"ruuvi\" and r.sensor_name == \"Ulkolämpötila\")\n  |> filter(fn: (r) => r._field == \"pressure\")\n  |> last()\n  |> findRecord(fn: (key) => true, idx: 0)\n\nval = if exists keittio._value and exists ulko._value then keittio._value - ulko._value else 0.0\n\narray.from(rows: [{_time: now(), _value: val, _field: \"IVK tila\"}])",
           "refId": "A"
         }
       ],
@@ -988,15 +988,29 @@
           "color": {
             "mode": "thresholds"
           },
+          "unit": "pressurehpa",
+          "decimals": 2,
           "mappings": [
             {
               "options": {
-                "from": -0.3,
-                "to": 0.3,
+                "from": -0.05,
+                "to": 0.05,
+                "result": {
+                  "color": "dark-orange",
+                  "index": 0,
+                  "text": "Ei paine-eroa ${__value.raw} hPa"
+                }
+              },
+              "type": "range"
+            },
+            {
+              "options": {
+                "from": -0.2,
+                "to": -0.05,
                 "result": {
                   "color": "dark-green",
-                  "index": 0,
-                  "text": "Normaali"
+                  "index": 1,
+                  "text": "Alipaine OK ${__value.raw} hPa"
                 }
               },
               "type": "range"
@@ -1004,23 +1018,35 @@
             {
               "options": {
                 "from": -999,
-                "to": -0.3,
+                "to": -0.2,
                 "result": {
                   "color": "dark-yellow",
-                  "index": 1,
-                  "text": "Alipaine"
+                  "index": 2,
+                  "text": "Suuri alipaine ${__value.raw} hPa"
                 }
               },
               "type": "range"
             },
             {
               "options": {
-                "from": 0.3,
+                "from": 0.05,
+                "to": 0.2,
+                "result": {
+                  "color": "orange",
+                  "index": 3,
+                  "text": "Ylipaine ${__value.raw} hPa"
+                }
+              },
+              "type": "range"
+            },
+            {
+              "options": {
+                "from": 0.2,
                 "to": 999,
                 "result": {
                   "color": "dark-red",
-                  "index": 2,
-                  "text": "Ylipaine"
+                  "index": 4,
+                  "text": "Suuri ylipaine ${__value.raw} hPa"
                 }
               },
               "type": "range"
@@ -1029,9 +1055,11 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              {"color": "green", "value": null},
-              {"color": "yellow", "value": -0.3},
-              {"color": "red", "value": 0.3}
+              {"color": "yellow", "value": null},
+              {"color": "green", "value": -0.2},
+              {"color": "dark-green", "value": -0.05},
+              {"color": "orange", "value": 0.05},
+              {"color": "red", "value": 0.2}
             ]
           }
         },
