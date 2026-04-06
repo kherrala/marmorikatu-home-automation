@@ -54,7 +54,15 @@ BOILER_COLD_LIMIT = float(os.environ.get("BOILER_COLD_LIMIT", "-15"))
 
 PRICE_PERCENTILE_CHEAP = float(os.environ.get("PRICE_PERCENTILE_CHEAP", "25"))
 PRICE_PERCENTILE_EXPENSIVE = float(os.environ.get("PRICE_PERCENTILE_EXPENSIVE", "75"))
-HISTORY_DAYS = int(os.environ.get("HISTORY_DAYS", "30"))
+HISTORY_DAYS = int(os.environ.get("HISTORY_DAYS", "365"))
+
+# Safety clamps for computed percentile thresholds (c/kWh).
+# Prevents nonsensical classification when history is skewed.
+# Typical prices: ~4 c/kWh summer, ~8 c/kWh winter, peaks up to 90 c/kWh.
+MIN_CHEAP_THRESHOLD = float(os.environ.get("MIN_CHEAP_THRESHOLD", "1.0"))
+MAX_CHEAP_THRESHOLD = float(os.environ.get("MAX_CHEAP_THRESHOLD", "6.0"))
+MIN_EXPENSIVE_THRESHOLD = float(os.environ.get("MIN_EXPENSIVE_THRESHOLD", "5.0"))
+MAX_EXPENSIVE_THRESHOLD = float(os.environ.get("MAX_EXPENSIVE_THRESHOLD", "15.0"))
 
 PRE_HEAT_HOURS = int(os.environ.get("PRE_HEAT_HOURS", "2"))
 PRE_HEAT_SLOTS = PRE_HEAT_HOURS * 4  # quarter-hour slots
@@ -515,10 +523,16 @@ def check_and_control(query_api, write_api):
         log.warning(f"Insufficient historical data ({len(historical)} points) — using forecast percentiles as fallback")
         historical = sorted(p for _, p in prices)
 
-    p_cheap = percentile(historical, PRICE_PERCENTILE_CHEAP)
-    p_expensive = percentile(historical, PRICE_PERCENTILE_EXPENSIVE)
+    p_cheap_raw = percentile(historical, PRICE_PERCENTILE_CHEAP)
+    p_expensive_raw = percentile(historical, PRICE_PERCENTILE_EXPENSIVE)
+    p_cheap = max(MIN_CHEAP_THRESHOLD, min(MAX_CHEAP_THRESHOLD, p_cheap_raw))
+    p_expensive = max(MIN_EXPENSIVE_THRESHOLD, min(MAX_EXPENSIVE_THRESHOLD, p_expensive_raw))
+    # Ensure cheap < expensive (could overlap if history is very narrow)
+    if p_cheap >= p_expensive:
+        p_cheap = p_expensive * 0.6
     log.info(f"Price thresholds (from {len(historical)} historical points): "
-             f"cheap ≤ {p_cheap:.2f}, expensive ≥ {p_expensive:.2f} c/kWh")
+             f"cheap ≤ {p_cheap:.2f} (raw P{PRICE_PERCENTILE_CHEAP:.0f}={p_cheap_raw:.2f}), "
+             f"expensive ≥ {p_expensive:.2f} (raw P{PRICE_PERCENTILE_EXPENSIVE:.0f}={p_expensive_raw:.2f}) c/kWh")
 
     # 3. Fetch outdoor temperature
     outdoor_temp = fetch_outdoor_temperature(query_api)
@@ -613,7 +627,8 @@ def main():
     log.info(f"Setpoints:  min={COMFORT_MIN}, default={COMFORT_DEFAULT}, max={COMFORT_MAX}")
     log.info(f"Reduction:  {REDUCTION_T}°C (effective min = {COMFORT_DEFAULT - REDUCTION_T}°C)")
     log.info(f"Boiler:     default={BOILER_STEPS_DEFAULT} steps, disabled during expensive (outdoor > {BOILER_COLD_LIMIT}°C)")
-    log.info(f"Percentiles: cheap ≤ P{PRICE_PERCENTILE_CHEAP:.0f}, expensive ≥ P{PRICE_PERCENTILE_EXPENSIVE:.0f}")
+    log.info(f"Percentiles: cheap ≤ P{PRICE_PERCENTILE_CHEAP:.0f}, expensive ≥ P{PRICE_PERCENTILE_EXPENSIVE:.0f} (history={HISTORY_DAYS}d)")
+    log.info(f"Safety clamps: cheap [{MIN_CHEAP_THRESHOLD}–{MAX_CHEAP_THRESHOLD}], expensive [{MIN_EXPENSIVE_THRESHOLD}–{MAX_EXPENSIVE_THRESHOLD}] c/kWh")
     log.info(f"Pre-heat:   {PRE_HEAT_HOURS}h ({PRE_HEAT_SLOTS} slots)")
     log.info(f"Max EVU:    {MAX_EVU_HOURS}h ({MAX_EVU_SLOTS} slots) consecutive")
     log.info(f"Rel spread: {MIN_RELATIVE_SPREAD} c/kWh min for relative fallback")
