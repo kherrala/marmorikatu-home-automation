@@ -9,8 +9,13 @@ export const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
 const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent)
   || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
 
+// Mobile browsers (Android/iOS) have unreliable native SpeechRecognition —
+// it silently stops after ~5s on Android Chrome. Use MediaRecorder + Whisper instead.
+const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
+  || navigator.maxTouchPoints > 1;
+
 export const NativeSpeechRecognition: (new () => SpeechRecognition) | null =
-  !isIOS && !isSafari
+  !isIOS && !isSafari && !isMobile
     ? ((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition) ?? null
     : null;
 
