@@ -804,8 +804,9 @@ def _get_whisper_model():
         if _whisper_model is not None:
             return _whisper_model  # another thread loaded it while we waited
         from faster_whisper import WhisperModel
-        log.info("Loading faster-whisper model (base)...")
-        _whisper_model = WhisperModel("base", device="cpu", compute_type="int8")
+        _whisper_size = os.environ.get("WHISPER_MODEL", "base")
+        log.info("Loading faster-whisper model (%s)...", _whisper_size)
+        _whisper_model = WhisperModel(_whisper_size, device="cpu", compute_type="int8")
         log.info("faster-whisper model loaded")
         return _whisper_model
 
