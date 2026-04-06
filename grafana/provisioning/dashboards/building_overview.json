@@ -998,7 +998,7 @@
                 "result": {
                   "color": "dark-orange",
                   "index": 0,
-                  "text": "Ei paine-eroa ${__value.raw} hPa"
+                  "text": "Ei paine-eroa"
                 }
               },
               "type": "range"
@@ -1010,7 +1010,7 @@
                 "result": {
                   "color": "dark-green",
                   "index": 1,
-                  "text": "Alipaine OK ${__value.raw} hPa"
+                  "text": "Pieni alipaine"
                 }
               },
               "type": "range"
@@ -1022,7 +1022,7 @@
                 "result": {
                   "color": "dark-yellow",
                   "index": 2,
-                  "text": "Suuri alipaine ${__value.raw} hPa"
+                  "text": "Suuri alipaine"
                 }
               },
               "type": "range"
@@ -1034,7 +1034,7 @@
                 "result": {
                   "color": "orange",
                   "index": 3,
-                  "text": "Ylipaine ${__value.raw} hPa"
+                  "text": "Ylipaine"
                 }
               },
               "type": "range"
@@ -1046,7 +1046,7 @@
                 "result": {
                   "color": "dark-red",
                   "index": 4,
-                  "text": "Suuri ylipaine ${__value.raw} hPa"
+                  "text": "Suuri ylipaine"
                 }
               },
               "type": "range"
