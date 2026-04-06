@@ -850,7 +850,7 @@ async def transcribe_endpoint(request: Request) -> JSONResponse:
             src.write(audio_bytes)
             src.flush()
 
-            # Re-mux through ffmpeg to fix malformed webm containers
+            # Convert to WAV via ffmpeg
             wav_path = src.name + ".wav"
             try:
                 proc = subprocess.run(
@@ -862,16 +862,53 @@ async def transcribe_endpoint(request: Request) -> JSONResponse:
                                 proc.returncode, proc.stderr[-200:] if proc.stderr else "")
                     wav_path = None
             except FileNotFoundError:
-                wav_path = None  # ffmpeg not installed, use original
+                wav_path = None
 
             transcribe_path = wav_path or src.name
 
-            loop = asyncio.get_event_loop()
-            model = await loop.run_in_executor(None, _get_whisper_model)
-            segments, _info = await loop.run_in_executor(
-                None, lambda: model.transcribe(transcribe_path, language="fi", beam_size=3)
-            )
-            text = " ".join(s.text.strip() for s in segments).strip()
+            # Try Gemma 4 audio transcription first (GPU-accelerated via Ollama)
+            text = None
+            use_ollama = os.environ.get("TRANSCRIBE_VIA_OLLAMA", "true").lower() == "true"
+            if use_ollama:
+                try:
+                    import httpx
+                    with open(transcribe_path, "rb") as af:
+                        audio_b64 = base64.b64encode(af.read()).decode()
+                    async with httpx.AsyncClient(timeout=30) as client:
+                        resp = await client.post(
+                            f"{OLLAMA_URL}/api/chat",
+                            json={
+                                "model": OLLAMA_MODEL,
+                                "messages": [{
+                                    "role": "user",
+                                    "content": "Kuuntele tämä ääni ja kirjoita VAIN puhuttu teksti suomeksi. Älä lisää mitään muuta.",
+                                    "images": [audio_b64],
+                                }],
+                                "stream": False,
+                                "think": False,
+                                "options": {"num_predict": 100, "temperature": 0.1},
+                            },
+                        )
+                        resp.raise_for_status()
+                        text = resp.json()["message"]["content"].strip()
+                        # Strip quotes and common prefixes the model might add
+                        text = text.strip('"\'').strip()
+                        if text.lower().startswith("teksti:"):
+                            text = text[7:].strip()
+                        log.info("Transcribe (Ollama): '%s'", text)
+                except Exception as e:
+                    log.warning("Ollama transcription failed (%s), falling back to Whisper", e)
+                    text = None
+
+            # Fallback: local Whisper on CPU
+            if not text:
+                loop = asyncio.get_event_loop()
+                model = await loop.run_in_executor(None, _get_whisper_model)
+                segments, _info = await loop.run_in_executor(
+                    None, lambda: model.transcribe(transcribe_path, language="fi", beam_size=3)
+                )
+                text = " ".join(s.text.strip() for s in segments).strip()
+                log.info("Transcribe (Whisper): '%s'", text)
 
             # Clean up wav temp file
             if wav_path:
@@ -880,7 +917,6 @@ async def transcribe_endpoint(request: Request) -> JSONResponse:
                 except OSError:
                     pass
 
-        log.info("Transcribe: '%s'", text)
         return JSONResponse({"text": text})
     except Exception as e:
         log.error("Transcription failed: %s", e)
