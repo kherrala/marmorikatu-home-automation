@@ -51,7 +51,6 @@ services:
       # Allow anonymous access (no login required for kiosk)
       - GF_AUTH_ANONYMOUS_ENABLED=true
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
-      - GF_AUTH_ANONYMOUS_ORG_NAME=Kiosk
       # Serve from /grafana/ sub-path behind nginx HTTPS proxy
       - GF_SERVER_DOMAIN=192.168.1.160
       - GF_SERVER_ROOT_URL=%(protocol)s://%(domain)s:%(http_port)s/grafana/
