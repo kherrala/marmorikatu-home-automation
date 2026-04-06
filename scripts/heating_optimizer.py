@@ -54,12 +54,19 @@ BOILER_COLD_LIMIT = float(os.environ.get("BOILER_COLD_LIMIT", "-15"))
 
 PRICE_PERCENTILE_CHEAP = float(os.environ.get("PRICE_PERCENTILE_CHEAP", "25"))
 PRICE_PERCENTILE_EXPENSIVE = float(os.environ.get("PRICE_PERCENTILE_EXPENSIVE", "75"))
-HISTORY_DAYS = int(os.environ.get("HISTORY_DAYS", "365"))
+
+# Seasonal price comparison: thresholds are computed from the same season's
+# historical data. Heating season has higher prices (~8 c/kWh avg), non-heating
+# season lower (~4 c/kWh avg). Transition around mid-March and mid-October.
+HEATING_SEASON_START_MONTH = 10   # October
+HEATING_SEASON_START_DAY = 15
+HEATING_SEASON_END_MONTH = 3      # mid-March
+HEATING_SEASON_END_DAY = 15
 
 # Safety clamps for computed percentile thresholds (c/kWh).
 # Prevents nonsensical classification when history is skewed.
 # Typical prices: ~4 c/kWh summer, ~8 c/kWh winter, peaks up to 90 c/kWh.
-MIN_CHEAP_THRESHOLD = float(os.environ.get("MIN_CHEAP_THRESHOLD", "1.0"))
+MIN_CHEAP_THRESHOLD = float(os.environ.get("MIN_CHEAP_THRESHOLD", "3.0"))
 MAX_CHEAP_THRESHOLD = float(os.environ.get("MAX_CHEAP_THRESHOLD", "6.0"))
 MIN_EXPENSIVE_THRESHOLD = float(os.environ.get("MIN_EXPENSIVE_THRESHOLD", "5.0"))
 MAX_EXPENSIVE_THRESHOLD = float(os.environ.get("MAX_EXPENSIVE_THRESHOLD", "15.0"))
@@ -194,15 +201,47 @@ from(bucket: "{INFLUXDB_BUCKET}")
         return []
 
 
+def is_heating_season(dt=None):
+    """Check if a date falls in the heating season (Oct 15 – Mar 15)."""
+    if dt is None:
+        dt = datetime.now(timezone.utc)
+    m, d = dt.month, dt.day
+    if m >= HEATING_SEASON_START_MONTH:
+        return m > HEATING_SEASON_START_MONTH or d >= HEATING_SEASON_START_DAY
+    if m <= HEATING_SEASON_END_MONTH:
+        return m < HEATING_SEASON_END_MONTH or d <= HEATING_SEASON_END_DAY
+    return False
+
+
 def fetch_historical_prices(query_api):
     """
-    Fetch electricity prices for the last HISTORY_DAYS days.
+    Fetch electricity prices from the same season across available history.
+    Compares winter prices to winter, summer to summer, so thresholds
+    reflect seasonal norms rather than annual averages.
     Returns sorted list of price values (c/kWh) for percentile calculation.
     """
+    heating = is_heating_season()
+    season_name = "heating" if heating else "non-heating"
+
+    # Build month filter for the season
+    if heating:
+        # Oct 15 – Mar 15: months 10, 11, 12, 1, 2, 3
+        months = [10, 11, 12, 1, 2, 3]
+    else:
+        # Mar 15 – Oct 15: months 3, 4, 5, 6, 7, 8, 9, 10
+        months = [3, 4, 5, 6, 7, 8, 9, 10]
+
+    month_filter = " or ".join(f'm == {m}' for m in months)
+
     flux = f"""
+import "date"
 from(bucket: "{INFLUXDB_BUCKET}")
-  |> range(start: -{HISTORY_DAYS}d)
+  |> range(start: -730d)
   |> filter(fn: (r) => r._measurement == "electricity" and r._field == "price_with_tax")
+  |> filter(fn: (r) => {{
+       m = date.month(t: r._time)
+       return {month_filter}
+     }})
   |> group()
 """
     try:
@@ -212,6 +251,7 @@ from(bucket: "{INFLUXDB_BUCKET}")
             for record in table.records:
                 values.append(record.get_value())
         values.sort()
+        log.info(f"Season: {season_name} (months {months}), {len(values)} historical price points")
         return values
     except Exception as e:
         log.error(f"Failed to fetch historical prices: {e}")
@@ -297,12 +337,13 @@ def apply_pre_heat_and_evu_cap(classified):
             else:
                 consecutive = 0
 
-    # 2. Pre-heat look-ahead: only promote CHEAP slots before EXPENSIVE blocks.
-    #    NORMAL-priced slots are not cheap enough to justify extra heating.
+    # 2. Pre-heat look-ahead: promote CHEAP and NORMAL slots before EXPENSIVE blocks.
+    #    Pre-heating is about the price differential — even NORMAL-priced slots
+    #    (e.g., 7 c/kWh) are worth pre-heating before expensive peaks (e.g., 12 c/kWh).
     for i, (ts, tier, price) in enumerate(result):
         if tier == EXPENSIVE:
             for j in range(max(0, i - PRE_HEAT_SLOTS), i):
-                if result[j][1] == CHEAP:
+                if result[j][1] in (CHEAP, NORMAL):
                     result[j] = (result[j][0], "PRE_HEAT", result[j][2])
 
     return result
@@ -627,14 +668,15 @@ def main():
     log.info(f"Setpoints:  min={COMFORT_MIN}, default={COMFORT_DEFAULT}, max={COMFORT_MAX}")
     log.info(f"Reduction:  {REDUCTION_T}°C (effective min = {COMFORT_DEFAULT - REDUCTION_T}°C)")
     log.info(f"Boiler:     default={BOILER_STEPS_DEFAULT} steps, disabled during expensive (outdoor > {BOILER_COLD_LIMIT}°C)")
-    log.info(f"Percentiles: cheap ≤ P{PRICE_PERCENTILE_CHEAP:.0f}, expensive ≥ P{PRICE_PERCENTILE_EXPENSIVE:.0f} (history={HISTORY_DAYS}d)")
+    season = "heating" if is_heating_season() else "non-heating"
+    log.info(f"Percentiles: cheap ≤ P{PRICE_PERCENTILE_CHEAP:.0f}, expensive ≥ P{PRICE_PERCENTILE_EXPENSIVE:.0f} (seasonal, currently {season})")
+    log.info(f"Seasons:    heating Oct {HEATING_SEASON_START_DAY}–Mar {HEATING_SEASON_END_DAY}, non-heating Mar {HEATING_SEASON_END_DAY}–Oct {HEATING_SEASON_START_DAY}")
     log.info(f"Safety clamps: cheap [{MIN_CHEAP_THRESHOLD}–{MAX_CHEAP_THRESHOLD}], expensive [{MIN_EXPENSIVE_THRESHOLD}–{MAX_EXPENSIVE_THRESHOLD}] c/kWh")
     log.info(f"Pre-heat:   {PRE_HEAT_HOURS}h ({PRE_HEAT_SLOTS} slots)")
     log.info(f"Max EVU:    {MAX_EVU_HOURS}h ({MAX_EVU_SLOTS} slots) consecutive")
     log.info(f"Rel spread: {MIN_RELATIVE_SPREAD} c/kWh min for relative fallback")
     log.info(f"Min block:  {MIN_EXPENSIVE_SLOTS} slots ({MIN_EXPENSIVE_SLOTS * 15}min) — shorter EXPENSIVE blocks filtered")
     log.info(f"Boiler gate: {BOILER_DISABLE_MIN_HOURS}h ({BOILER_DISABLE_MIN_SLOTS} slots) — shorter blocks keep aux heaters")
-    log.info(f"History:    {HISTORY_DAYS} days for percentile thresholds")
     log.info(f"Interval:   15-min price boundaries (+5s buffer), hold: {MIN_HOLD_MINUTES}min")
     if DRY_RUN:
         log.info("*** DRY RUN MODE — no MQTT commands will be sent ***")
