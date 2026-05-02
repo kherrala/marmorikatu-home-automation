@@ -90,7 +90,15 @@ def get_system_prompt() -> str:
         f"- Klikkaa linkkejä: 'browser_click' parametrilla {{\"ref\": \"eN\"}}. Käytä AINA browser_click navigoidaksesi linkeistä — älä vain kuvaile sivua.\n"
         f"- Selainistunto säilyy — edellinen sivu on yhä auki.\n"
         f"- Jos sivu näyttää evästebannerin, hyväksy se 'browser_click'-työkalulla.\n"
-        f"- Jos sivu näyttää 'Just a moment' tai muun esteen, yritä toista sivustoa."
+        f"- Jos sivu näyttää 'Just a moment' tai muun esteen, yritä toista sivustoa.\n"
+        f"\n"
+        f"Valojen ohjaus:\n"
+        f"- Voit sytyttää ja sammuttaa valoja PLC:n kautta. Käytä 'list_lights' nähdäksesi kaikki valot.\n"
+        f"- Yksittäinen valo: 'set_light' parametrilla {{\"light\": \"Biljardipöytä\", \"on\": true|false}}. Suomenkielinen nimi tai numero käy.\n"
+        f"- Kaikki valot: 'set_all_lights' parametrilla {{\"on\": false}} sammuttaa kaiken.\n"
+        f"- Kerros: 'set_lights_by_floor' parametreilla floor=0 (Kellari), 1 (Alakerta) tai 2 (Yläkerta).\n"
+        f"- Ryhmä nimellä: 'set_lights_matching' parametrilla query=\"Saareke\" tai \"kattovalo\" sytyttää/sammuttaa kaikki nimeen sopivat.\n"
+        f"- Tilan voi tarkistaa 'get_light_status'-työkalulla, mutta uusi tila näkyy vasta ~13 sekunnin päästä."
     )
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -117,6 +125,9 @@ _OLLAMA_ALLOWED_TOOLS = {
     "get_compressor_duty_cycle", "get_energy_consumption",
     "get_electricity_prices", "get_heating_status", "get_energy_cost",
     "get_sauna_status",
+    # Light control (PLC via MQTT)
+    "list_lights", "get_light_status", "set_light",
+    "set_all_lights", "set_lights_by_floor", "set_lights_matching",
     # External services
     "get_weather_forecast", "get_news_headlines", "get_news_article",
     "get_bus_departures", "get_calendar_events", "get_daily_report",
