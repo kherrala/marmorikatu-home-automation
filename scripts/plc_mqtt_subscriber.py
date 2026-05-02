@@ -312,9 +312,10 @@ def build_switches(payload, ts):
 def build_heating(payload, ts):
     """Underfloor-heating zone valves → rooms/room_type=valve, grouped by floor.
 
-    Values are written as float 0.0/1.0 — Grafana's `pivot()` rejects
-    columns that mix int and float. Bedroom/common temperatures are float,
-    so valves must match.
+    Stored as int 0/1. The `rooms` measurement's bedroom/common/basement
+    fields are float temperatures, so the room_temperatures dashboard
+    pivots filter out room_type=valve to avoid Grafana's int/float
+    schema-collision error.
     """
     grouped = {}
     for key, value in payload.items():
@@ -322,7 +323,7 @@ def build_heating(payload, ts):
         if not mapping:
             continue
         field, floor = mapping
-        grouped.setdefault(floor, {})[field] = 1.0 if to_bool(value) else 0.0
+        grouped.setdefault(floor, {})[field] = 1 if to_bool(value) else 0
 
     points = []
     for floor, fields in grouped.items():
