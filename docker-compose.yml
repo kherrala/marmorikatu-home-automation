@@ -158,6 +158,9 @@ services:
       - INFLUXDB_ORG=wago
       - INFLUXDB_BUCKET=building_automation
       - MCP_PORT=3001
+      - MQTT_BROKER=freenas.kherrala.fi
+      - MQTT_PORT=1883
+      - MQTT_TOPIC_PREFIX=marmorikatu
       - WEATHER_API_URL=http://weather:3020/api/weather
       - NEWS_API_URL=http://news:3021/api/news
       - BUS_API_URL=http://host.docker.internal:3010/api/departures

@@ -5,10 +5,11 @@ WORKDIR /app
 
 # Install dependencies
 COPY scripts/requirements.txt /app/
-RUN pip install --no-cache-dir -r requirements.txt mcp uvicorn starlette httpx aioharmony
+RUN pip install --no-cache-dir -r requirements.txt mcp uvicorn starlette httpx aioharmony paho-mqtt
 
-# Copy server script and tools package
+# Copy server script, shared modules, and tools package
 COPY scripts/mcp_server.py /app/
+COPY scripts/light_labels.py /app/
 COPY scripts/mcp_tools/ /app/mcp_tools/
 
 # Environment variables (defaults, override in docker-compose)

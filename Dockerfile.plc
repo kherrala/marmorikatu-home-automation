@@ -7,5 +7,6 @@ RUN pip install --no-cache-dir \
     influxdb-client
 
 COPY scripts/plc_mqtt_subscriber.py /app/
+COPY scripts/light_labels.py /app/
 
 CMD ["python", "-u", "plc_mqtt_subscriber.py"]
