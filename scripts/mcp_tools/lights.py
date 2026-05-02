@@ -96,6 +96,63 @@ TOOLS = [
             "required": ["light", "on"],
         },
     ),
+    Tool(
+        name="set_all_lights",
+        description=(
+            "Turn every known light on or off in one batch. Use for 'sammuta "
+            "kaikki valot' / 'turn everything off'. Publishes to every "
+            "Controls index in the LIGHT_LABELS table over a single MQTT "
+            "connection."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "on": {"type": "boolean",
+                       "description": "True for everything on, false for off"},
+            },
+            "required": ["on"],
+        },
+    ),
+    Tool(
+        name="set_lights_by_floor",
+        description=(
+            "Turn all lights on a given floor on or off. Floor is "
+            "0=Kellari (basement), 1=Alakerta (ground), 2=Yläkerta "
+            "(upstairs). Pass floor=null to target outdoor / unclassified "
+            "lights (Autokatos, Varasto, Sisäänkäynti, etc.)."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "floor": {
+                    "type": ["integer", "null"],
+                    "description": "0, 1, 2, or null for outdoor",
+                },
+                "on": {"type": "boolean"},
+            },
+            "required": ["floor", "on"],
+        },
+    ),
+    Tool(
+        name="set_lights_matching",
+        description=(
+            "Turn on/off every light whose Finnish name contains the given "
+            "substring (case-insensitive). Useful for groups like 'Saareke' "
+            "(8 island spots), 'Kellari' (every basement light), 'kattovalo' "
+            "(every ceiling light). Returns the list of lights that matched."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Substring to match against light names",
+                },
+                "on": {"type": "boolean"},
+            },
+            "required": ["query", "on"],
+        },
+    ),
 ]
 
 
@@ -188,6 +245,28 @@ def _publish_set(idx, on, client_id):
     return topic, payload
 
 
+def _publish_batch(indices, on, client_id):
+    """Publish 'true'/'false' to a set of light indices over one connection."""
+    payload = "true" if on else "false"
+    msgs = [
+        {
+            "topic": f"{MQTT_TOPIC_PREFIX}/light/{idx}/set",
+            "payload": payload,
+            "qos": 1,
+            "retain": False,
+        }
+        for idx in indices
+    ]
+    if msgs:
+        mqtt_publish.multiple(
+            msgs,
+            hostname=MQTT_BROKER,
+            port=MQTT_PORT,
+            client_id=client_id,
+        )
+    return payload
+
+
 async def handle_set_light(arguments):
     query = arguments.get("light")
     on = arguments.get("on")
@@ -221,8 +300,94 @@ async def handle_set_light(arguments):
         return [TextContent(type="text", text=f"Error: {e}")]
 
 
+async def handle_set_all_lights(arguments):
+    on = arguments.get("on")
+    if on is None:
+        return [TextContent(type="text",
+                            text='{"error": "on parameter is required"}')]
+    try:
+        indices = sorted(LIGHT_LABELS.keys())
+        payload = _publish_batch(indices, bool(on), "marmorikatu-mcp-batch")
+        log.info("set_all_lights → %s for %d lights", payload, len(indices))
+        return [TextContent(type="text", text=json.dumps({
+            "count": len(indices),
+            "payload": payload,
+            "status": "batch sent — verify with list_lights",
+        }, ensure_ascii=False, indent=2))]
+    except Exception as e:
+        log.error("set_all_lights error: %s\n%s", e, traceback.format_exc())
+        return [TextContent(type="text", text=f"Error: {e}")]
+
+
+async def handle_set_lights_by_floor(arguments):
+    floor = arguments.get("floor")
+    on = arguments.get("on")
+    if on is None:
+        return [TextContent(type="text",
+                            text='{"error": "on parameter is required"}')]
+    if floor not in (0, 1, 2, None):
+        return [TextContent(type="text",
+                            text='{"error": "floor must be 0, 1, 2, or null"}')]
+    try:
+        indices = sorted(idx for idx, (_, f) in LIGHT_LABELS.items() if f == floor)
+        if not indices:
+            return [TextContent(type="text", text=json.dumps({
+                "error": f"No lights on floor {floor}",
+            }, ensure_ascii=False))]
+        payload = _publish_batch(indices, bool(on), "marmorikatu-mcp-floor")
+        log.info("set_lights_by_floor(%s) → %s for %d lights",
+                 floor, payload, len(indices))
+        return [TextContent(type="text", text=json.dumps({
+            "floor": floor,
+            "floor_name": floor_name(floor),
+            "count": len(indices),
+            "lights": [LIGHT_LABELS[i][0] for i in indices],
+            "payload": payload,
+            "status": "batch sent — verify with list_lights",
+        }, ensure_ascii=False, indent=2))]
+    except Exception as e:
+        log.error("set_lights_by_floor error: %s\n%s", e, traceback.format_exc())
+        return [TextContent(type="text", text=f"Error: {e}")]
+
+
+async def handle_set_lights_matching(arguments):
+    query = arguments.get("query")
+    on = arguments.get("on")
+    if not query:
+        return [TextContent(type="text",
+                            text='{"error": "query parameter is required"}')]
+    if on is None:
+        return [TextContent(type="text",
+                            text='{"error": "on parameter is required"}')]
+    needle = str(query).strip().lower()
+    matches = [(idx, name) for idx, (name, _) in LIGHT_LABELS.items()
+               if needle in name.lower()]
+    if not matches:
+        return [TextContent(type="text", text=json.dumps({
+            "error": f"No lights match '{query}'",
+        }, ensure_ascii=False))]
+    try:
+        indices = [idx for idx, _ in matches]
+        payload = _publish_batch(indices, bool(on), "marmorikatu-mcp-match")
+        log.info("set_lights_matching('%s') → %s for %d lights",
+                 query, payload, len(indices))
+        return [TextContent(type="text", text=json.dumps({
+            "query": query,
+            "count": len(indices),
+            "lights": [name for _, name in matches],
+            "payload": payload,
+            "status": "batch sent — verify with list_lights",
+        }, ensure_ascii=False, indent=2))]
+    except Exception as e:
+        log.error("set_lights_matching error: %s\n%s", e, traceback.format_exc())
+        return [TextContent(type="text", text=f"Error: {e}")]
+
+
 HANDLERS = {
     "list_lights": handle_list_lights,
     "get_light_status": handle_get_light_status,
     "set_light": handle_set_light,
+    "set_all_lights": handle_set_all_lights,
+    "set_lights_by_floor": handle_set_lights_by_floor,
+    "set_lights_matching": handle_set_lights_matching,
 }
