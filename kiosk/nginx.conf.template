@@ -24,8 +24,9 @@ server {
     }
 }
 
-# Plain HTTP MCP SSE proxy on port 3080 (for Claude Desktop — LAN only)
+# Plain HTTP MCP streamable-HTTP proxy on port 3080 (for Claude Desktop — LAN only)
 # Node.js ignores macOS Keychain, so self-signed HTTPS doesn't work reliably.
+# Server endpoint is /mcp; this listener forwards everything verbatim.
 server {
     listen 3080;
     resolver 127.0.0.11 valid=10s;
@@ -103,7 +104,7 @@ server {
         proxy_set_header Host influxdb;
     }
 
-    # MCP Server SSE endpoint (for Claude Desktop clients)
+    # MCP Server streamable-HTTP endpoint (for Claude Desktop clients)
     location /mcp/ {
         set $backend_mcp mcp:3001;
         rewrite ^/mcp(/.*)$ $1 break;

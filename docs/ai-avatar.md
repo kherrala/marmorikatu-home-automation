@@ -172,7 +172,7 @@ statistics.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `MCP_URLS` | `http://mcp:3001/sse` | Comma-separated MCP server URLs |
+| `MCP_URLS` | `http://mcp:3001/mcp` | Comma-separated MCP server URLs |
 | `OLLAMA_URL` | `http://192.168.1.36:11434` | Ollama API endpoint |
 | `OLLAMA_MODEL` | `qwen3.5:9b` | Ollama model name |
 | `OLLAMA_NUM_CTX` | `16384` | Ollama context window size |
@@ -195,7 +195,7 @@ claude-bridge:
   ports:
     - "3002:3002"
   environment:
-    - MCP_URLS=http://mcp:3001/sse
+    - MCP_URLS=http://mcp:3001/mcp
     - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
     - CLAUDE_MODEL=claude-haiku-4-5-20251001
     - OLLAMA_URL=http://192.168.1.36:11434

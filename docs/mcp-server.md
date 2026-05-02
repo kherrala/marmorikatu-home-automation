@@ -10,11 +10,11 @@ about building automation data from Claude Desktop.
    docker compose up -d
    ```
 
-2. The MCP server will be available at: `http://localhost:3001/sse`
+2. The MCP server will be available at: `http://localhost:3001/mcp`
 
 3. Configure Claude Desktop (Settings → Developer → MCP Servers → Add):
    - **Name**: Building Automation
-   - **URL**: `http://localhost:3001/sse`
+   - **URL**: `http://localhost:3001/mcp`
 
 4. Restart Claude Desktop if needed
 
@@ -24,7 +24,7 @@ Alternatively, add to Claude Desktop MCP configuration file:
 {
   "mcpServers": {
     "building-automation": {
-      "url": "http://localhost:3001/sse"
+      "url": "http://localhost:3001/mcp"
     }
   }
 }
@@ -34,8 +34,7 @@ Alternatively, add to Claude Desktop MCP configuration file:
 
 | Endpoint | Description |
 |----------|-------------|
-| `http://localhost:3001/sse` | MCP SSE endpoint for Claude Desktop |
-| `http://localhost:3001/messages/` | Message POST endpoint |
+| `http://localhost:3001/mcp` | MCP streamable-HTTP endpoint for Claude Desktop |
 | `http://localhost:3001/health` | Health check endpoint |
 
 ### Verify Server is Running
@@ -85,8 +84,10 @@ Once connected, you can ask Claude questions like:
 ## Implementation
 
 - **Source**: `scripts/mcp_server.py`
-- **Transport**: SSE (Server-Sent Events) via Starlette + uvicorn
-- **Protocol**: MCP SDK (`mcp.server`, `mcp.server.sse`)
+- **Transport**: Streamable HTTP via Starlette + uvicorn (replaces the
+  earlier SSE transport, which lost session state on every server restart
+  and made Claude Desktop's built-in client disconnect permanently)
+- **Protocol**: MCP SDK (`mcp.server`, `mcp.server.streamable_http_manager`)
 - **Data source**: InfluxDB Flux queries against `building_automation` bucket
 - **Schema**: Built-in schema documentation with field descriptions and units,
   served via the `describe_schema` tool

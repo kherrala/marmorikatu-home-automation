@@ -2,23 +2,30 @@
 """
 MCP Server for Building Automation Data Analytics.
 
-Provides tools for Claude Desktop to query and analyze measurement data
-from InfluxDB (HVAC, room temperatures, Ruuvi sensors, Thermia heat pump).
+Provides tools for Claude Desktop / claude-bridge to query and analyze
+measurement data from InfluxDB (HVAC, room temperatures, Ruuvi sensors,
+Thermia heat pump) and to control lights via the WAGO PLC over MQTT.
 
-Runs as an SSE (Server-Sent Events) server for URL-based MCP integration.
+Uses the streamable HTTP transport at `/mcp`. SSE was previously served at
+`/sse`, but its in-memory session map made every server restart fatal for
+Claude Desktop's built-in client; streamable HTTP supports session
+resumption so a redeploy no longer requires Claude Desktop to be toggled.
 """
 
 import os
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Any
 
 import uvicorn
 from mcp.server import Server
-from mcp.server.sse import SseServerTransport
+from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 from mcp.types import Tool, TextContent
 from starlette.applications import Starlette
 from starlette.routing import Route, Mount
-from starlette.responses import JSONResponse, Response
+from starlette.responses import JSONResponse
+from starlette.types import Scope, Receive, Send
 
 from mcp_tools import ALL_TOOLS, ALL_HANDLERS
 
@@ -43,37 +50,34 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
     return await handler(arguments)
 
 
-def create_starlette_app():
-    """Create Starlette app with SSE transport for MCP."""
-    sse = SseServerTransport("/messages/")
+def create_starlette_app() -> Starlette:
+    """Create Starlette app with streamable HTTP transport for MCP."""
+    session_manager = StreamableHTTPSessionManager(
+        app=app,
+        event_store=None,
+        json_response=False,
+        stateless=False,
+    )
 
-    class _NullResponse(Response):
-        """No-op response returned after SSE session ends to satisfy Starlette routing."""
-        async def __call__(self, scope, receive, send) -> None:
-            pass  # connection already closed by SSE transport
+    async def handle_mcp(scope: Scope, receive: Receive, send: Send) -> None:
+        await session_manager.handle_request(scope, receive, send)
 
-    async def handle_sse(request):
-        async with sse.connect_sse(
-            request.scope, request.receive, request._send
-        ) as streams:
-            await app.run(
-                streams[0], streams[1], app.create_initialization_options()
-            )
-        return _NullResponse()
-
-    async def health_check(request):
+    async def health_check(_request):
         return JSONResponse({"status": "ok", "service": "building-automation-mcp"})
 
-    starlette_app = Starlette(
+    @asynccontextmanager
+    async def lifespan(_app: Starlette) -> AsyncIterator[None]:
+        async with session_manager.run():
+            yield
+
+    return Starlette(
         debug=False,
         routes=[
             Route("/health", health_check),
-            Route("/sse", handle_sse),
-            Mount("/messages/", app=sse.handle_post_message),
+            Mount("/mcp", app=handle_mcp),
         ],
+        lifespan=lifespan,
     )
-
-    return starlette_app
 
 
 def main():
@@ -82,11 +86,10 @@ def main():
     port = int(os.environ.get("MCP_PORT", "3001"))
 
     print(f"Starting Building Automation MCP Server")
-    print(f"  URL: http://{host}:{port}/sse")
+    print(f"  URL: http://{host}:{port}/mcp")
     print(f"  Health: http://{host}:{port}/health")
 
-    starlette_app = create_starlette_app()
-    uvicorn.run(starlette_app, host=host, port=port, log_level="info")
+    uvicorn.run(create_starlette_app(), host=host, port=port, log_level="info")
 
 
 if __name__ == "__main__":

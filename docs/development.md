@@ -42,7 +42,7 @@ docker compose logs -f <service>   # influxdb | grafana | mcp | ruuvi | thermia 
 
 - **Grafana**: http://localhost:3000 (admin/admin)
 - **InfluxDB**: http://localhost:8086 (admin/adminpassword)
-- **MCP Server**: http://localhost:3001/sse
+- **MCP Server**: http://localhost:3001/mcp
 
 ## WAGO Controller SSH Setup
 
