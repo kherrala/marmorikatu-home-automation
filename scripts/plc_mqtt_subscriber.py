@@ -267,10 +267,12 @@ def build_lights(payload, ts):
             continue
         label_floor = LIGHT_LABELS.get(idx)
         if label_floor is None:
-            # Unmapped index — store with synthetic name so we don't lose data.
-            name, floor = f"light_{idx}", None
-        else:
-            name, floor = label_floor
+            # Unmapped index — these correspond to gaps in the PLC's
+            # PersistentVars.Controls[] array (entries with no buttontxt
+            # label, e.g. indices 21 and 27). Skip rather than emitting a
+            # synthetic `light_<idx>` row that pollutes the dashboards.
+            continue
+        name, floor = label_floor
         p = (Point("lights")
              .tag("light_id", str(idx))
              .tag("light_name", name)
