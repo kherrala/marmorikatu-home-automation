@@ -549,7 +549,7 @@
             "type": "influxdb",
             "uid": "influxdb"
           },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"lights\")\n  |> filter(fn: (r) => r.switch_type == \"primary\" or r.switch_type == \"outlet\")\n  |> filter(fn: (r) => r.floor == \"\")\n  |> filter(fn: (r) => r._field == \"is_on\")\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n  |> map(fn: (r) => ({r with _field: r.light_name}))\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])",
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"lights\")\n  |> filter(fn: (r) => r.switch_type == \"primary\" or r.switch_type == \"outlet\")\n  |> filter(fn: (r) => r.floor_name == \"Ulko\")\n  |> filter(fn: (r) => r._field == \"is_on\")\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n  |> map(fn: (r) => ({r with _field: r.light_name}))\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])",
           "refId": "A"
         }
       ]
