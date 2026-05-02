@@ -161,7 +161,7 @@ See [docs/heat-recovery-efficiency.md](docs/heat-recovery-efficiency.md) for for
 
 ## MCP Server
 
-An MCP server at `http://localhost:3001/mcp` provides 15+ tools for querying building automation data from Claude Desktop.
+An MCP server at `http://localhost:3001/mcp/` provides 15+ tools for querying building automation data from Claude Desktop.
 
 See [docs/mcp-server.md](docs/mcp-server.md) for setup instructions, tool listing, and example queries.
 

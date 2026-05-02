@@ -27,7 +27,7 @@ RUN mkdir -p /models && \
 COPY scripts/claude_bridge.py /app/
 
 # Environment variables (defaults, override in docker-compose)
-ENV MCP_URL=http://mcp:3001/mcp
+ENV MCP_URL=http://mcp:3001/mcp/
 ENV CLAUDE_MODEL=claude-haiku-4-5-20251001
 ENV BRIDGE_PORT=3002
 

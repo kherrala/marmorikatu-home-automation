@@ -86,7 +86,7 @@ def main():
     port = int(os.environ.get("MCP_PORT", "3001"))
 
     print(f"Starting Building Automation MCP Server")
-    print(f"  URL: http://{host}:{port}/mcp")
+    print(f"  URL: http://{host}:{port}/mcp/")
     print(f"  Health: http://{host}:{port}/health")
 
     uvicorn.run(create_starlette_app(), host=host, port=port, log_level="info")

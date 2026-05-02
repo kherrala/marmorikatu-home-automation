@@ -181,7 +181,7 @@ services:
     ports:
       - "3002:3002"
     environment:
-      - MCP_URLS=http://mcp:3001/mcp,http://remind:8765/sse?db=home,http://playwright-mcp:3025/sse
+      - MCP_URLS=http://mcp:3001/mcp/,http://remind:8765/sse?db=home,http://playwright-mcp:3025/sse
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - CLAUDE_MODEL=claude-haiku-4-5-20251001

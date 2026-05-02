@@ -10,11 +10,11 @@ about building automation data from Claude Desktop.
    docker compose up -d
    ```
 
-2. The MCP server will be available at: `http://localhost:3001/mcp`
+2. The MCP server will be available at: `http://localhost:3001/mcp/`
 
 3. Configure Claude Desktop (Settings → Developer → MCP Servers → Add):
    - **Name**: Building Automation
-   - **URL**: `http://localhost:3001/mcp`
+   - **URL**: `http://localhost:3001/mcp/`
 
 4. Restart Claude Desktop if needed
 
@@ -24,7 +24,7 @@ Alternatively, add to Claude Desktop MCP configuration file:
 {
   "mcpServers": {
     "building-automation": {
-      "url": "http://localhost:3001/mcp"
+      "url": "http://localhost:3001/mcp/"
     }
   }
 }
@@ -34,7 +34,7 @@ Alternatively, add to Claude Desktop MCP configuration file:
 
 | Endpoint | Description |
 |----------|-------------|
-| `http://localhost:3001/mcp` | MCP streamable-HTTP endpoint for Claude Desktop |
+| `http://localhost:3001/mcp/` | MCP streamable-HTTP endpoint for Claude Desktop |
 | `http://localhost:3001/health` | Health check endpoint |
 
 ### Verify Server is Running
