@@ -117,19 +117,21 @@ claude_client: anthropic.AsyncAnthropic | None = None
 # Whitelist of tools available to Ollama. Small models can't handle too many tools.
 # Claude fallback gets the full set from all MCP servers.
 _OLLAMA_ALLOWED_TOOLS = {
-    # Home automation
+    # Home automation — only the high-level / commonly-asked tools.
+    # Deep diagnostics (heatpump COP, brine, hotwater, duty cycle, freezing
+    # probability) are still available via the Claude fallback path; trimming
+    # them keeps gemma4:e4b's tool-selection focused.
     "get_latest", "get_room_temperatures", "get_air_quality",
-    "compare_indoor_outdoor", "get_heat_recovery_efficiency",
-    "get_freezing_probability", "get_thermia_status", "get_thermia_temperatures",
-    "get_heatpump_cop", "get_brine_circuit", "get_hotwater_analysis",
-    "get_compressor_duty_cycle", "get_energy_consumption",
-    "get_electricity_prices", "get_heating_status", "get_energy_cost",
+    "compare_indoor_outdoor",
+    "get_thermia_status", "get_thermia_temperatures",
+    "get_energy_consumption", "get_electricity_prices",
+    "get_heating_status", "get_energy_cost",
     "get_sauna_status",
     # Light control (PLC via MQTT)
     "list_lights", "get_light_status", "set_light",
     "set_all_lights", "set_lights_by_floor", "set_lights_matching",
     # External services
-    "get_weather_forecast", "get_news_headlines", "get_news_article",
+    "get_weather_forecast", "get_news_headlines",
     "get_bus_departures", "get_calendar_events", "get_daily_report",
     # Harmony Hub
     "harmony_list_activities", "harmony_current_activity",
