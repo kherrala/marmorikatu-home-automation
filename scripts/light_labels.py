@@ -61,7 +61,7 @@ LIGHT_LABELS = {
     52: ("WC kellari", 0),
     53: ("Kellari varasto", 0),
     54: ("Olohuone kattovalo", 1),
-    55: ("Kodinhoitohuone kattovalo", 1),
+    55: ("Olohuone kattovalo 2", 1),
     56: ("Kodinhoitohuone kattovalo 2", 1),
     59: ("Autokatos", None),
     60: ("Varasto ulkovalo", None),
