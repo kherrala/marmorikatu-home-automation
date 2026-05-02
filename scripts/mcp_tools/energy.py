@@ -89,41 +89,31 @@ spot price + 0.49 c/kWh margin + 6.09 c/kWh transfer fee.""",
 
 
 def _query_hp_consumption(time_range):
-    """Query heat pump consumption (shared by get_energy_consumption and get_energy_cost)."""
-    flux_hp_temps = f"""
+    """Heat-pump and aux-heater consumption from the OR-WE-517 meters.
+
+    Reads the cumulative `Total_Active_Energy` (kWh) from the `hvac`
+    measurement (sensor_group=energy, meter=heatpump|extra) at the start
+    and end of the range and returns the delta. Replaces the previous
+    compressor-on-time × wattage estimate, which only worked when the
+    heat-pump module reported on/off statuses but never reflected actual
+    draw (e.g., variable-speed compressor).
+    """
+    def _delta(meter):
+        flux = f"""
 from(bucket: "{INFLUXDB_BUCKET}")
   |> range(start: {time_range})
-  |> filter(fn: (r) => r._measurement == "thermia" and r.data_type == "temperature")
-  |> filter(fn: (r) => r._field == "supply_temp")
-  |> aggregateWindow(every: 1h, fn: mean, createEmpty: false)
-  |> keep(columns: ["_time", "_value"])
+  |> filter(fn: (r) => r._measurement == "hvac" and r.sensor_group == "energy")
+  |> filter(fn: (r) => r.meter == "{meter}")
+  |> filter(fn: (r) => r._field == "Total_Active_Energy")
+  |> spread()
 """
-    flux_hp_status = f"""
-from(bucket: "{INFLUXDB_BUCKET}")
-  |> range(start: {time_range})
-  |> filter(fn: (r) => r._measurement == "thermia" and r.data_type == "status")
-  |> filter(fn: (r) => r._field == "compressor" or r._field == "aux_heater_3kw" or r._field == "aux_heater_6kw")
-  |> toFloat()
-  |> aggregateWindow(every: 1h, fn: mean, createEmpty: false)
-  |> keep(columns: ["_time", "_value", "_field"])
-  |> group()
-  |> pivot(rowKey: ["_time"], columnKey: ["_field"], valueColumn: "_value")
-"""
-    hp_temps = execute_flux_query(flux_hp_temps)
-    hp_status = execute_flux_query(flux_hp_status)
-    temp_by_time = {r.get("_time"): r.get("_value", 35) or 35 for r in hp_temps}
+        rows = execute_flux_query(flux)
+        if not rows:
+            return 0.0
+        v = rows[0].get("_value")
+        return float(v) if v is not None else 0.0
 
-    hp_comp_kwh = 0.0
-    hp_aux_kwh = 0.0
-    for row in hp_status:
-        comp = row.get("compressor", 0) or 0
-        aux3 = row.get("aux_heater_3kw", 0) or 0
-        aux6 = row.get("aux_heater_6kw", 0) or 0
-        sup_t = temp_by_time.get(row.get("_time"), 35)
-        hp_comp_kwh += comp * (1.77 + (sup_t - 35.0) * 0.5 / 15.0)
-        hp_aux_kwh += aux3 * 3.0 + aux6 * 6.0
-
-    return hp_comp_kwh, hp_aux_kwh
+    return _delta("heatpump"), _delta("extra")
 
 
 def _query_lighting_kwh(time_range, watt_per_light=10):
