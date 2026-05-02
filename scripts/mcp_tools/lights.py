@@ -155,6 +155,27 @@ TOOLS = [
             "required": ["query", "on"],
         },
     ),
+    Tool(
+        name="get_lights_optimizer_status",
+        description=(
+            "Return the most recent automatic decision per light made by the "
+            "lights_optimizer service (after_sunrise, house_unoccupied, "
+            "duration_exceeded, after_midnight, manual_grace, terrace_schedule, "
+            "no_rule_fired). Use this to answer 'miksi se sammui?' / 'why did "
+            "the kitchen light turn off?'."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "lookback_minutes": {
+                    "type": "integer",
+                    "description": "How far back to search (default 120).",
+                    "default": 120,
+                },
+            },
+            "required": [],
+        },
+    ),
 ]
 
 
@@ -413,6 +434,50 @@ async def handle_set_lights_matching(arguments):
         return [TextContent(type="text", text=f"Error: {e}")]
 
 
+async def handle_get_lights_optimizer_status(arguments):
+    minutes = int(arguments.get("lookback_minutes") or 120)
+    flux = f"""
+from(bucket: "{INFLUXDB_BUCKET}")
+  |> range(start: -{minutes}m)
+  |> filter(fn: (r) => r._measurement == "lights_optimizer")
+  |> filter(fn: (r) => r._field == "decision" or r._field == "reason" or r._field == "on_duration_min")
+  |> last()
+  |> keep(columns: ["_time", "_field", "_value", "light_id", "light_name", "category"])
+  |> group(columns: ["light_id", "_field"])
+"""
+    try:
+        rows = execute_flux_query(flux)
+    except Exception as e:
+        log.error("get_lights_optimizer_status flux failed: %s", e)
+        return [TextContent(type="text", text=f"Error: {e}")]
+
+    # Pivot per-light_id: {light_id: {decision, reason, on_duration_min, ...}}
+    by_id: dict[str, dict] = {}
+    for r in rows:
+        lid = r.get("light_id")
+        if lid is None:
+            continue
+        rec = by_id.setdefault(lid, {
+            "id": lid,
+            "name": r.get("light_name"),
+            "category": r.get("category"),
+            "_time": r.get("_time"),
+        })
+        rec[r.get("_field")] = r.get("_value")
+        # Keep latest _time across the three fields
+        if r.get("_time") and (not rec.get("_time") or r["_time"] > rec["_time"]):
+            rec["_time"] = r["_time"]
+
+    decisions = sorted(by_id.values(), key=lambda x: x.get("_time") or "", reverse=True)
+    result = {
+        "lookback_minutes": minutes,
+        "count": len(decisions),
+        "decisions": decisions,
+    }
+    return [TextContent(type="text",
+                        text=json.dumps(result, ensure_ascii=False, indent=2, default=str))]
+
+
 HANDLERS = {
     "list_lights": handle_list_lights,
     "get_light_status": handle_get_light_status,
@@ -420,4 +485,5 @@ HANDLERS = {
     "set_all_lights": handle_set_all_lights,
     "set_lights_by_floor": handle_set_lights_by_floor,
     "set_lights_matching": handle_set_lights_matching,
+    "get_lights_optimizer_status": handle_get_lights_optimizer_status,
 }

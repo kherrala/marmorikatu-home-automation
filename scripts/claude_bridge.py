@@ -130,6 +130,7 @@ _OLLAMA_ALLOWED_TOOLS = {
     # Light control (PLC via MQTT)
     "list_lights", "get_light_status", "set_light",
     "set_all_lights", "set_lights_by_floor", "set_lights_matching",
+    "get_lights_optimizer_status",
     # External services
     "get_weather_forecast", "get_news_headlines",
     "get_bus_departures", "get_calendar_events", "get_daily_report",

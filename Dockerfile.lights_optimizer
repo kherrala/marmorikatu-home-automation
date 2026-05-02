@@ -1,0 +1,13 @@
+FROM python:3.12-slim
+
+WORKDIR /app
+
+RUN pip install --no-cache-dir \
+    influxdb-client \
+    paho-mqtt \
+    astral
+
+COPY scripts/lights_optimizer.py /app/
+COPY scripts/light_labels.py /app/
+
+CMD ["python", "-u", "lights_optimizer.py"]

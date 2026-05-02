@@ -376,6 +376,40 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  lights-optimizer:
+    build:
+      context: .
+      dockerfile: Dockerfile.lights_optimizer
+    container_name: marmorikatu-lights-optimizer
+    environment:
+      - MQTT_BROKER=freenas.kherrala.fi
+      - MQTT_PORT=1883
+      - MQTT_TOPIC_PREFIX=marmorikatu
+      - INFLUXDB_URL=http://influxdb:8086
+      - INFLUXDB_TOKEN=wago-secret-token
+      - INFLUXDB_ORG=wago
+      - INFLUXDB_BUCKET=building_automation
+      - LOCAL_TZ=Europe/Helsinki
+      - HOME_LAT=${HOME_LAT:-61.4978}
+      - HOME_LON=${HOME_LON:-23.7610}
+      - CHECK_INTERVAL=60
+      - SUNRISE_GRACE_MIN=60
+      - WORKDAY_START_HOUR=9
+      - WORKDAY_END_HOUR=16
+      - TOILET_TIMEOUT_MIN=30
+      - STAIRCASE_TIMEOUT_MIN=30
+      - OCCUPANCY_WINDOW_MIN=30
+      - LONG_ABSENCE_MIN=120
+      - CO2_OCCUPANCY_DELTA_PPM=30
+      - MANUAL_HOLD_MIN=15
+      - BEDROOM_HOLD_MIN=30
+      - TERRACE_OFF_HOUR=22
+      - DRY_RUN=0
+    depends_on:
+      influxdb:
+        condition: service_healthy
+    restart: unless-stopped
+
   backup:
     build:
       context: .
