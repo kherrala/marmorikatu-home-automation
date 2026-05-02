@@ -4,8 +4,9 @@ Light-control tools.
 Replaces the old `wago-webvisu-adapter` MCP server (which hit a REST API on
 the now-defunct webvisu adapter). Reads come from InfluxDB (`lights`
 measurement, populated by `plc_mqtt_subscriber.py`). Writes publish to the
-PLC's per-light command topic `marmorikatu/light/<index>/set` — per
-`../marmorikatu-plc/MQTT.md`, an empty payload toggles the light.
+PLC's per-light command topic `marmorikatu/light/<index>/set` with payload
+`"true"` or `"false"` (matching the manual command form
+`mqttx pub -h freenas.kherrala.fi -t 'marmorikatu/light/8/set' -m 'true'`).
 
 Light identifiers can be either the bare `Controls[]` index ("51") or the
 Finnish display name from `light_labels.py` ("Biljardipöytä", "Keittiö
@@ -72,13 +73,12 @@ TOOLS = [
         },
     ),
     Tool(
-        name="toggle_light",
+        name="set_light",
         description=(
-            "Toggle a light on/off by publishing to the PLC's command topic "
-            "`marmorikatu/light/<index>/set`. The `light` parameter may be "
-            "its Controls index or Finnish name. The command is fire-and-"
-            "forget; the resulting state will appear in the next round of "
-            "`marmorikatu/lights` (within ~13 s) and can be confirmed with "
+            "Turn a light explicitly on or off. Publishes 'true' or 'false' "
+            "to `marmorikatu/light/<index>/set`. The `light` parameter may be "
+            "its Controls index or Finnish name. The new state will appear "
+            "in `marmorikatu/lights` within ~13 s and is confirmable with "
             "get_light_status."
         ),
         inputSchema={
@@ -88,8 +88,12 @@ TOOLS = [
                     "type": "string",
                     "description": "Controls index or Finnish name of the light",
                 },
+                "on": {
+                    "type": "boolean",
+                    "description": "True to turn on, false to turn off",
+                },
             },
-            "required": ["light"],
+            "required": ["light", "on"],
         },
     ),
 ]
@@ -168,47 +172,57 @@ async def handle_get_light_status(arguments):
         return [TextContent(type="text", text=f"Error: {e}")]
 
 
-async def handle_toggle_light(arguments):
+def _publish_set(idx, on, client_id):
+    """Publish 'true'/'false' to marmorikatu/light/<idx>/set."""
+    topic = f"{MQTT_TOPIC_PREFIX}/light/{idx}/set"
+    payload = "true" if on else "false"
+    mqtt_publish.single(
+        topic=topic,
+        payload=payload,
+        qos=1,
+        retain=False,
+        hostname=MQTT_BROKER,
+        port=MQTT_PORT,
+        client_id=client_id,
+    )
+    return topic, payload
+
+
+async def handle_set_light(arguments):
     query = arguments.get("light")
+    on = arguments.get("on")
     if not query:
         return [TextContent(type="text",
                             text='{"error": "light parameter is required"}')]
+    if on is None:
+        return [TextContent(type="text",
+                            text='{"error": "on parameter is required"}')]
     try:
         idx = find_light_index(query)
     except LookupError as e:
         return [TextContent(type="text",
                             text=json.dumps({"error": str(e)}, ensure_ascii=False))]
 
-    name, floor = LIGHT_LABELS[idx]
-    topic = f"{MQTT_TOPIC_PREFIX}/light/{idx}/set"
+    name, _ = LIGHT_LABELS[idx]
     try:
-        # Per ../marmorikatu-plc/MQTT.md, an empty payload to this topic
-        # toggles the corresponding Controls[] entry.
-        mqtt_publish.single(
-            topic=topic,
-            payload=b"",
-            qos=1,
-            retain=False,
-            hostname=MQTT_BROKER,
-            port=MQTT_PORT,
-            client_id="marmorikatu-mcp-toggle",
-        )
-        log.info("toggled light %d (%s) via %s", idx, name, topic)
+        topic, payload = _publish_set(idx, bool(on), "marmorikatu-mcp-set")
+        log.info("set light %d (%s) → %s", idx, name, payload)
         result = {
             "id": idx,
             "name": name,
             "topic": topic,
+            "payload": payload,
             "status": "command sent — verify with get_light_status",
         }
         return [TextContent(type="text",
                             text=json.dumps(result, ensure_ascii=False, indent=2))]
     except Exception as e:
-        log.error("toggle_light error: %s\n%s", e, traceback.format_exc())
+        log.error("set_light error: %s\n%s", e, traceback.format_exc())
         return [TextContent(type="text", text=f"Error: {e}")]
 
 
 HANDLERS = {
     "list_lights": handle_list_lights,
     "get_light_status": handle_get_light_status,
-    "toggle_light": handle_toggle_light,
+    "set_light": handle_set_light,
 }
