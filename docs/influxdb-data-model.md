@@ -16,11 +16,15 @@ Complete schema reference for the building automation InfluxDB database.
 
 | Measurement | Source | Sampling Rate | Tags | Description |
 |-------------|--------|---------------|------|-------------|
-| `hvac` | WAGO CSV (`logfile_dp_*.csv`) | ~2 hours | `sensor_group` | HVAC system temperatures, humidity, power, energy |
-| `rooms` | WAGO CSV (`Temperatures*.csv`) | ~1 hour | `room_type`, `floor` | Room temperatures and PID controller outputs |
+| `hvac` | MQTT (`marmorikatu/temperatures`, `/cooling`, `/ventilation`, `/energy/*`) | ~13 s | `sensor_group`, `meter` | HVAC + ventilation + cooling + OR-WE-517 energy meters |
+| `rooms` | MQTT (`marmorikatu/temperatures`, `/heating`) | ~13 s | `room_type`, `floor` | Room temperatures and underfloor-heating valve states |
 | `ruuvi` | MQTT (Ruuvi Gateway) | ~1 second | `sensor_id`, `sensor_name`, `data_format`, `sensor_type` | Bluetooth sensor data |
 | `thermia` | MQTT (ThermIQ-ROOM2) | ~30 seconds | `data_type` | Heat pump temperatures, status, alarms, runtimes |
-| `lights` | HTTP API polling | 5 minutes | `light_id`, `light_name`, `floor`, `floor_name`, `switch_type` | Light switch on/off status |
+| `lights` | MQTT (`marmorikatu/lights`, `/outlets`) | ~13 s | `light_id`, `light_name`, `floor`, `floor_name`, `switch_type` | Light switch on/off status, outdoor outlets |
+| `switches` | MQTT (`marmorikatu/switches`) | ~13 s | `switch_id`, `switch_name`, `floor`, `floor_name` | Wall-switch press states |
+| `plc_publisher` | MQTT (`marmorikatu/status`) | ~13 s | — | PLC publisher heartbeat counters |
+
+For the publishing protocol see `../marmorikatu-plc/MQTT.md`.
 
 ---
 
@@ -33,7 +37,8 @@ Latin-1 encoding.
 
 | Tag | Values |
 |-----|--------|
-| `sensor_group` | `ivk_temp`, `humidity`, `power`, `energy`, `voltage`, `actuator` |
+| `sensor_group` | `ivk_temp`, `humidity`, `power`, `energy`, `voltage`, `current`, `actuator`, `cooling` |
+| `meter` | `heatpump`, `extra` (only on energy-meter rows) |
 
 ### Fields by Sensor Group
 
@@ -59,25 +64,64 @@ Latin-1 encoding.
 
 #### `sensor_group=power` — Electrical Power
 
-| Field | Unit | CSV Column | Description |
-|-------|------|------------|-------------|
-| `Lampopumppu_teho` | kW | `P Lämpöpumppu[Kw]` | Heat pump power consumption |
-| `Lisavastus_teho` | kW | `P Lisävastus[kw]` | Auxiliary heater power consumption |
+Per-meter rows carry the `meter=heatpump` or `meter=extra` tag.
+
+| Field | Unit | Source | Description |
+|-------|------|--------|-------------|
+| `Total_Active_Power` | kW | OR-WE-517 | Sum of three phases |
+| `L1_Active_Power` | kW | OR-WE-517 | Phase 1 active power |
+| `L2_Active_Power` | kW | OR-WE-517 | Phase 2 active power |
+| `L3_Active_Power` | kW | OR-WE-517 | Phase 3 active power |
+| `Lampopumppu_teho` | kW | legacy alias (no `meter` tag) | Mirrors heat-pump `Total_Active_Power` |
+| `Lisavastus_teho` | kW | legacy alias (no `meter` tag) | Mirrors aux-heater `Total_Active_Power` |
+
+#### `sensor_group=current` — Phase Currents
+
+Per-meter rows carry the `meter` tag.
+
+| Field | Unit | Source | Description |
+|-------|------|--------|-------------|
+| `L1_Current` | A | OR-WE-517 | Phase 1 current |
+| `L2_Current` | A | OR-WE-517 | Phase 2 current |
+| `L3_Current` | A | OR-WE-517 | Phase 3 current |
 
 #### `sensor_group=energy` — Cumulative Energy
 
-| Field | Unit | CSV Column | Description |
-|-------|------|------------|-------------|
-| `Lampopumppu_energia` | kWh | `E Lämpöpumppu[Kwh]` | Heat pump cumulative energy |
-| `Lisavastus_energia` | kWh | `E Lisävastus[Kwh]` | Auxiliary heater cumulative energy |
+Per-meter rows carry the `meter` tag.
+
+| Field | Unit | Source | Description |
+|-------|------|--------|-------------|
+| `Total_Active_Energy` | kWh | OR-WE-517 | Lifetime kWh counter |
+| `L1_Total_Active_Energy` | kWh | OR-WE-517 | Per-phase counter |
+| `L2_Total_Active_Energy` | kWh | OR-WE-517 | Per-phase counter |
+| `L3_Total_Active_Energy` | kWh | OR-WE-517 | Per-phase counter |
+| `Forward_Active_Energy` | kWh | OR-WE-517 | Energy imported from grid |
+| `Reverse_Active_Energy` | kWh | OR-WE-517 | Energy exported to grid |
+| `Lampopumppu_energia` | kWh | legacy alias (no `meter` tag) | Mirrors heat-pump `Total_Active_Energy` |
+| `Lisavastus_energia` | kWh | legacy alias (no `meter` tag) | Mirrors aux-heater `Total_Active_Energy` |
 
 #### `sensor_group=voltage` — Mains Voltage
 
-| Field | Unit | CSV Column | Description |
-|-------|------|------------|-------------|
-| `U1_jannite` | V | `U1[V]` | Phase 1 voltage |
-| `U2_jannite` | V | `U2[V]` | Phase 2 voltage |
-| `U3_jannite` | V | `U3[V]` | Phase 3 voltage |
+Per-meter rows carry the `meter` tag.
+
+| Field | Unit | Source | Description |
+|-------|------|--------|-------------|
+| `L1_Voltage` | V | OR-WE-517 | Phase 1 voltage |
+| `L2_Voltage` | V | OR-WE-517 | Phase 2 voltage |
+| `L3_Voltage` | V | OR-WE-517 | Phase 3 voltage |
+| `Grid_Frequency` | Hz | OR-WE-517 | Mains frequency |
+| `U1_jannite` | V | legacy alias (no `meter` tag) | Mirrors heat-pump `L1_Voltage` |
+| `U2_jannite` | V | legacy alias (no `meter` tag) | Mirrors heat-pump `L2_Voltage` |
+| `U3_jannite` | V | legacy alias (no `meter` tag) | Mirrors heat-pump `L3_Voltage` |
+
+#### `sensor_group=cooling` — Cooling System
+
+| Field | Unit | Source | Description |
+|-------|------|--------|-------------|
+| `Pumppu_jaahdytys` | bool | `marmorikatu/cooling` | Cooling pump (primary) |
+| `Jaahdytyspumppu` | bool | `marmorikatu/cooling` | Cooling pump (secondary) |
+| `Jaahpatteri_1` | °C | `marmorikatu/temperatures` | Cooling-radiator 1 temperature |
+| `Jaahpatteri_2` | °C | `marmorikatu/temperatures` | Cooling-radiator 2 temperature |
 
 #### `sensor_group=actuator` — Heating Valve
 
@@ -117,8 +161,12 @@ imported from `Temperatures*.csv` files.
 
 | Tag | Values | Description |
 |-----|--------|-------------|
-| `room_type` | `bedroom`, `common`, `basement`, `pid`, `energy` | Category of data |
+| `room_type` | `bedroom`, `common`, `basement`, `valve`, `pid` *(legacy)*, `energy` *(legacy)* | Category of data |
 | `floor` | `0`, `1`, `2` | Floor level (0=basement, 1=ground, 2=upstairs) |
+
+`pid` and `energy` are populated only by historical CSV imports — the live
+MQTT pipeline does not produce them. Live valve activity is available under
+`room_type=valve` (binary 0/1 per zone).
 
 ### Fields by Room Type
 
@@ -160,7 +208,23 @@ imported from `Temperatures*.csv` files.
 | `Kellari_PID` | % | 0 | Basement heating demand |
 | `Kellari_eteinen_PID` | % | 0 | Basement entrance heating demand |
 
-#### `room_type=energy` — Building Energy Totals
+#### `room_type=valve` — Underfloor Heating Zone Valves
+
+Binary 0/1 fields, one per zone, written when the corresponding valve is open.
+
+| Field | Floor | Zone |
+|-------|-------|------|
+| `LL_Kellari_eteinen` | 0 | Basement entrance |
+| `LL_Kellari` | 0 | Basement |
+| `LL_Olohuone` | 1 | Living room |
+| `LL_Eteinen` | 1 | Entrance / foyer |
+| `LL_AK_MH` | 1 | Lower-floor bedroom |
+| `LL_YK_aula` | 2 | Upper-floor hall |
+| `LL_Aatu` | 2 | Aatu's room |
+| `LL_Onni` | 2 | Onni's room |
+| `LL_Essi` | 2 | Essi's room |
+
+#### `room_type=energy` — Building Energy Totals (legacy)
 
 | Field | Unit | Floor | Description |
 |-------|------|-------|-------------|
@@ -390,38 +454,72 @@ from(bucket: "building_automation")
 
 ## Measurement: `lights`
 
-Light switch on/off status from an HTTP API, polled every 5 minutes.
+Light switch on/off status from MQTT (`marmorikatu/lights` and
+`marmorikatu/outlets`), updated every ~13 s.
 
 ### Tags
 
 | Tag | Description | Example Values |
 |-----|-------------|----------------|
-| `light_id` | Switch identifier | `keittio-1`, `mh-1-1`, `kellari-1` |
-| `light_name` | Human-readable name from API | `Keittiö katto`, `MH1 katto` |
-| `floor` | Floor number | `0` (basement), `1` (ground), `2` (upstairs) |
-| `floor_name` | Finnish floor name | `Kellari`, `Alakerta`, `Yläkerta` |
-| `switch_type` | `primary` or `secondary` | For dual-function switches |
+| `light_id` | `Controls[]` index for primary lights, technical key for outlets | `1`, `17`, `51`, `ulkopistorasia` |
+| `light_name` | Human-readable Finnish name | `Keittiö katto`, `Biljardipöytä` |
+| `floor` | Floor number, empty for outdoor | `0`, `1`, `2`, `""` |
+| `floor_name` | Finnish floor name | `Kellari`, `Alakerta`, `Yläkerta`, `Ulko` |
+| `switch_type` | `primary` for indoor lights, `outlet` for outdoor outlets | |
 
 ### Fields
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `is_on` | int (0/1) | Switch state: 1 = on, 0 = off |
+| `is_on` | int (0/1) | State: 1 = on, 0 = off |
 
-### Floor Classification
+The full `light_id → name + floor` table is maintained in
+`scripts/plc_mqtt_subscriber.py` (`LIGHT_LABELS`), derived from
+`../marmorikatu-plc/PlcLogic/visu/buttontxt.txt`.
 
-Lights are classified into three floors based on their `light_id`:
+---
 
-- **Floor 0 (Kellari)**: `tekninen-tila`, `kellari-wc`, `kellari-eteinen-*`, `kellari-*`
-- **Floor 1 (Alakerta)**: `kylpyhuone-*`, `wc-alakerta-*`, `khh-*`, `keittio-*`, `tuulikaappi-*`, `mh-alakerta-*`, `eteinen-*`, `saareke-*`, `autokatos-*`, `ulkovarasto`
-- **Floor 2 (Yläkerta)**: `porras-*`, `mh-1-*`, `mh2-*`, `mh3-*`, `kylpyhuone-yk-*`, `aula-yk-*`
+## Measurement: `switches`
 
-### Dual-Function Switches
+Wall-switch press states from MQTT (`marmorikatu/switches`), updated every
+~13 s. Useful for occupancy detection and audit trails.
 
-Some switches have two functions (e.g., ceiling light + accent light). These
-produce two data points per poll cycle:
-- Primary: `switch_type=primary`, `light_id` as-is
-- Secondary: `switch_type=secondary`, `light_id` with `-2` suffix
+### Tags
+
+| Tag | Description |
+|-----|-------------|
+| `switch_id` | Input position number (`1`–`56`) |
+| `switch_name` | Human-readable Finnish name |
+| `floor` | Floor number, empty for outdoor |
+| `floor_name` | Finnish floor name |
+
+### Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `pressed` | int (0/1) | Switch state: 1 = pressed/closed, 0 = released/open |
+
+The label table lives in `scripts/plc_mqtt_subscriber.py` (`SWITCH_LABELS`),
+derived from `../marmorikatu-plc/PlcLogic/visu/buttonpos.txt`.
+
+---
+
+## Measurement: `plc_publisher`
+
+Heartbeat counters from the PLC's `pMqttPublish` POU, useful for monitoring
+that the publisher is alive and that Modbus polling of the energy meters is
+healthy.
+
+### Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `PublishCount` | int | Total successful publishes since boot (climbs by 10 per round) |
+| `ErrorCount` | int | Total publish errors |
+| `ModbusConnected` | int (0/1) | Bus B Modbus master connection status |
+| `ModbusConsecutiveErrors` | int | Current consecutive-error counter |
+| `HeatPumpFails` | int | Heat-pump meter consecutive failures |
+| `ExtraHeaterFails` | int | Aux-heater meter consecutive failures |
 
 ### Example Query
 

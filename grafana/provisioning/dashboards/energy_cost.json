@@ -51,6 +51,18 @@
       "tooltip": "Heating control and optimization",
       "type": "link",
       "url": "/d/heating-control/lammityksen-ohjaus"
+    },
+    {
+      "asDropdown": false,
+      "icon": "bolt",
+      "includeVars": true,
+      "keepTime": true,
+      "tags": [],
+      "targetBlank": false,
+      "title": "Mittarit",
+      "tooltip": "OR-WE-517 energy meter live data",
+      "type": "link",
+      "url": "/d/energy-meters/energiamittarit"
     }
   ],
   "panels": [

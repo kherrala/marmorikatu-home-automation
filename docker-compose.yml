@@ -59,26 +59,47 @@ services:
       influxdb:
         condition: service_healthy
 
-  sync:
+  # Legacy CSV-over-SFTP sync — superseded by the `plc` MQTT service.
+  # Kept here (commented out) for emergency rollback. Remove once the MQTT
+  # pipeline has been running cleanly for a soak period.
+  # sync:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile.sync
+  #   container_name: marmorikatu-sync
+  #   volumes:
+  #     - ./data:/data
+  #     - ./scripts:/scripts:ro
+  #     - ./ssh:/ssh:ro
+  #   environment:
+  #     - INFLUXDB_URL=http://influxdb:8086
+  #     - INFLUXDB_TOKEN=wago-secret-token
+  #     - INFLUXDB_ORG=wago
+  #     - INFLUXDB_BUCKET=building_automation
+  #     - DATA_DIR=/data
+  #     - SSH_KEY=/ssh/wago_sync
+  #     - SYNC_INTERVAL=300
+  #     - REMOTE_HOST=192.168.1.10
+  #     - REMOTE_USER=admin
+  #     - REMOTE_PATH=/media/sd/CSV_Files/
+  #   depends_on:
+  #     influxdb:
+  #       condition: service_healthy
+  #   restart: unless-stopped
+
+  plc:
     build:
       context: .
-      dockerfile: Dockerfile.sync
-    container_name: marmorikatu-sync
-    volumes:
-      - ./data:/data
-      - ./scripts:/scripts:ro
-      - ./ssh:/ssh:ro
+      dockerfile: Dockerfile.plc
+    container_name: marmorikatu-plc
     environment:
+      - MQTT_BROKER=freenas.kherrala.fi
+      - MQTT_PORT=1883
+      - MQTT_TOPIC_PREFIX=marmorikatu
       - INFLUXDB_URL=http://influxdb:8086
       - INFLUXDB_TOKEN=wago-secret-token
       - INFLUXDB_ORG=wago
       - INFLUXDB_BUCKET=building_automation
-      - DATA_DIR=/data
-      - SSH_KEY=/ssh/wago_sync
-      - SYNC_INTERVAL=300
-      - REMOTE_HOST=192.168.1.10
-      - REMOTE_USER=admin
-      - REMOTE_PATH=/media/sd/CSV_Files/
     depends_on:
       influxdb:
         condition: service_healthy
@@ -203,24 +224,27 @@ services:
       - "3025:3025"
     restart: unless-stopped
 
-  lights:
-    build:
-      context: .
-      dockerfile: Dockerfile.lights
-    container_name: marmorikatu-lights
-    environment:
-      - LIGHTS_API_URL=http://host.docker.internal:8080/api/lights
-      - POLL_INTERVAL=300
-      - INFLUXDB_URL=http://influxdb:8086
-      - INFLUXDB_TOKEN=wago-secret-token
-      - INFLUXDB_ORG=wago
-      - INFLUXDB_BUCKET=building_automation
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    depends_on:
-      influxdb:
-        condition: service_healthy
-    restart: unless-stopped
+  # Legacy HTTP poller against the standalone lights API — superseded by
+  # the `plc` MQTT service which writes to the same `lights` measurement.
+  # Kept here (commented out) for emergency rollback.
+  # lights:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile.lights
+  #   container_name: marmorikatu-lights
+  #   environment:
+  #     - LIGHTS_API_URL=http://host.docker.internal:8080/api/lights
+  #     - POLL_INTERVAL=300
+  #     - INFLUXDB_URL=http://influxdb:8086
+  #     - INFLUXDB_TOKEN=wago-secret-token
+  #     - INFLUXDB_ORG=wago
+  #     - INFLUXDB_BUCKET=building_automation
+  #   extra_hosts:
+  #     - "host.docker.internal:host-gateway"
+  #   depends_on:
+  #     influxdb:
+  #       condition: service_healthy
+  #   restart: unless-stopped
 
   news:
     build:

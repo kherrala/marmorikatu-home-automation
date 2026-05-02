@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Building automation data collection and visualization system. Collects data from a WAGO PLC controller (CSV over SSH), Ruuvi Bluetooth sensors (MQTT), Thermia heat pump (MQTT via ThermIQ-ROOM2), and light switch APIs (HTTP polling), stores in InfluxDB, and visualizes with Grafana dashboards. Includes an MCP server for Claude Desktop integration.
+Building automation data collection and visualization system. Collects data from a WAGO PLC controller (MQTT, see `../marmorikatu-plc/MQTT.md`), Ruuvi Bluetooth sensors (MQTT), and a Thermia heat pump (MQTT via ThermIQ-ROOM2), stores in InfluxDB, and visualizes with Grafana dashboards. Includes an MCP server for Claude Desktop integration.
+
+The legacy CSV-over-SFTP sync (`sync` service) and HTTP-polled lights API (`lights` service) have been superseded by the unified `plc` MQTT subscriber. Both legacy services are commented out in `docker-compose.yml` for emergency rollback.
 
 ## Common Commands
 
@@ -26,13 +28,13 @@ python scripts/import_data.py --incremental # Append new data only
 
 ## Architecture
 
-Seven Docker services: influxdb, grafana, mcp, ruuvi, thermia, lights, sync. InfluxDB bucket `building_automation`, org `wago`, token `wago-secret-token`. Data flows: WAGO CSV → sync → InfluxDB, Ruuvi → MQTT → ruuvi → InfluxDB, ThermIQ → MQTT → thermia → InfluxDB, Lights API → lights → InfluxDB. Grafana reads from InfluxDB using Flux queries.
+Active Docker services: influxdb, grafana, mcp, ruuvi, thermia, plc, plus support services (electricity, heating, indoor, weather, news, calendar, kiosk, claude-bridge, remind, playwright-mcp, backup). InfluxDB bucket `building_automation`, org `wago`, token `wago-secret-token`. Data flows: WAGO PLC → MQTT (10 retained `marmorikatu/...` topics) → plc → InfluxDB, Ruuvi → MQTT → ruuvi → InfluxDB, ThermIQ → MQTT → thermia → InfluxDB. Grafana reads from InfluxDB using Flux queries.
 
 See [docs/architecture.md](docs/architecture.md) for full service details, ports, volumes, environment variables, and data collection pipelines.
 
 ## InfluxDB Data Model
 
-Five measurements in bucket `building_automation`: `hvac` (WAGO HVAC, ~2h), `rooms` (WAGO room temps, ~1h), `ruuvi` (Bluetooth sensors, ~1s), `thermia` (heat pump, ~30s), `lights` (HTTP polling, 5min).
+Seven measurements in bucket `building_automation`: `hvac` (WAGO HVAC + OR-WE-517 energy meters, ~13s), `rooms` (WAGO room temps + underfloor-heating valves, ~13s), `ruuvi` (Bluetooth sensors, ~1s), `thermia` (heat pump, ~30s), `lights` (WAGO controls + outlets, ~13s), `switches` (wall-switch press states, ~13s), `plc_publisher` (heartbeat counters, ~13s).
 
 See [docs/influxdb-data-model.md](docs/influxdb-data-model.md) for complete schema with all tags, fields, types, units, and example queries.
 
@@ -50,13 +52,13 @@ See [docs/kiosk-state-machine.md](docs/kiosk-state-machine.md) for complete busi
 
 ## Key Files
 
-- **`scripts/import_data.py`** — CSV parser handling Latin-1 encoding, sensor validation, batch writes (5000 points). Maps CSV columns to measurements with proper tags.
+- **`scripts/plc_mqtt_subscriber.py`** — Subscribes to the ten retained `marmorikatu/...` MQTT topics published by the WAGO PLC and writes to existing measurements (`rooms`, `hvac`, `lights`) plus new ones (`switches`, `plc_publisher`). Topic schema documented at `../marmorikatu-plc/MQTT.md`.
 - **`scripts/mcp_server.py`** — MCP server with 15 tools (query_data, get_latest, get_statistics, get_heat_recovery_efficiency, get_freezing_probability, get_thermia_status, get_thermia_temperatures, etc.). SSE transport via uvicorn/starlette.
 - **`scripts/ruuvi_mqtt_subscriber.py`** — Handles Ruuvi data formats 5 (basic) and 225 (air quality). Pressure unit conversion (Pa↔hPa).
 - **`scripts/thermia_mqtt_subscriber.py`** — Subscribes to ThermIQ-ROOM2 MQTT topic, parses hex/decimal register formats, extracts bitfields, writes grouped InfluxDB points.
-- **`Dockerfile.thermia`** — Container image for thermia MQTT subscriber service.
-- **`scripts/lights_poller.py`** — Polls light switch API, classifies by floor, handles dual-function switches.
-- **`grafana/provisioning/dashboards/*.json`** — Grafana dashboard definitions. Each dashboard has a stable UID (e.g., `wago-overview`, `wago-hvac`, `wago-lights`) used in cross-dashboard navigation links.
+- **`scripts/import_data.py`** *(legacy)* — CSV parser, no longer in the active pipeline. Kept for historical CSV re-import.
+- **`scripts/lights_poller.py`** *(legacy)* — Old HTTP poller, no longer in the active pipeline.
+- **`grafana/provisioning/dashboards/*.json`** — Grafana dashboard definitions. Each dashboard has a stable UID (e.g., `wago-overview`, `wago-hvac`, `wago-lights`, `energy-meters`) used in cross-dashboard navigation links.
 
 ## Grafana Dashboard Conventions
 

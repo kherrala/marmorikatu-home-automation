@@ -2,63 +2,84 @@
 
 How data flows from each source system into InfluxDB.
 
-## WAGO CSV Sync Pipeline
+## WAGO PLC MQTT Pipeline
 
-1. The `sync` service connects to the WAGO PLC at `192.168.1.10` via SSH
-2. SCP copies CSV files from `/media/sd/CSV_Files/` to the local `./data/` directory
-3. The import script (`scripts/import_data.py`) runs in incremental mode:
-   - Reads CSV files with Latin-1 encoding
-   - Normalizes headers (handles BOM, degree symbols)
-   - Maps CSV columns to InfluxDB fields via `HVAC_SENSOR_MAP` and `ROOM_SENSOR_MAP`
-   - Groups fields by sensor group or room type into single InfluxDB points
-   - Tracks per-file line counts in `.import_state.json` to avoid re-importing
-   - Batch writes (5000 points per batch)
-4. Two CSV file patterns:
-   - `logfile_dp_*.csv` → `hvac` measurement (6 sensor groups)
-   - `Temperatures*.csv` → `rooms` measurement (5 room types)
+1. The PLC's `pMqttPublish` POU (running every 100 ms cycle) rotates through
+   ten logical-group JSON topics under `marmorikatu/...`, publishing them in a
+   ~3 s burst followed by a 10 s pause (configurable via `tRoundPeriod`).
+2. All topics are published with the retained flag, so a fresh subscriber
+   always sees the latest snapshot on connect.
+3. The `plc` service subscribes to `marmorikatu/#` on broker
+   `freenas.kherrala.fi:1883` and dispatches each topic to a dedicated builder.
+4. Builders translate the technical-ID JSON keys to the existing InfluxDB
+   schema (same field names that `import_data.py` and `lights_poller.py` used)
+   so all dashboards and MCP queries continue to work.
 
-### CSV Column Mapping
+For the publishing protocol — topic layout, payload shapes, the
+Controls-index light-id convention, and PLC-side gotchas — see
+`../marmorikatu-plc/MQTT.md`.
 
-HVAC columns are mapped via `HVAC_SENSOR_MAP` in `scripts/import_data.py`:
+### Topic → Measurement Mapping
 
-| CSV Column | Sensor Group | InfluxDB Field |
-|------------|-------------|----------------|
-| `IVK ulkolämpö[c°]` | `ivk_temp` | `Ulkolampotila` |
-| `IVK tulo ennen lämmitystä[c°]` | `ivk_temp` | `Tuloilma_ennen_lammitysta` |
-| `IVK positolämpötila[c°]` | `ivk_temp` | `Tuloilma_asetusarvo` |
-| `IVK tulo jälkeen lämmityksen[c°]` | `ivk_temp` | `Tuloilma_jalkeen_lammityksen` |
-| `IVK Jäteilma[c°]` | `ivk_temp` | `Jateilma` |
-| `RH suht kosteus[%]` | `humidity` | `Suhteellinen_kosteus` |
-| `P Lämpöpumppu[Kw]` | `power` | `Lampopumppu_teho` |
-| `E Lämpöpumppu[Kwh]` | `energy` | `Lampopumppu_energia` |
-| `U1[V]` | `voltage` | `U1_jannite` |
-| ... | | *(see import_data.py for full mapping)* |
+| MQTT topic | InfluxDB measurement | Tags | Notes |
+|---|---|---|---|
+| `marmorikatu/temperatures` | `rooms` + `hvac` | `room_type`, `floor`; `sensor_group=ivk_temp/cooling` | 9 room PT100 → `rooms`, 3 raw PT100 (`tuloilmakanava`, `jaahdpatteri_1/2`) → `hvac` |
+| `marmorikatu/lights` | `lights` | `light_id`, `light_name`, `floor`, `floor_name`, `switch_type=primary` | Keys are bare `Controls[]` indices; labels from `buttontxt.txt` |
+| `marmorikatu/switches` | `switches` *(new)* | `switch_id`, `switch_name`, `floor`, `floor_name` | Field `pressed` (0/1); labels from `buttonpos.txt` |
+| `marmorikatu/heating` | `rooms` | `room_type=valve`, `floor` | 9 underfloor-heating zone valves (`LL_*`) |
+| `marmorikatu/cooling` | `hvac` | `sensor_group=cooling` | 2 cooling pumps |
+| `marmorikatu/outlets` | `lights` | `switch_type=outlet`, `floor=""`, `floor_name="Ulko"` | 2 outdoor power outlets |
+| `marmorikatu/ventilation` | `hvac` | `sensor_group=ivk_temp/humidity/actuator` | Casa MVHR + Belimo 22DTH + LR24A actuator |
+| `marmorikatu/energy/heatpump` | `hvac` | `sensor_group=voltage/current/power/energy`, `meter=heatpump` | OR-WE-517 #1; legacy aliases (`Lampopumppu_teho`, `U1_jannite`, …) also written |
+| `marmorikatu/energy/extra` | `hvac` | `sensor_group=voltage/current/power/energy`, `meter=extra` | OR-WE-517 #2; legacy aliases (`Lisavastus_teho`, …) also written |
+| `marmorikatu/status` | `plc_publisher` *(new)* | — | `PublishCount`, `ErrorCount`, `ModbusConnected`, … |
 
-Room columns are mapped via `ROOM_SENSOR_MAP`, producing `(room_type, field_name, floor)` tuples.
+### Light-ID Convention
 
-### Validation Rules
+The `marmorikatu/lights` payload uses bare `PersistentVars.Controls[]` indices
+as keys (e.g. `"1"`, `"17"`, `"51"`), not `v…` strings. The Controls array has
+gaps where outputs are unused:
 
-- Temperature fields: -50°C to 100°C
-- Humidity: 0–100%
-- Power: 0–100 kW
-- Absolute values > 1×10¹⁰ discarded as sensor errors
+- `1`–`8` → `Ledi1`–`Ledi8` indicator LEDs
+- `17`–`56` → `V9`–`V48` wall-light outputs (`Controls index − 8 = V number`)
+- `59`–`61` → `V51`–`V53` outdoor outputs (autokatos, varasto ulkovalo, varasto)
 
-### Incremental Import State
+Friendly Finnish names and floor classification are loaded by the subscriber
+from a hardcoded table derived from `../marmorikatu-plc/PlcLogic/visu/buttontxt.txt`.
 
-The file `.import_state.json` in the data directory tracks how many lines have
-been processed per CSV file:
+### Cadence and Volume
 
-```json
-{
-  "files": {
-    "logfile_dp_2026.csv": {"lines": 4320, "type": "hvac"},
-    "Temperatures2026.csv": {"lines": 8760, "type": "room"}
-  }
-}
+A round of 10 publishes takes ~3 s of bus time, then idles for 10 s before the
+next round — about 4.6 rounds per minute. The subscriber writes ~10 InfluxDB
+batches per round (one per topic), each containing 1–50 points depending on
+how many fields the topic carries.
+
+### Limitations vs the Old CSV Pipeline
+
+A few CSV columns have no MQTT equivalent yet, because they were PLC-internal
+calculations rather than fieldbus signals:
+
+- `Tuloilma_asetusarvo` (supply-air setpoint)
+- `Toimilaite_asetusarvo`, `Toimilaite_pakotus`
+- Per-room PID heating-demand outputs (`MH_*_PID`, `Keittio_PID`, …)
+
+The dashboards that displayed PID heating demand will show empty data; the
+heat-recovery efficiency calculations that referenced `Tuloilma_asetusarvo`
+will need to fall back to the post-heating supply temperature. For zone
+heating activity, the new `room_type=valve` data under `marmorikatu/heating`
+provides a binary alternative.
+
+## Legacy CSV Pipeline (disabled)
+
+The pre-MQTT pipeline (`scripts/import_data.py` + `sync` Docker service) is
+preserved in the repo but commented out in `docker-compose.yml`. To run a
+historical CSV re-import manually:
+
+```bash
+source venv/bin/activate
+python scripts/import_data.py              # full re-import (clears existing)
+python scripts/import_data.py --incremental # append new lines only
 ```
-
-On subsequent runs with `--incremental`, only lines beyond the recorded count
-are processed.
 
 ## Ruuvi MQTT Pipeline
 
@@ -136,27 +157,9 @@ Some temperatures use two registers (integer + decimal part):
 | `indoor_temp` | d1 | d2 | `d1 + d2 × 0.1` |
 | `indoor_target_temp` | d3 | d4 | `d3 + d4 × 0.1` |
 
-## Lights HTTP Pipeline
+## Lights HTTP Pipeline (disabled)
 
-1. The `lights` service polls `http://host.docker.internal:8080/api/lights` every 5 minutes
-2. Response JSON contains switch status for all light switches
-3. Each switch classified by floor (0/1/2) based on `light_id` mapping
-4. Dual-function switches produce two data points (primary + secondary)
-5. Written to InfluxDB `lights` measurement with floor and name tags
-
-### Floor Classification
-
-| Floor | Name | Example Light IDs |
-|-------|------|-------------------|
-| 0 | Kellari (basement) | `tekninen-tila`, `kellari-wc`, `kellari-1` |
-| 1 | Alakerta (ground) | `keittio-1`, `eteinen-1`, `mh-alakerta-1`, `saareke-1` |
-| 2 | Yläkerta (upstairs) | `mh-1-1`, `aula-yk-1`, `porras-yk-1` |
-
-### Dual-Function Switches
-
-Some switches control two functions (e.g., ceiling light + accent light).
-The API reports both states via `isOn` and `isOn2`. These produce two InfluxDB
-points per poll:
-
-- Primary: `switch_type=primary`, `light_id` as-is, name from `firstPress`
-- Secondary: `switch_type=secondary`, `light_id` with `-2` suffix, name from `secondPress`
+The `lights` service is commented out in `docker-compose.yml`. Light states
+now flow via `marmorikatu/lights` and `marmorikatu/outlets`, processed by
+the `plc` service, which writes to the same `lights` measurement so existing
+dashboards keep working.

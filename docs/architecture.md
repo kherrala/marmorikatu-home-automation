@@ -1,20 +1,24 @@
 # System Architecture
 
 Building automation data collection and visualization system. Collects data from
-four sources, stores in InfluxDB, and visualizes with Grafana dashboards. Includes
-an MCP server for Claude Desktop integration.
+three MQTT sources, stores in InfluxDB, and visualizes with Grafana dashboards.
+Includes an MCP server for Claude Desktop integration.
 
 ## Data Flow
 
 ```
 ┌─────────────────────┐                    ┌──────────────────────────────┐
-│  WAGO Controller    │                    │      Docker Compose          │
+│  WAGO PFC200 PLC    │                    │      Docker Compose          │
 │  192.168.1.10       │                    │                              │
-│                     │    SSH/SCP         │  ┌────────────────────────┐  │
-│  /media/sd/CSV_Files│◄───────────────────┤  │  sync container        │  │
-│  ├── Temperatures*  │    (every 5 min)   │  │  - Smart file sync     │  │
-│  └── logfile_dp_*   │                    │  │  - Incremental import  │  │
-└─────────────────────┘                    │  └───────────┬────────────┘  │
+│                     │  MQTT (10 retained │  ┌────────────────────────┐  │
+│  marmorikatu/...    │  topics, ~13s)     │  │  plc container         │  │
+│  (lights, switches, │◄───────────────────┤  │  - MQTT subscriber     │  │
+│   heating, cooling, │  freenas:1883      │  │  - Per-topic dispatch  │  │
+│   outlets, temps,   │                    │  │  - Existing schema     │  │
+│   ventilation, 2×   │                    │  └───────────┬────────────┘  │
+│   energy meters,    │                    │              │               │
+│   status)           │                    │              │               │
+└─────────────────────┘                    │              │               │
                                            │              │               │
 ┌─────────────────────┐                    │              │               │
 │  Ruuvi Gateway      │                    │  ┌───────────┴────────────┐  │
@@ -30,12 +34,6 @@ an MCP server for Claude Desktop integration.
 │  Ground-source HP   │  freenas:1883      │  │  - MQTT subscriber     │  │
 └─────────────────────┘                    │  │  - Register parsing    │  │
                                            │  └───────────┬────────────┘  │
-┌─────────────────────┐                    │              │               │
-│  Light Switch API   │                    │  ┌───────────┴────────────┐  │
-│  localhost:8080      │    HTTP            │  │                        │  │
-│                     │◄───────────────────┤  │  lights container      │  │
-│  Building switches  │  (every 5 min)     │  │  - HTTP poller         │  │
-└─────────────────────┘                    │  └───────────┬────────────┘  │
                                            │              │               │
                                            │              ▼               │
                                            │  ┌────────────────────────┐  │
@@ -102,33 +100,44 @@ Environment:
 | `GF_DATE_FORMATS_*` | Finnish date format (`DD/MM/YYYY HH:mm:ss`) |
 | `GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH` | Points to `building_overview.json` |
 
-### sync — WAGO CSV Sync (Optional)
+### plc — WAGO PLC MQTT Subscriber
 
 | Property | Value |
 |----------|-------|
-| Dockerfile | `Dockerfile.sync` |
-| Container | `wago-sync` |
-| Profile | `sync` (must be explicitly enabled) |
-| Volumes | `./data:/data`, `./scripts:/scripts:ro`, `./ssh:/ssh:ro` |
+| Dockerfile | `Dockerfile.plc` |
+| Container | `marmorikatu-plc` |
 | Restart | `unless-stopped` |
 | Depends on | `influxdb` (healthy) |
 
-Syncs CSV files from the WAGO PLC via SSH/SCP and runs incremental import.
+Subscribes to all ten retained `marmorikatu/...` MQTT topics published by the
+WAGO PLC's `pMqttPublish` POU. Each topic is parsed by a dedicated handler and
+written to InfluxDB using the existing measurement schema so dashboards, MCP
+tools, and the heating optimizer continue to work unchanged.
+
+Topic protocol: see `../marmorikatu-plc/MQTT.md`.
 
 Environment:
 
 | Variable | Purpose |
 |----------|---------|
+| `MQTT_BROKER` | MQTT broker hostname (`freenas.kherrala.fi`) |
+| `MQTT_PORT` | MQTT broker port (`1883`) |
+| `MQTT_TOPIC_PREFIX` | Topic prefix to subscribe under (`marmorikatu`) |
 | `INFLUXDB_URL` | InfluxDB connection URL |
 | `INFLUXDB_TOKEN` | API authentication token |
 | `INFLUXDB_ORG` | Organization name |
 | `INFLUXDB_BUCKET` | Target bucket |
-| `DATA_DIR` | Local CSV storage path (`/data`) |
-| `SSH_KEY` | Path to SSH private key (`/ssh/wago_sync`) |
-| `SYNC_INTERVAL` | Sync frequency in seconds (`300`) |
-| `REMOTE_HOST` | WAGO PLC IP address |
-| `REMOTE_USER` | SSH username |
-| `REMOTE_PATH` | Remote CSV directory |
+
+### Legacy services (disabled)
+
+The following services are commented out in `docker-compose.yml` and replaced
+by the `plc` MQTT subscriber. They are kept in the file for emergency rollback.
+
+- **sync** (`Dockerfile.sync`, `scripts/import_data.py`) — Polled CSV files from
+  the PLC over SSH/SCP every 5 minutes. Replaced by retained MQTT topics.
+- **lights** (`Dockerfile.lights`, `scripts/lights_poller.py`) — Polled an HTTP
+  light-switch API every 5 minutes. Replaced by `marmorikatu/lights` and
+  `marmorikatu/outlets` topics, which write to the same `lights` measurement.
 
 ### ruuvi — Ruuvi MQTT Subscriber
 
@@ -205,29 +214,6 @@ Environment:
 | `INFLUXDB_ORG` | Organization name |
 | `INFLUXDB_BUCKET` | Target bucket |
 | `MCP_PORT` | Server port (`3001`) |
-
-### lights — Light Switch Poller
-
-| Property | Value |
-|----------|-------|
-| Dockerfile | `Dockerfile.lights` |
-| Container | `wago-lights` |
-| Restart | `unless-stopped` |
-| Depends on | `influxdb` (healthy) |
-| Extra hosts | `host.docker.internal:host-gateway` |
-
-Polls an HTTP API for light switch status and writes to InfluxDB.
-
-Environment:
-
-| Variable | Purpose |
-|----------|---------|
-| `LIGHTS_API_URL` | Light switch API endpoint |
-| `POLL_INTERVAL` | Polling frequency in seconds (`300`) |
-| `INFLUXDB_URL` | InfluxDB connection URL |
-| `INFLUXDB_TOKEN` | API authentication token |
-| `INFLUXDB_ORG` | Organization name |
-| `INFLUXDB_BUCKET` | Target bucket |
 
 ## Related Documentation
 
