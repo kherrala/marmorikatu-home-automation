@@ -107,37 +107,41 @@ OUTLET_MAP = {
 # minor naming differences in the PLC publisher.
 #
 # Schema: list of (sensor_group, field_name, [candidate_keys...]).
+# (sensor_group, target field, candidate keys, scale factor).
+# Casa MVHR registers (Outdoor/Supply/Extract/Exhaust/Mode/HeaterCooling) are
+# already scaled by the PLC. Belimo 22DTH registers come as raw int×10 and
+# need ÷10 to match the existing humidity/dew-point/RH-temp schema.
 VENTILATION_FIELDS = [
     ("ivk_temp", "Ulkolampotila",
-        ["outdoortemp", "outdoor_temp", "ioutdoortemp", "out_temp"]),
+        ["outdoortemp", "outdoor_temp", "ioutdoortemp", "out_temp"], 1.0),
     ("ivk_temp", "Tuloilma_ennen_lammitysta",
         ["supplytemppreheat", "supply_temp_pre_heat", "supply_pre_heat",
-         "isupplytemppreheat", "supply_pre"]),
+         "isupplytemppreheat", "supply_pre"], 1.0),
     ("ivk_temp", "Tuloilma_jalkeen_lammityksen",
         ["supplytemppostheat", "supply_temp_post_heat", "supply_post_heat",
-         "isupplytemppostheat", "supply_post"]),
+         "isupplytemppostheat", "supply_post"], 1.0),
     ("ivk_temp", "Poistoilma",
-        ["extracttemp", "extract_temp", "iextracttemp"]),
+        ["extracttemp", "extract_temp", "iextracttemp"], 1.0),
     ("ivk_temp", "Jateilma",
-        ["exhausttemp", "exhaust_temp", "iexhausttemp"]),
+        ["exhausttemp", "exhaust_temp", "iexhausttemp"], 1.0),
     ("humidity", "Suhteellinen_kosteus",
-        ["relativehumidity", "relative_humidity", "irelativehumidity", "rh"]),
+        ["relativehumidity", "relative_humidity", "irelativehumidity", "rh"], 0.1),
     ("humidity", "Absoluuttinen_kosteus",
-        ["abshumidity", "abs_humidity", "iabshumidity", "absolute_humidity"]),
+        ["abshumidity", "abs_humidity", "iabshumidity", "absolute_humidity"], 0.1),
     ("humidity", "Entalpia",
-        ["enthalpy", "ienthalpy"]),
+        ["enthalpy", "ienthalpy"], 0.1),
     ("humidity", "Kastepiste",
-        ["dewpoint", "dew_point", "idewpoint"]),
+        ["dewpoint", "dew_point", "idewpoint"], 0.1),
     ("humidity", "RH_lampotila",
         ["belimo22dth_temp", "belimo_22dth_temp", "temperature",
-         "itemperature", "sensor_temp"]),
+         "itemperature", "sensor_temp"], 0.1),
     ("actuator", "Toimilaite_ohjaus",
         ["damperposition", "damper_position", "rel_position",
-         "uirelposition", "relposition"]),
+         "uirelposition", "relposition"], 1.0),
     ("actuator", "IV_tila",
-        ["operatingmode", "operating_mode", "ioperatingmode", "mode"]),
+        ["operatingmode", "operating_mode", "ioperatingmode", "mode"], 1.0),
     ("actuator", "IV_lammitys_jaahdytys",
-        ["heatercooling", "heater_cooling", "iheatercooling"]),
+        ["heatercooling", "heater_cooling", "iheatercooling"], 1.0),
 ]
 
 # Energy-meter field groupings shared by both heatpump and extra meters.
@@ -390,8 +394,11 @@ def build_lights(payload, ts):
 def build_switches(payload, ts):
     points = []
     for key, value in payload.items():
+        clean = key.lower()
+        if clean.startswith("in"):
+            clean = clean[2:]
         try:
-            idx = int(key)
+            idx = int(clean)
         except (TypeError, ValueError):
             continue
         label_floor = SWITCH_LABELS.get(idx)
@@ -463,12 +470,12 @@ def build_ventilation(payload, ts):
     """Map Casa MVHR + Belimo 22DTH + LR24A actuator readings to hvac fields."""
     grouped = {}
     matched_keys = set()
-    for sensor_group, field, candidates in VENTILATION_FIELDS:
+    for sensor_group, field, candidates, scale in VENTILATION_FIELDS:
         value = lookup_ventilation(payload, candidates)
         if value is None:
             continue
         try:
-            v = float(value)
+            v = float(value) * scale
         except (TypeError, ValueError):
             continue
         grouped.setdefault(sensor_group, {})[field] = v

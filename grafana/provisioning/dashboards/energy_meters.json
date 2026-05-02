@@ -376,10 +376,10 @@
       "pluginVersion": "12.3.2",
       "targets": [{
         "datasource": {"type": "influxdb", "uid": "influxdb"},
-        "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvac\" and r.sensor_group == \"energy\")\n  |> filter(fn: (r) => r._field == \"Total_Active_Energy\")\n  |> filter(fn: (r) => r.meter == \"heatpump\" or r.meter == \"extra\")\n  |> aggregateWindow(every: 1d, fn: last, createEmpty: false)\n  |> difference(nonNegative: true)\n  |> map(fn: (r) => ({r with _field: if r.meter == \"heatpump\" then \"Maalämpöpumppu\" else \"Lisävastus\"}))\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])",
+        "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvac\" and r.sensor_group == \"energy\")\n  |> filter(fn: (r) => r._field == \"Total_Active_Energy\")\n  |> filter(fn: (r) => r.meter == \"heatpump\" or r.meter == \"extra\")\n  |> aggregateWindow(every: 1h, fn: last, createEmpty: false)\n  |> difference(nonNegative: true)\n  |> map(fn: (r) => ({r with _field: if r.meter == \"heatpump\" then \"Maalämpöpumppu\" else \"Lisävastus\"}))\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])",
         "refId": "A"
       }],
-      "title": "Päivittäinen energiankulutus",
+      "title": "Tuntittain energiankulutus",
       "type": "timeseries"
     }
   ],
