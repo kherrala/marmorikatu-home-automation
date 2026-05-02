@@ -17,8 +17,10 @@ import json
 import logging
 import os
 import sys
+import time
 import traceback
 
+import paho.mqtt.client as mqtt
 import paho.mqtt.publish as mqtt_publish
 from mcp.types import Tool, TextContent
 
@@ -245,26 +247,44 @@ def _publish_set(idx, on, client_id):
     return topic, payload
 
 
+BATCH_INTER_PUBLISH_DELAY = float(os.environ.get("LIGHT_BATCH_DELAY", "0.1"))
+
+
 def _publish_batch(indices, on, client_id):
-    """Publish 'true'/'false' to a set of light indices over one connection."""
+    """Publish 'true'/'false' to a set of light indices, paced for the PLC.
+
+    The PLC's MQTT subscribe handler can drop commands when many arrive in a
+    single ~100 ms PLC cycle (paho's `publish.multiple` fires as fast as the
+    broker queues, which overruns the IEC-side dequeue). Open one connection,
+    publish one at a time waiting for QoS-1 PUBACK, and sleep
+    LIGHT_BATCH_DELAY (default 100 ms) between each so the PLC has a full
+    cycle to process each command.
+    """
     payload = "true" if on else "false"
-    msgs = [
-        {
-            "topic": f"{MQTT_TOPIC_PREFIX}/light/{idx}/set",
-            "payload": payload,
-            "qos": 1,
-            "retain": False,
-        }
-        for idx in indices
-    ]
-    if msgs:
-        mqtt_publish.multiple(
-            msgs,
-            hostname=MQTT_BROKER,
-            port=MQTT_PORT,
-            client_id=client_id,
-        )
-    return payload
+    if not indices:
+        return payload
+
+    client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=client_id)
+    client.connect(MQTT_BROKER, MQTT_PORT, keepalive=60)
+    client.loop_start()
+    failed = []
+    try:
+        for idx in indices:
+            topic = f"{MQTT_TOPIC_PREFIX}/light/{idx}/set"
+            info = client.publish(topic, payload, qos=1, retain=False)
+            try:
+                info.wait_for_publish(timeout=5.0)
+                if not info.is_published():
+                    failed.append(idx)
+                    log.warning("publish to %s did not ack within 5s", topic)
+            except Exception as e:
+                failed.append(idx)
+                log.warning("publish to %s failed: %s", topic, e)
+            time.sleep(BATCH_INTER_PUBLISH_DELAY)
+    finally:
+        client.loop_stop()
+        client.disconnect()
+    return payload, failed
 
 
 async def handle_set_light(arguments):
@@ -307,11 +327,15 @@ async def handle_set_all_lights(arguments):
                             text='{"error": "on parameter is required"}')]
     try:
         indices = sorted(LIGHT_LABELS.keys())
-        payload = _publish_batch(indices, bool(on), "marmorikatu-mcp-batch")
-        log.info("set_all_lights → %s for %d lights", payload, len(indices))
+        payload, failed = _publish_batch(indices, bool(on),
+                                         "marmorikatu-mcp-batch")
+        log.info("set_all_lights → %s for %d lights (%d failed)",
+                 payload, len(indices), len(failed))
         return [TextContent(type="text", text=json.dumps({
             "count": len(indices),
             "payload": payload,
+            "succeeded": len(indices) - len(failed),
+            "failed": failed,
             "status": "batch sent — verify with list_lights",
         }, ensure_ascii=False, indent=2))]
     except Exception as e:
@@ -334,15 +358,18 @@ async def handle_set_lights_by_floor(arguments):
             return [TextContent(type="text", text=json.dumps({
                 "error": f"No lights on floor {floor}",
             }, ensure_ascii=False))]
-        payload = _publish_batch(indices, bool(on), "marmorikatu-mcp-floor")
-        log.info("set_lights_by_floor(%s) → %s for %d lights",
-                 floor, payload, len(indices))
+        payload, failed = _publish_batch(indices, bool(on),
+                                         "marmorikatu-mcp-floor")
+        log.info("set_lights_by_floor(%s) → %s for %d lights (%d failed)",
+                 floor, payload, len(indices), len(failed))
         return [TextContent(type="text", text=json.dumps({
             "floor": floor,
             "floor_name": floor_name(floor),
             "count": len(indices),
             "lights": [LIGHT_LABELS[i][0] for i in indices],
             "payload": payload,
+            "succeeded": len(indices) - len(failed),
+            "failed": failed,
             "status": "batch sent — verify with list_lights",
         }, ensure_ascii=False, indent=2))]
     except Exception as e:
@@ -368,14 +395,17 @@ async def handle_set_lights_matching(arguments):
         }, ensure_ascii=False))]
     try:
         indices = [idx for idx, _ in matches]
-        payload = _publish_batch(indices, bool(on), "marmorikatu-mcp-match")
-        log.info("set_lights_matching('%s') → %s for %d lights",
-                 query, payload, len(indices))
+        payload, failed = _publish_batch(indices, bool(on),
+                                         "marmorikatu-mcp-match")
+        log.info("set_lights_matching('%s') → %s for %d lights (%d failed)",
+                 query, payload, len(indices), len(failed))
         return [TextContent(type="text", text=json.dumps({
             "query": query,
             "count": len(indices),
             "lights": [name for _, name in matches],
             "payload": payload,
+            "succeeded": len(indices) - len(failed),
+            "failed": failed,
             "status": "batch sent — verify with list_lights",
         }, ensure_ascii=False, indent=2))]
     except Exception as e:
