@@ -466,7 +466,7 @@
             "type": "influxdb",
             "uid": "influxdb"
           },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"lights\")\n  |> filter(fn: (r) => r.switch_type == \"primary\")\n  |> filter(fn: (r) => r._field == \"is_on\")\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: true)\n  |> fill(usePrevious: true)\n  |> fill(value: 0)\n  |> group(columns: [\"_time\", \"floor_name\"])\n  |> sum()\n  |> map(fn: (r) => ({_time: r._time, _value: r._value, _field: r.floor_name}))\n  |> group(columns: [\"_field\"])",
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"lights\")\n  |> filter(fn: (r) => r.switch_type == \"primary\")\n  |> filter(fn: (r) => r._field == \"is_on\")\n  |> aggregateWindow(every: 1m, fn: last, createEmpty: false)\n  |> group(columns: [\"_time\", \"floor_name\"])\n  |> sum()\n  |> map(fn: (r) => ({_time: r._time, _value: r._value, _field: r.floor_name}))\n  |> group(columns: [\"_field\"])",
           "refId": "A"
         }
       ]
