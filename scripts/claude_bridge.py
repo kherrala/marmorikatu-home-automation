@@ -247,9 +247,12 @@ async def mcp_connection_loop(url: str):
         try:
             _reconnect_events[url].clear()
             log.info("Connecting to MCP server at %s ...", url)
-            # Use streamable HTTP for /mcp endpoints, SSE for /sse endpoints
+            # Use streamable HTTP for /mcp endpoints, SSE for /sse endpoints.
+            # streamablehttp_client yields (read, write, get_session_id);
+            # sse_client yields (read, write). Take the first two either way.
             transport = streamablehttp_client(url) if url.rstrip("/").endswith("/mcp") else sse_client(url)
-            async with transport as (read_stream, write_stream):
+            async with transport as streams:
+                read_stream, write_stream = streams[0], streams[1]
                 async with ClientSession(read_stream, write_stream) as session:
                     await asyncio.wait_for(session.initialize(), timeout=15)
                     tools_result = await asyncio.wait_for(session.list_tools(), timeout=10)
