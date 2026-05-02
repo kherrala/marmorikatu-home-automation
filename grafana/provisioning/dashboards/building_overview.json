@@ -446,7 +446,7 @@
             "type": "influxdb",
             "uid": "influxdb"
           },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"temperature\")\n  |> filter(fn: (r) => r._field == \"supply_temp\" or r._field == \"return_temp\")\n  |> last()\n  |> keep(columns: [\"_time\", \"_field\", \"_value\"])\n  |> group()\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> filter(fn: (r) => exists r.supply_temp and exists r.return_temp)\n  |> map(fn: (r) => ({_time: r._time, _value: 1.965 * (r.supply_temp - r.return_temp), _field: \"thermal_power\"}))\n  |> filter(fn: (r) => r._value >= 0.0 and r._value <= 15.0)",
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: -5m)\n  |> filter(fn: (r) => r._measurement == \"hvac\" and r.sensor_group == \"power\")\n  |> filter(fn: (r) => r.meter == \"heatpump\" or r.meter == \"extra\")\n  |> filter(fn: (r) => r._field == \"Total_Active_Power\")\n  |> last()\n  |> group()\n  |> sum()",
           "refId": "A"
         }
       ],
