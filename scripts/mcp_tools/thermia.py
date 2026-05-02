@@ -249,20 +249,25 @@ from(bucket: "{INFLUXDB_BUCKET}")
   |> group()
   |> pivot(rowKey: ["_time"], columnKey: ["_field"], valueColumn: "_value")
 '''
-    status_query = f'''
+    # Actual electrical draw from the two OR-WE-517 meters (kW), aggregated
+    # to the same window as the temperature data and pivoted into one row
+    # per time with `heatpump` and `extra` columns.
+    power_query = f'''
 from(bucket: "{INFLUXDB_BUCKET}")
   |> range(start: {time_range})
-  |> filter(fn: (r) => r._measurement == "thermia" and r.data_type == "status")
-  |> filter(fn: (r) => r._field == "compressor" or r._field == "aux_heater_3kw" or r._field == "aux_heater_6kw")
-  |> aggregateWindow(every: {aggregation}, fn: last, createEmpty: false)
+  |> filter(fn: (r) => r._measurement == "hvac" and r.sensor_group == "power")
+  |> filter(fn: (r) => r.meter == "heatpump" or r.meter == "extra")
+  |> filter(fn: (r) => r._field == "Total_Active_Power")
+  |> aggregateWindow(every: {aggregation}, fn: mean, createEmpty: false)
+  |> keep(columns: ["_time", "_value", "meter"])
   |> group()
-  |> pivot(rowKey: ["_time"], columnKey: ["_field"], valueColumn: "_value")
+  |> pivot(rowKey: ["_time"], columnKey: ["meter"], valueColumn: "_value")
 '''
     try:
         temp_results = execute_flux_query(temp_query)
-        status_results = execute_flux_query(status_query)
+        power_results = execute_flux_query(power_query)
 
-        status_by_time = {r["_time"]: r for r in status_results}
+        power_by_time = {r["_time"]: r for r in power_results}
 
         cop_values = []
         cop_system_values = []
@@ -273,28 +278,34 @@ from(bucket: "{INFLUXDB_BUCKET}")
         total_points = 0
         recent = []
 
+        # Threshold above which we count the compressor / aux as "running".
+        # OR-WE-517 reports ~70 W standby on the auxiliary line and a few
+        # tens of watts on the heat-pump line when the compressor is off.
+        COMPRESSOR_ON_KW = 0.5
+        AUX_ON_KW = 0.5
+
         for t in temp_results:
             time_key = t.get("_time")
-            s = status_by_time.get(time_key)
-            if not s:
+            p = power_by_time.get(time_key)
+            if not p:
                 continue
 
             supply = t.get("supply_temp")
             ret = t.get("return_temp")
-            comp = s.get("compressor", 0)
-            aux_3kw = s.get("aux_heater_3kw", 0)
-            aux_6kw = s.get("aux_heater_6kw", 0)
+            p_compressor = p.get("heatpump") or 0.0
+            p_aux = p.get("extra") or 0.0
 
             if supply is None or ret is None:
                 continue
 
             total_points += 1
             p_heat = 1.965 * (supply - ret)
-            p_aux = 3.0 * aux_3kw + 6.0 * aux_6kw
 
-            if comp == 1:
+            comp_running = p_compressor > COMPRESSOR_ON_KW
+            aux_running = p_aux > AUX_ON_KW
+
+            if comp_running:
                 compressor_on_count += 1
-                p_compressor = 2.3
                 cop_hp = p_heat / p_compressor
                 p_ground = p_heat - p_compressor
                 cop_values.append(cop_hp)
@@ -305,7 +316,7 @@ from(bucket: "{INFLUXDB_BUCKET}")
                     cop_sys = p_heat / total_input
                     cop_system_values.append(cop_sys)
 
-            if aux_3kw == 1 or aux_6kw == 1:
+            if aux_running:
                 aux_active_count += 1
 
             p_heat_values.append(p_heat)
@@ -316,8 +327,9 @@ from(bucket: "{INFLUXDB_BUCKET}")
                 "return_temp": ret,
                 "delta_t": round(supply - ret, 1),
                 "p_heat_kw": round(p_heat, 2),
-                "compressor": comp,
-                "cop_hp": round(p_heat / 2.3, 2) if comp == 1 else None,
+                "p_compressor_kw": round(p_compressor, 3),
+                "p_aux_kw": round(p_aux, 3),
+                "cop_hp": round(p_heat / p_compressor, 2) if comp_running else None,
             })
 
         result = {
