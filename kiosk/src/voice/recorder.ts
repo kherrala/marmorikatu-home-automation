@@ -2,6 +2,7 @@ import { getState, dispatch } from '../state/store.js';
 import { audioStream } from '../camera/camera.js';
 import { analyserNode, getRMS } from './microphone.js';
 import { debugLog } from '../debug.js';
+import { listeningIndicator } from '../dom/elements.js';
 import {
   SILENCE_THRESHOLD, SILENCE_DURATION, SILENCE_DURATION_SHORT,
   MIN_RECORDING_MS, MAX_RECORDING_MS,
@@ -47,6 +48,7 @@ export function startRecording(): void {
 
     recorder.onstop = async () => {
       activeRecorder = null;
+      listeningIndicator.classList.remove('signal');
       const duration = Date.now() - recordingStartTime;
       const totalSize = audioChunks.reduce((s, c) => s + c.size, 0);
       debugLog(`recorder.onstop: duration=${duration}ms chunks=${audioChunks.length} size=${totalSize}b`);
@@ -62,6 +64,7 @@ export function startRecording(): void {
       const blob = new Blob(audioChunks, { type: recorder.mimeType || 'audio/webm' });
       audioChunks = [];
 
+      listeningIndicator.classList.add('processing');
       try {
         const formData = new FormData();
         formData.append('audio', blob, `recording.${ext}`);
@@ -72,6 +75,7 @@ export function startRecording(): void {
           const text = data.text?.trim();
           debugLog(`Transcription: "${text || '(empty)'}"`);
           if (text) {
+            listeningIndicator.classList.remove('processing');
             onVoiceResult?.(text);
             return;
           }
@@ -80,6 +84,8 @@ export function startRecording(): void {
         }
       } catch (err) {
         debugLog(`Transcription error: ${err}`);
+      } finally {
+        listeningIndicator.classList.remove('processing');
       }
 
       const s = getState();
@@ -134,7 +140,9 @@ export function startSilenceDetection(
       }
       speechDetected = true;
       silenceStart = null;
+      listeningIndicator.classList.add('signal');
     } else if (speechDetected) {
+      listeningIndicator.classList.remove('signal');
       if (!silenceStart) silenceStart = Date.now();
       const silentFor = Date.now() - silenceStart;
       const hadVoice = getState().greeting.hadVoiceInput;
@@ -143,6 +151,8 @@ export function startSilenceDetection(
         recorder.stop();
         return;
       }
+    } else {
+      listeningIndicator.classList.remove('signal');
     }
 
     silenceTimer = setTimeout(check, 150);

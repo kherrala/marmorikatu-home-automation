@@ -57,14 +57,20 @@ _tts_cache: "OrderedDict[str, bytes]" = OrderedDict()
 WEEKDAYS_FI = ["maanantai", "tiistai", "keskiviikko", "torstai", "perjantai", "lauantai", "sunnuntai"]
 
 
-def get_system_prompt() -> str:
-    """Build system prompt with current date and time."""
+def _now_helsinki_str() -> tuple[str, str]:
     from datetime import datetime
     from zoneinfo import ZoneInfo
     now = datetime.now(ZoneInfo("Europe/Helsinki"))
     weekday = WEEKDAYS_FI[now.weekday()]
-    date_str = f"{weekday} {now.day}.{now.month}.{now.year}"
-    time_str = f"{now.hour}:{now.minute:02d}"
+    return (
+        f"{weekday} {now.day}.{now.month}.{now.year}",
+        f"{now.hour}:{now.minute:02d}",
+    )
+
+
+def get_system_prompt() -> str:
+    """Full system prompt — used by Claude (fallback path)."""
+    date_str, time_str = _now_helsinki_str()
     return (
         f"Olet kodin älykäs avustaja Tampereella. Nyt on {date_str}, kello {time_str}.\n"
         f"\n"
@@ -101,6 +107,33 @@ def get_system_prompt() -> str:
         f"- Tilan voi tarkistaa 'get_light_status'-työkalulla, mutta uusi tila näkyy vasta ~13 sekunnin päästä."
     )
 
+
+def get_ollama_system_prompt() -> str:
+    """Short, focused prompt for the small Ollama model.
+
+    Optimised for gemma4:e4b — fewer tokens, no dead context (no browser /
+    harmony instructions), tighter rules to keep tool selection on track.
+    """
+    date_str, time_str = _now_helsinki_str()
+    return (
+        f"Olet kodin avustaja Tampereella. Nyt on {date_str}, kello {time_str}.\n"
+        f"\n"
+        f"SÄÄNNÖT:\n"
+        f"- Käytä työkaluja tietojen hakuun. Älä keksi.\n"
+        f"- Vastaa 1–2 lauseella suomeksi. Ei markdownia.\n"
+        f"- Vastauksesi luetaan ääneen.\n"
+        f"- Kellarin lämpötila on tahallaan alempi.\n"
+        f"\n"
+        f"VALOT:\n"
+        f"- set_lights_matching: ryhmä nimellä (esim. \"Saareke\")\n"
+        f"- set_lights_by_floor: kerros (0=Kellari, 1=Alakerta, 2=Yläkerta)\n"
+        f"- set_light: yksittäinen valo nimellä\n"
+        f"\n"
+        f"MUISTI:\n"
+        f"- remember-työkalu kun käyttäjä kertoo mieltymyksen tai pyytää muistamaan\n"
+        f"- recall-työkalu keskustelun alussa"
+    )
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("claude-bridge")
 
@@ -114,35 +147,23 @@ _tasks: list[asyncio.Task] = []
 claude_client: anthropic.AsyncAnthropic | None = None
 
 
-# Whitelist of tools available to Ollama. Small models can't handle too many tools.
-# Claude fallback gets the full set from all MCP servers.
+# Whitelist of tools available to Ollama. Small models (gemma4:e4b) lose tool
+# selection accuracy as the count grows — keep this lean and let Claude (full
+# fallback path) handle browser, Harmony, and deep diagnostics tools.
 _OLLAMA_ALLOWED_TOOLS = {
-    # Home automation — only the high-level / commonly-asked tools.
-    # Deep diagnostics (heatpump COP, brine, hotwater, duty cycle, freezing
-    # probability) are still available via the Claude fallback path; trimming
-    # them keeps gemma4:e4b's tool-selection focused.
+    # Home environment — high-level only
     "get_latest", "get_room_temperatures", "get_air_quality",
-    "compare_indoor_outdoor",
-    "get_thermia_status", "get_thermia_temperatures",
-    "get_energy_consumption", "get_electricity_prices",
+    "get_thermia_status",
     "get_heating_status", "get_energy_cost",
-    "get_sauna_status",
+    "get_electricity_prices", "get_sauna_status",
     # Light control (PLC via MQTT)
-    "list_lights", "get_light_status", "set_light",
-    "set_all_lights", "set_lights_by_floor", "set_lights_matching",
-    "get_lights_optimizer_status",
+    "list_lights", "set_light",
+    "set_lights_by_floor", "set_lights_matching",
     # External services
     "get_weather_forecast", "get_news_headlines",
     "get_bus_departures", "get_calendar_events", "get_daily_report",
-    # Harmony Hub
-    "harmony_list_activities", "harmony_current_activity",
-    "harmony_start_activity", "harmony_power_off",
     # Memory
     "remember", "recall",
-    # Web browsing
-    "browser_navigate", "browser_navigate_back", "browser_snapshot",
-    "browser_click", "browser_hover", "browser_handle_dialog",
-    "browser_take_screenshot",
 }
 
 
@@ -332,7 +353,7 @@ async def run_ollama_agentic_loop(messages: list[dict], tools: list[dict]) -> di
     openai_tools = _tools_to_openai(tools)
 
     # Send full conversation history — images only on the last message
-    ollama_messages = [{"role": "system", "content": get_system_prompt()}]
+    ollama_messages = [{"role": "system", "content": get_ollama_system_prompt()}]
     for i, m in enumerate(messages):
         msg = {"role": m["role"], "content": m["content"]}
         if m.get("images") and i == len(messages) - 1:
@@ -514,7 +535,7 @@ async def chat_stream_endpoint(request: Request) -> Response:
 
     openai_tools = _tools_to_openai(ollama_tools)
     # Send full conversation history — images only on the last message
-    ollama_messages = [{"role": "system", "content": get_system_prompt()}]
+    ollama_messages = [{"role": "system", "content": get_ollama_system_prompt()}]
     for i, m in enumerate(messages):
         msg = {"role": m["role"], "content": m["content"]}
         # Only include images on the last message (current request)
@@ -883,49 +904,13 @@ async def transcribe_endpoint(request: Request) -> JSONResponse:
 
             transcribe_path = wav_path or src.name
 
-            # Try Gemma 4 audio transcription first (GPU-accelerated via Ollama)
-            text = None
-            use_ollama = os.environ.get("TRANSCRIBE_VIA_OLLAMA", "true").lower() == "true"
-            if use_ollama:
-                try:
-                    import httpx
-                    with open(transcribe_path, "rb") as af:
-                        audio_b64 = base64.b64encode(af.read()).decode()
-                    async with httpx.AsyncClient(timeout=30) as client:
-                        resp = await client.post(
-                            f"{OLLAMA_URL}/api/chat",
-                            json={
-                                "model": OLLAMA_MODEL,
-                                "messages": [{
-                                    "role": "user",
-                                    "content": "Kuuntele tämä ääni ja kirjoita VAIN puhuttu teksti suomeksi. Älä lisää mitään muuta.",
-                                    "images": [audio_b64],
-                                }],
-                                "stream": False,
-                                "think": False,
-                                "options": {"num_predict": 100, "temperature": 0.1},
-                            },
-                        )
-                        resp.raise_for_status()
-                        text = resp.json()["message"]["content"].strip()
-                        # Strip quotes and common prefixes the model might add
-                        text = text.strip('"\'').strip()
-                        if text.lower().startswith("teksti:"):
-                            text = text[7:].strip()
-                        log.info("Transcribe (Ollama): '%s'", text)
-                except Exception as e:
-                    log.warning("Ollama transcription failed (%s), falling back to Whisper", e)
-                    text = None
-
-            # Fallback: local Whisper on CPU
-            if not text:
-                loop = asyncio.get_event_loop()
-                model = await loop.run_in_executor(None, _get_whisper_model)
-                segments, _info = await loop.run_in_executor(
-                    None, lambda: model.transcribe(transcribe_path, language="fi", beam_size=3)
-                )
-                text = " ".join(s.text.strip() for s in segments).strip()
-                log.info("Transcribe (Whisper): '%s'", text)
+            loop = asyncio.get_event_loop()
+            model = await loop.run_in_executor(None, _get_whisper_model)
+            segments, _info = await loop.run_in_executor(
+                None, lambda: model.transcribe(transcribe_path, language="fi", beam_size=3)
+            )
+            text = " ".join(s.text.strip() for s in segments).strip()
+            log.info("Transcribe (Whisper): '%s'", text)
 
             # Clean up wav temp file
             if wav_path:
@@ -973,7 +958,7 @@ async def health_endpoint(request: Request) -> JSONResponse:
 # -- Debug log for remote session diagnosis ------------------------------------
 from collections import deque
 _debug_sessions: dict[str, dict] = {}  # session_id → {ua, entries: deque}
-_DEBUG_MAX_ENTRIES = 100
+_DEBUG_MAX_ENTRIES = 300
 _DEBUG_MAX_SESSIONS = 20
 
 
@@ -1217,6 +1202,9 @@ async def lifespan(app):
     for url in mcp_urls:
         _tasks.append(asyncio.create_task(mcp_connection_loop(url)))
     _tasks.append(asyncio.create_task(_precache_loop()))
+
+    # Pre-warm Whisper so the first iPad transcription doesn't pay a 30s load cost
+    asyncio.get_event_loop().run_in_executor(None, _get_whisper_model)
 
     yield
 

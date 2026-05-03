@@ -166,6 +166,7 @@ export async function triggerGreeting(): Promise<void> {
 
   if (epoch !== greetingEpoch) return;
 
+  stopJingle();
   greetingOverlay.classList.add('minimized');
   startListeningFn?.();
 }

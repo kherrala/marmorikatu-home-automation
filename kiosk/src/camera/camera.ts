@@ -1,5 +1,6 @@
 import { videoEl } from '../dom/elements.js';
 import { resumeIfSuspended } from '../audio/context.js';
+import { debugLog } from '../debug.js';
 
 export let audioStream: MediaStream | null = null;
 
@@ -9,18 +10,28 @@ export function setAudioStream(stream: MediaStream | null): void {
 
 let videoRestartPending = false;
 
+function describeStream(stream: MediaStream): string {
+  const v = stream.getVideoTracks();
+  const a = stream.getAudioTracks();
+  return `v=${v.length}(${v.map(t => t.readyState).join(',')}) ` +
+         `a=${a.length}(${a.map(t => t.readyState).join(',')})`;
+}
+
 export async function setupCamera(): Promise<boolean> {
+  debugLog('setupCamera: start');
+  const t0 = performance.now();
   try {
     const stream = await navigator.mediaDevices.getUserMedia({
       video: { facingMode: 'user', width: 320, height: 240 },
       audio: true,
     });
     videoEl.srcObject = stream;
-    // Keep audio tracks alive but disabled -- maintains iOS audio session
     stream.getAudioTracks().forEach(t => t.enabled = false);
     await videoEl.play();
+    debugLog(`setupCamera: video+audio ok in ${Math.round(performance.now() - t0)}ms ${describeStream(stream)}`);
   } catch (err) {
-    console.warn('Camera+mic failed, trying video only:', err);
+    const e = err as Error;
+    debugLog(`setupCamera: video+audio failed (${e.name}: ${e.message}), trying video-only`);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: 'user', width: 320, height: 240 },
@@ -28,16 +39,23 @@ export async function setupCamera(): Promise<boolean> {
       });
       videoEl.srcObject = stream;
       await videoEl.play();
+      debugLog(`setupCamera: video-only ok ${describeStream(stream)}`);
     } catch (err2) {
-      console.warn('Camera init failed:', err2);
+      const e2 = err2 as Error;
+      debugLog(`setupCamera: FAILED (${e2.name}: ${e2.message})`);
       return false;
     }
   }
 
+  debugLog(`setupCamera: video readyState=${videoEl.readyState} dim=${videoEl.videoWidth}x${videoEl.videoHeight}`);
+
+  const tModel = performance.now();
   try {
     await faceapi.nets.tinyFaceDetector.loadFromUri('/face-api');
+    debugLog(`setupCamera: face-api model loaded in ${Math.round(performance.now() - tModel)}ms`);
   } catch (err) {
-    console.warn('Face detection model failed to load:', err);
+    const e = err as Error;
+    debugLog(`setupCamera: face-api model load FAILED (${e.name}: ${e.message})`);
     return false;
   }
 
@@ -49,7 +67,7 @@ export function watchCameraTracks(): void {
   if (!stream) return;
   stream.getVideoTracks().forEach(t => {
     t.addEventListener('ended', () => {
-      console.warn('[camera] Video track ended -- will restart on next visibility');
+      debugLog(`camera: video track ended (label=${t.label.slice(0, 30)}) -- scheduling restart`);
       scheduleVideoRestart();
     });
   });
@@ -60,8 +78,11 @@ export function scheduleVideoRestart(): void {
   videoRestartPending = true;
   setTimeout(async () => {
     videoRestartPending = false;
-    if (document.visibilityState === 'hidden') return;
-    console.log('[camera] Restarting camera stream after interruption');
+    if (document.visibilityState === 'hidden') {
+      debugLog('camera: restart skipped (page hidden)');
+      return;
+    }
+    debugLog('camera: restarting stream');
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: 'user', width: 320, height: 240 },
@@ -71,7 +92,6 @@ export function scheduleVideoRestart(): void {
       stream.getAudioTracks().forEach(t => t.enabled = false);
       await videoEl.play();
       watchCameraTracks();
-      // Update mic stream if one was established
       if (audioStream) {
         const audioTracks = stream.getAudioTracks();
         if (audioTracks.length > 0) {
@@ -79,9 +99,10 @@ export function scheduleVideoRestart(): void {
           setAudioStream(new MediaStream(audioTracks));
         }
       }
-      console.log('[camera] Camera stream restarted');
+      debugLog(`camera: restart ok ${describeStream(stream)} dim=${videoEl.videoWidth}x${videoEl.videoHeight}`);
     } catch (err) {
-      console.warn('[camera] Camera restart failed:', err);
+      const e = err as Error;
+      debugLog(`camera: restart FAILED (${e.name}: ${e.message})`);
     }
   }, 800);
 }
@@ -91,11 +112,13 @@ export function initCameraWatcher(): void {
     if (document.visibilityState !== 'visible') return;
     resumeIfSuspended();
     const tracks = (videoEl.srcObject as MediaStream | null)?.getVideoTracks() ?? [];
-    const needsRestart = tracks.length === 0 || tracks.some(t => t.readyState === 'ended');
+    const endedTracks = tracks.filter(t => t.readyState === 'ended').length;
+    const needsRestart = tracks.length === 0 || endedTracks > 0;
+    debugLog(`visibility->visible: vtracks=${tracks.length} ended=${endedTracks} paused=${videoEl.paused}`);
     if (needsRestart) {
       scheduleVideoRestart();
     } else if (videoEl.paused) {
-      videoEl.play().catch(() => {});
+      videoEl.play().catch((err) => debugLog(`videoEl.play failed: ${err}`));
     }
   });
 }

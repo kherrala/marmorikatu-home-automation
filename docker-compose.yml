@@ -189,7 +189,6 @@ services:
       - OLLAMA_MODEL=gemma4:e4b
       - OLLAMA_NUM_CTX=65536
       - WHISPER_MODEL=base
-      - TRANSCRIBE_VIA_OLLAMA=false
       - BRIDGE_PORT=3002
     extra_hosts:
       - "host.docker.internal:host-gateway"

@@ -70,7 +70,7 @@ export function startListening(): void {
 
   dispatch({ type: 'SET_LISTENING', active: true });
   reportText.textContent = '';
-  listeningIndicator.classList.remove('hidden');
+  listeningIndicator.classList.remove('hidden', 'signal', 'processing');
   setListening(true);
   // Daily-report timer: fires if user says nothing for 5s after mic opens
   scheduleDailyReport();
@@ -90,6 +90,7 @@ export function startListening(): void {
 export function pauseListening(): void {
   dispatch({ type: 'SET_LISTENING', active: false });
   listeningIndicator.classList.add('hidden');
+  listeningIndicator.classList.remove('signal', 'processing');
   setListening(false);
   if (silenceTimer !== null) clearTimeout(silenceTimer);
   if (activeRecognizer) {

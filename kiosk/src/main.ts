@@ -1,8 +1,29 @@
 import './styles.css';
 import './debug.js'; // initialize debug log (window.__kioskDebug)
+import { debugLog } from './debug.js';
 
 import { dispatch, getState, select } from './state/store.js';
 import { KioskPhase } from './types/state.js';
+
+debugLog(
+  `boot: ua="${navigator.userAgent.slice(0, 90)}" ` +
+  `secure=${window.isSecureContext} ` +
+  `dpr=${window.devicePixelRatio} ` +
+  `vp=${window.innerWidth}x${window.innerHeight} ` +
+  `touch=${navigator.maxTouchPoints} ` +
+  `lang=${navigator.language}`
+);
+
+window.addEventListener('error', (e) => {
+  debugLog(`window.error: ${e.message} @ ${e.filename}:${e.lineno}:${e.colno}`);
+});
+window.addEventListener('unhandledrejection', (e) => {
+  const reason = e.reason instanceof Error ? `${e.reason.name}: ${e.reason.message}` : String(e.reason);
+  debugLog(`unhandled rejection: ${reason}`);
+});
+document.addEventListener('visibilitychange', () => {
+  debugLog(`visibility: ${document.visibilityState}`);
+});
 import { initCarousel, showSlide } from './carousel/carousel.js';
 import { unlockAudio } from './audio/audio-unlock.js';
 import { setupCamera, watchCameraTracks } from './camera/camera.js';
@@ -23,7 +44,10 @@ import { distinctUntilChanged } from 'rxjs/operators';
 // =========================================================================
 //  STATUS DOT
 // =========================================================================
+let _prevPhase: KioskPhase | null = null;
 select(s => s.phase).pipe(distinctUntilChanged()).subscribe(phase => {
+  debugLog(`phase: ${_prevPhase ?? '(init)'} -> ${KioskPhase[phase]}`);
+  _prevPhase = phase;
   cameraDot.classList.remove('active', 'failed');
   if ([KioskPhase.READY, KioskPhase.GREETING, KioskPhase.COOLDOWN].includes(phase)) {
     cameraDot.classList.add('active');

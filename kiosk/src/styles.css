@@ -473,3 +473,26 @@ html, body {
   0%, 100% { opacity: 1; transform: scale(1); }
   50%  { opacity: 0.5; transform: scale(1.3); }
 }
+
+#listening-indicator .status-signal,
+#listening-indicator .status-processing { display: none; }
+
+#listening-indicator.signal #mic-pulse {
+  background: #4caf50;
+  animation-duration: 0.5s;
+}
+#listening-indicator.signal .status-listening { display: none; }
+#listening-indicator.signal .status-signal { display: inline; color: #4caf50; }
+
+#listening-indicator.processing #mic-pulse {
+  background: #ffc107;
+  animation: micProcessing 1s linear infinite;
+}
+#listening-indicator.processing .status-listening,
+#listening-indicator.processing .status-signal { display: none; }
+#listening-indicator.processing .status-processing { display: inline; color: #ffc107; }
+@keyframes micProcessing {
+  0%   { transform: scale(0.9); opacity: 0.6; }
+  50%  { transform: scale(1.2); opacity: 1; }
+  100% { transform: scale(0.9); opacity: 0.6; }
+}
