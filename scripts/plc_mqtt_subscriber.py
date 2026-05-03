@@ -80,11 +80,13 @@ EXTRA_TEMP_MAP = {
 }
 
 # Underfloor-heating zone valves (marmorikatu/heating) → rooms/room_type=valve.
-# Floor matches the room the valve serves.
+# Floor matches the room the valve serves. Note: the WAGO publisher emits a
+# key called `ll_olohuone` for what is actually the kitchen / open-living-
+# room loop, so it maps to LL_Keittio in the schema.
 VALVE_MAP = {
     "ll_kellari_eteinen": ("LL_Kellari_eteinen", 0),
     "ll_kellari": ("LL_Kellari", 0),
-    "ll_olohuone": ("LL_Olohuone", 1),
+    "ll_olohuone": ("LL_Keittio", 1),
     "ll_essi": ("LL_Essi", 2),
     "ll_onni": ("LL_Onni", 2),
     "ll_yk_aula": ("LL_YK_aula", 2),
@@ -102,7 +104,7 @@ VALVE_MAP = {
 VALVE_TO_PID = {
     "ll_kellari_eteinen": ("Kellari_eteinen_PID", 0),
     "ll_kellari":         ("Kellari_PID", 0),
-    "ll_olohuone":        ("Olohuone_PID", 1),
+    "ll_olohuone":        ("Keittio_PID", 1),
     "ll_essi":            ("MH_aikuiset_PID", 2),
     "ll_onni":            ("MH_Aarni_PID", 2),
     "ll_yk_aula":         ("Ylakerran_aula_PID", 2),
@@ -146,6 +148,14 @@ VENTILATION_FIELDS = [
         ["extracttemp", "extract_temp", "iextracttemp"], 1.0),
     ("ivk_temp", "Jateilma",
         ["exhausttemp", "exhaust_temp", "iexhausttemp"], 1.0),
+    # Legacy CSV had a separate Tuloilma_asetusarvo (supply-air setpoint),
+    # used by the LTO/LVK heat-recovery efficiency Flux query as an exhaust-
+    # temp proxy (per docs/heat-recovery-efficiency.md). The WAGO MQTT
+    # publisher does not emit a setpoint, so we alias real ExhaustTemp to
+    # the legacy field name — that's a more accurate denominator than the
+    # original supply-setpoint proxy ever was.
+    ("ivk_temp", "Tuloilma_asetusarvo",
+        ["exhausttemp", "exhaust_temp", "iexhausttemp"], 1.0),
     ("humidity", "Suhteellinen_kosteus",
         ["relativehumidity", "relative_humidity", "irelativehumidity", "rh"], 0.1),
     ("humidity", "Absoluuttinen_kosteus",
@@ -187,10 +197,14 @@ ENERGY_LEGACY_ALIASES = {
         ("voltage", "L3_Voltage", "U3_jannite"),
         ("power",   "Total_Active_Power",  "Lampopumppu_teho"),
         ("energy",  "Total_Active_Energy", "Lampopumppu_energia"),
+        # Legacy "annual" energy field — semantically the same kWh meter
+        # running total. The "vuosi" prefix predates this pipeline.
+        ("energy",  "Total_Active_Energy", "Maalampopumppu_vuosienergia"),
     ],
     "extra": [
         ("power",  "Total_Active_Power",  "Lisavastus_teho"),
         ("energy", "Total_Active_Energy", "Lisavastus_energia"),
+        ("energy", "Total_Active_Energy", "Lisalammitin_vuosienergia"),
     ],
 }
 
