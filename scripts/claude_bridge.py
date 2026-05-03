@@ -57,6 +57,29 @@ _tts_cache: "OrderedDict[str, bytes]" = OrderedDict()
 WEEKDAYS_FI = ["maanantai", "tiistai", "keskiviikko", "torstai", "perjantai", "lauantai", "sunnuntai"]
 
 
+_CONTROL_ACTION_RE = re.compile(
+    r"\b(syty|sammu|kytke|laita|sytytä|sammuta|käännä|aseta|muuta|pistä|p[aä][aä]ll|pois)\b",
+    re.IGNORECASE,
+)
+_CONTROL_TARGET_RE = re.compile(
+    r"valo|lamppu|sauna|kiuas|takka|leffa|patteri|lämmitys|jäähdytys",
+    re.IGNORECASE,
+)
+
+
+def _has_control_intent(user_text: str) -> bool:
+    """Detect whether a user message expresses an actionable control command.
+
+    Used to force-fallback from Ollama → Claude when gemma narrates the action
+    ('Käytän set_light-työkalua...') without emitting an actual tool_calls
+    array. False positives just mean Claude handles a query gemma could have —
+    safe; false negatives leave the user with no action — bad. Lean permissive.
+    """
+    if not user_text:
+        return False
+    return bool(_CONTROL_ACTION_RE.search(user_text) and _CONTROL_TARGET_RE.search(user_text))
+
+
 def _now_helsinki_str() -> tuple[str, str]:
     from datetime import datetime
     from zoneinfo import ZoneInfo
@@ -111,27 +134,27 @@ def get_system_prompt() -> str:
 def get_ollama_system_prompt() -> str:
     """Short, focused prompt for the small Ollama model.
 
-    Optimised for gemma4:e4b — fewer tokens, no dead context (no browser /
-    harmony instructions), tighter rules to keep tool selection on track.
+    Optimised for gemma4:e4b. Critical: do NOT name specific tools here —
+    small models echo tool names back as narration ("Käytän set_light-
+    työkalua...") instead of emitting an actual tool_calls array, leaving
+    the action unperformed. Tool schemas come from the `tools` parameter;
+    the prompt only needs to push behaviour, not catalogue capabilities.
     """
     date_str, time_str = _now_helsinki_str()
     return (
         f"Olet kodin avustaja Tampereella. Nyt on {date_str}, kello {time_str}.\n"
         f"\n"
         f"SÄÄNNÖT:\n"
-        f"- Käytä työkaluja tietojen hakuun. Älä keksi.\n"
+        f"- Kutsu työkaluja suoraan tietojen hakuun ja toimintojen suorittamiseen.\n"
+        f"- ÄLÄ kerro käyttäjälle työkalujen nimiä äläkä sano \"kutsun työkalua\" — kutsu se.\n"
+        f"- ÄLÄ kuvaile mitä aiot tehdä — tee se ensin, sitten vahvista lyhyesti.\n"
+        f"- Älä keksi tietoja. Jos työkalu ei toimi, sano rehellisesti ettet tiedä.\n"
         f"- Vastaa 1–2 lauseella suomeksi. Ei markdownia.\n"
         f"- Vastauksesi luetaan ääneen.\n"
-        f"- Kellarin lämpötila on tahallaan alempi.\n"
+        f"- Kellarin lämpötila on tahallaan alempi kuin muissa kerroksissa.\n"
         f"\n"
-        f"VALOT:\n"
-        f"- set_lights_matching: ryhmä nimellä (esim. \"Saareke\")\n"
-        f"- set_lights_by_floor: kerros (0=Kellari, 1=Alakerta, 2=Yläkerta)\n"
-        f"- set_light: yksittäinen valo nimellä\n"
-        f"\n"
-        f"MUISTI:\n"
-        f"- remember-työkalu kun käyttäjä kertoo mieltymyksen tai pyytää muistamaan\n"
-        f"- recall-työkalu keskustelun alussa"
+        f"Kun käyttäjä kertoo mieltymyksen tai pyytää muistamaan jotain, tallenna se työkalulla.\n"
+        f"Keskustelun alussa, hae aiemmat muistot työkalulla."
     )
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -386,6 +409,9 @@ async def run_ollama_agentic_loop(messages: list[dict], tools: list[dict]) -> di
 
             if not tool_calls_raw:
                 text = (msg.get("content") or "").strip()
+                if all_tool_calls == [] and text:
+                    log.info("Ollama: no tool calls, returning text (%d chars): %r",
+                             len(text), text[:200])
                 return {"response": text, "model": OLLAMA_MODEL, "tool_calls": all_tool_calls}
 
             # Append assistant message for conversation history
@@ -479,6 +505,19 @@ async def chat_endpoint(request: Request) -> JSONResponse:
         result = await run_ollama_agentic_loop(messages, ollama_tools)
     except Exception as e:
         log.warning("Ollama failed (%s), falling back to Claude", e)
+
+    # Heuristic fallback: if user clearly asked for a control action but Ollama
+    # produced no tool calls, gemma likely narrated the action instead of
+    # invoking the tool. Hand off to Claude.
+    if result is not None and not result.get("tool_calls"):
+        last_user = (messages[-1].get("content", "") if messages else "")
+        if _has_control_intent(last_user):
+            log.warning(
+                "Ollama produced no tool_calls for control intent — falling back to Claude. "
+                "user=%r ollama_text=%r",
+                last_user[:120], (result.get("response") or "")[:120],
+            )
+            result = None
 
     if result is None:
         try:
@@ -614,6 +653,37 @@ async def chat_stream_endpoint(request: Request) -> Response:
                         ss_match = re.search(r'\[IMAGE:(data:image/[^;]+;base64,[A-Za-z0-9+/=]+)\]', ss_result)
                         if ss_match:
                             yield f"data: {json.dumps({'screenshot': ss_match.group(1)})}\n\n"
+
+        # Bridge: if user wanted a control action but Phase 1 produced no tool
+        # calls, gemma is about to narrate the action in Phase 2 without doing
+        # it. Hand off to Claude and stream Claude's text as TTS sentences.
+        last_user_content = messages[-1].get("content", "") if messages else ""
+        if not all_tool_calls and _has_control_intent(last_user_content):
+            log.warning(
+                "Stream: no tool_calls for control intent — switching to Claude. user=%r",
+                last_user_content[:120],
+            )
+            try:
+                claude_result = await run_claude_agentic_loop(messages, all_tools)
+            except Exception as e:
+                log.error("Stream: Claude fallback failed: %s", e)
+                yield f"data: {json.dumps({'done': True, 'response': '', 'tool_calls': all_tool_calls, 'error': str(e)})}\n\n"
+                return
+            full_text = claude_result.get("response", "") or ""
+            for tc in claude_result.get("tool_calls", []):
+                all_tool_calls.append(tc)
+                yield f"data: {json.dumps({'tool_use': tc.get('tool', '')})}\n\n"
+            for sentence in re.split(r'(?<=[.!?])\s+(?=[A-ZÄÖÅ])', full_text):
+                sentence = sentence.strip()
+                if not sentence:
+                    continue
+                try:
+                    wav = await _piper_synthesize(sentence)
+                    yield f"data: {json.dumps({'audio': base64.b64encode(wav).decode(), 'text': sentence})}\n\n"
+                except Exception as e:
+                    log.error("Stream Claude TTS error: %s", e)
+            yield f"data: {json.dumps({'done': True, 'response': full_text, 'tool_calls': all_tool_calls})}\n\n"
+            return
 
         # Phase 2: Stream text response with TTS. If the model makes tool calls
         # during streaming, execute them and go back to Phase 1 for the next round.
