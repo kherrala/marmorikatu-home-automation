@@ -31,17 +31,24 @@ html, body {
 }
 
 /* -- Swipe / click edge strips ---------------------------------------- */
+/* Narrow strip + touch-pass-through on touch devices: the document-level
+   swipe handler still catches horizontal swipes anywhere on screen, so the
+   strip is only useful for mouse clicks on desktop. On iPad it would
+   otherwise swallow touches meant for the Grafana iframe behind it. */
 .swipe-edge {
   position: fixed;
   top: 20%;
   height: 60%;
-  width: 120px;
+  width: 36px;
   z-index: 100;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: 0 6px 6px 0;
+}
+@media (hover: none) and (pointer: coarse) {
+  .swipe-edge { pointer-events: none; }
 }
 #swipe-left  { left: 0; border-radius: 0 6px 6px 0; }
 #swipe-right { right: 0; border-radius: 6px 0 0 6px; }
