@@ -93,6 +93,24 @@ VALVE_MAP = {
     "ll_ak_mh": ("LL_AK_MH", 1),
 }
 
+# Legacy PID-field equivalents for each valve key. The legacy CSV pipeline
+# wrote per-room PID % under room_type=pid; the WAGO MQTT publisher only
+# emits valve open/closed booleans, so we synthesise a 0%/100% row alongside
+# the valve row to keep legacy "Lämmitystarve" panels working. Field names
+# match the historical CSV column names — they reflect the previous bedroom
+# occupants (Aatu → Seela, Onni → Aarni, Essi → aikuiset).
+VALVE_TO_PID = {
+    "ll_kellari_eteinen": ("Kellari_eteinen_PID", 0),
+    "ll_kellari":         ("Kellari_PID", 0),
+    "ll_olohuone":        ("Olohuone_PID", 1),
+    "ll_essi":            ("MH_aikuiset_PID", 2),
+    "ll_onni":            ("MH_Aarni_PID", 2),
+    "ll_yk_aula":         ("Ylakerran_aula_PID", 2),
+    "ll_aatu":            ("MH_Seela_PID", 2),
+    "ll_eteinen":         ("Eteinen_PID", 1),
+    "ll_ak_mh":           ("MH_alakerta_PID", 1),
+}
+
 # Cooling pumps (marmorikatu/cooling) → hvac/sensor_group=cooling.
 COOLING_MAP = {
     "pumppu_jaahdytys": "Pumppu_jaahdytys",
@@ -312,24 +330,44 @@ def build_switches(payload, ts):
 
 
 def build_heating(payload, ts):
-    """Underfloor-heating zone valves → rooms/room_type=valve, grouped by floor.
+    """Underfloor-heating zone valves → rooms/room_type=valve and rooms/room_type=pid.
 
-    Stored as int 0/1. The `rooms` measurement's bedroom/common/basement
-    fields are float temperatures, so the room_temperatures dashboard
-    pivots filter out room_type=valve to avoid Grafana's int/float
-    schema-collision error.
+    Writes two parallel views per timestamp:
+      - room_type=valve: int 0/1 LL_* fields (current schema, e.g. LL_Aatu).
+      - room_type=pid:   float 0.0/100.0 *_PID fields (legacy schema, e.g.
+        MH_Seela_PID). Synthesised so the legacy "Lämmitystarve" dashboards
+        keep working — the WAGO PLC's MQTT publisher only emits binary valve
+        state, so 0/100 % is a faithful proxy for the underlying PID output.
+
+    The `rooms` measurement's bedroom/common/basement temperature fields are
+    floats, so the room_temperatures dashboard pivots filter out room_type=valve
+    AND room_type=pid to avoid Grafana's int/float schema-collision error.
     """
-    grouped = {}
+    valve_grouped: dict[int, dict[str, int]] = {}
+    pid_grouped: dict[int, dict[str, float]] = {}
+
     for key, value in payload.items():
-        mapping = VALVE_MAP.get(key)
-        if not mapping:
+        valve_mapping = VALVE_MAP.get(key)
+        if not valve_mapping:
             continue
-        field, floor = mapping
-        grouped.setdefault(floor, {})[field] = 1 if to_bool(value) else 0
+        is_on = to_bool(value)
+
+        v_field, v_floor = valve_mapping
+        valve_grouped.setdefault(v_floor, {})[v_field] = 1 if is_on else 0
+
+        pid_mapping = VALVE_TO_PID.get(key)
+        if pid_mapping:
+            p_field, p_floor = pid_mapping
+            pid_grouped.setdefault(p_floor, {})[p_field] = 100.0 if is_on else 0.0
 
     points = []
-    for floor, fields in grouped.items():
+    for floor, fields in valve_grouped.items():
         p = Point("rooms").tag("room_type", "valve").tag("floor", str(floor))
+        for name, val in fields.items():
+            p = p.field(name, val)
+        points.append(p.time(ts, WritePrecision.S))
+    for floor, fields in pid_grouped.items():
+        p = Point("rooms").tag("room_type", "pid").tag("floor", str(floor))
         for name, val in fields.items():
             p = p.field(name, val)
         points.append(p.time(ts, WritePrecision.S))
