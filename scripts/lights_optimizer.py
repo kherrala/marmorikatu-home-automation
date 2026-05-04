@@ -65,6 +65,12 @@ MANUAL_HOLD_MIN = int(os.environ.get("MANUAL_HOLD_MIN", "15"))
 BEDROOM_HOLD_MIN = int(os.environ.get("BEDROOM_HOLD_MIN", "30"))
 TERRACE_OFF_HOUR = int(os.environ.get("TERRACE_OFF_HOUR", "22"))
 
+# Sauna laude (bench) LED auto-control: track Ruuvi Sauna temperature.
+# Hysteresis dead-band (50–55°C) prevents flapping when löyly is poured.
+SAUNA_LAUDE_IDX = 4
+SAUNA_LAUDE_ON_C = float(os.environ.get("SAUNA_LAUDE_ON_C", "55"))
+SAUNA_LAUDE_OFF_C = float(os.environ.get("SAUNA_LAUDE_OFF_C", "50"))
+
 DRY_RUN = os.environ.get("DRY_RUN", "0") in ("1", "true", "yes")
 
 # Long-absence-rule exemptions for lights still in policies that respect
@@ -80,7 +86,8 @@ LIGHT_POLICY: dict[int, str] = {
     # occupancy proxy) and the downstairs bedroom that doubles as a daytime
     # home office (kitchen-Ruuvi CO₂ doesn't see her there, so the workday
     # rule was turning lights off mid-Zoom-call).
-    4:  "manual_only",
+    # NOTE: light idx 4 (Saunan laude ledi) is NOT here — it has its own
+    # temperature-driven block in check_and_control(), see SAUNA_LAUDE_IDX.
     17: "manual_only",  # MH alakerta kattovalo (downstairs bedroom / workspace)
     18: "manual_only",  # MH alakerta ikkuna    (downstairs bedroom / workspace)
     38: "manual_only", 39: "manual_only",
@@ -270,6 +277,24 @@ from(bucket: "{INFLUXDB_BUCKET}")
     return any((r.get_value() or 0) > 0 for r in rows)
 
 
+def fetch_sauna_temp_recent() -> float | None:
+    """5-minute mean Ruuvi Sauna temperature, or None if no data."""
+    flux = f'''
+from(bucket: "{INFLUXDB_BUCKET}")
+  |> range(start: -5m)
+  |> filter(fn: (r) => r._measurement == "ruuvi" and r.sensor_name == "Sauna" and r._field == "temperature")
+  |> mean()
+'''
+    rows = _query(flux)
+    if not rows:
+        return None
+    v = rows[0].get_value()
+    try:
+        return float(v) if v is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
 def co2_recently_elevated(minutes: int) -> bool:
     """Compare the recent (last 5 min) Keittiö CO₂ mean against the baseline
     of the longer rolling window. If the recent mean is ≥ delta ppm above
@@ -400,9 +425,37 @@ def check_and_control():
         log_decision(terrace_idx, "hold", "terrace_already_correct",
                      category="terrace_schedule")
 
+    # --- Sauna laude LED: ON when sauna ≥ SAUNA_LAUDE_ON_C, OFF when sauna
+    #     ≤ SAUNA_LAUDE_OFF_C. Hysteresis dead-band keeps it stable as
+    #     löyly causes brief drops. Acts regardless of current on/off state.
+    laude_state = states.get(SAUNA_LAUDE_IDX)
+    sauna_temp = fetch_sauna_temp_recent()
+    if laude_state is not None and sauna_temp is not None:
+        currently_on = laude_state[0]
+        if currently_on and sauna_temp <= SAUNA_LAUDE_OFF_C:
+            target_on = False
+            reason = f"sauna_cooled_to_{sauna_temp:.1f}C"
+        elif not currently_on and sauna_temp >= SAUNA_LAUDE_ON_C:
+            target_on = True
+            reason = f"sauna_heated_to_{sauna_temp:.1f}C"
+        else:
+            target_on = currently_on  # within dead-band → hold
+            reason = f"hysteresis_hold_{sauna_temp:.1f}C"
+        if target_on != currently_on:
+            publish_state(SAUNA_LAUDE_IDX, target_on, reason)
+            log_decision(SAUNA_LAUDE_IDX, "on" if target_on else "off",
+                         reason, category="sauna_laude")
+        else:
+            log_decision(SAUNA_LAUDE_IDX, "hold", reason, category="sauna_laude")
+    elif laude_state is not None:
+        log_decision(SAUNA_LAUDE_IDX, "hold", "no_sauna_temp_data",
+                     category="sauna_laude")
+
     # --- Per-light evaluation
     for idx, (is_on, _) in states.items():
         if idx == terrace_idx:
+            continue  # handled above
+        if idx == SAUNA_LAUDE_IDX:
             continue  # handled above
         if not is_on:
             continue
