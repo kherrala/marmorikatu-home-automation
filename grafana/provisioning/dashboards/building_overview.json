@@ -1178,22 +1178,13 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              {
-                "color": "green",
-                "value": 0
-              },
-              {
-                "color": "yellow",
-                "value": 450
-              },
-              {
-                "color": "orange",
-                "value": 600
-              },
-              {
-                "color": "red",
-                "value": 700
-              }
+              { "color": "blue", "value": 0 },
+              { "color": "light-green", "value": 50 },
+              { "color": "green", "value": 150 },
+              { "color": "yellow", "value": 300 },
+              { "color": "orange", "value": 500 },
+              { "color": "dark-orange", "value": 700 },
+              { "color": "red", "value": 800 }
             ]
           },
           "unit": "percent"
@@ -1830,5 +1821,5 @@
   "timezone": "Europe/Helsinki",
   "title": "Yleiskuva",
   "uid": "wago-overview",
-  "version": 44
+  "version": 45
 }
