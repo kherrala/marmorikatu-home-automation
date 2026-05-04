@@ -12,7 +12,7 @@ Topic → InfluxDB mapping
 marmorikatu/temperatures   → rooms (room_type/floor) + hvac (cooling battery)
 marmorikatu/lights         → lights (light_id/light_name/floor/floor_name/switch_type)
 marmorikatu/switches       → switches (switch_id/switch_name)  [new measurement]
-marmorikatu/heating        → rooms (room_type=valve)            [replaces PID columns]
+marmorikatu/heating        → rooms (room_type=pid)               [per-room PID %]
 marmorikatu/cooling        → hvac (sensor_group=cooling)
 marmorikatu/outlets        → lights (switch_type=outlet)
 marmorikatu/ventilation    → hvac (sensor_group=ivk_temp/humidity/actuator)
@@ -79,38 +79,22 @@ EXTRA_TEMP_MAP = {
     "jaahdpatteri_2": ("cooling", "Jaahpatteri_2"),
 }
 
-# Underfloor-heating zone valves (marmorikatu/heating) → rooms/room_type=valve.
-# Floor matches the room the valve serves. Note: the WAGO publisher emits a
-# key called `ll_olohuone` for what is actually the kitchen / open-living-
-# room loop, so it maps to LL_Keittio in the schema.
-VALVE_MAP = {
-    "ll_kellari_eteinen": ("LL_Kellari_eteinen", 0),
-    "ll_kellari": ("LL_Kellari", 0),
-    "ll_olohuone": ("LL_Keittio", 1),
-    "ll_essi": ("LL_Essi", 2),
-    "ll_onni": ("LL_Onni", 2),
-    "ll_yk_aula": ("LL_YK_aula", 2),
-    "ll_aatu": ("LL_Aatu", 2),
-    "ll_eteinen": ("LL_Eteinen", 1),
-    "ll_ak_mh": ("LL_AK_MH", 1),
-}
-
-# Legacy PID-field equivalents for each valve key. The legacy CSV pipeline
-# wrote per-room PID % under room_type=pid; the WAGO MQTT publisher only
-# emits valve open/closed booleans, so we synthesise a 0%/100% row alongside
-# the valve row to keep legacy "Lämmitystarve" panels working. Field names
-# match the historical CSV column names — they reflect the previous bedroom
-# occupants (Aatu → Seela, Onni → Aarni, Essi → aikuiset).
-VALVE_TO_PID = {
-    "ll_kellari_eteinen": ("Kellari_eteinen_PID", 0),
-    "ll_kellari":         ("Kellari_PID", 0),
-    "ll_olohuone":        ("Keittio_PID", 1),
-    "ll_essi":            ("MH_aikuiset_PID", 2),
-    "ll_onni":            ("MH_Aarni_PID", 2),
-    "ll_yk_aula":         ("Ylakerran_aula_PID", 2),
-    "ll_aatu":            ("MH_Seela_PID", 2),
-    "ll_eteinen":         ("Eteinen_PID", 1),
-    "ll_ak_mh":           ("MH_alakerta_PID", 1),
+# Per-room underfloor-heating PID demand (marmorikatu/heating).
+# Sample payload: {"essi":0, "aatu":0, "onni":0, "yk_aula":0, "keittio":0,
+#                  "mh_ak":0, "eteinen":60, "kellari_eteinen":0, "kellari":100}
+# Values are integer 0–100 PID % from the WAGO controller. Field names
+# match the historical CSV column names (which reflect previous bedroom
+# occupants: aatu→Seela, onni→Aarni, essi→aikuiset).
+ROOM_PID_MAP = {
+    "kellari_eteinen": ("Kellari_eteinen_PID", 0),
+    "kellari":         ("Kellari_PID", 0),
+    "keittio":         ("Keittio_PID", 1),
+    "essi":            ("MH_aikuiset_PID", 2),
+    "onni":            ("MH_Aarni_PID", 2),
+    "yk_aula":         ("Ylakerran_aula_PID", 2),
+    "aatu":            ("MH_Seela_PID", 2),
+    "eteinen":         ("Eteinen_PID", 1),
+    "mh_ak":           ("MH_alakerta_PID", 1),
 }
 
 # Cooling pumps (marmorikatu/cooling) → hvac/sensor_group=cooling.
@@ -344,43 +328,32 @@ def build_switches(payload, ts):
 
 
 def build_heating(payload, ts):
-    """Underfloor-heating zone valves → rooms/room_type=valve and rooms/room_type=pid.
+    """Per-room PID demand → rooms/room_type=pid, grouped by floor.
 
-    Writes two parallel views per timestamp:
-      - room_type=valve: int 0/1 LL_* fields (current schema, e.g. LL_Aatu).
-      - room_type=pid:   float 0.0/100.0 *_PID fields (legacy schema, e.g.
-        MH_Seela_PID). Synthesised so the legacy "Lämmitystarve" dashboards
-        keep working — the WAGO PLC's MQTT publisher only emits binary valve
-        state, so 0/100 % is a faithful proxy for the underlying PID output.
+    Writes the WAGO controller's PID-output percent for each underfloor-
+    heating zone under the legacy CSV field names (e.g. MH_Seela_PID).
+    Values are clamped to [0, 100] in case the publisher sends an out-of-
+    range integer.
 
-    The `rooms` measurement's bedroom/common/basement temperature fields are
-    floats, so the room_temperatures dashboard pivots filter out room_type=valve
-    AND room_type=pid to avoid Grafana's int/float schema-collision error.
+    The `rooms` measurement's temperature fields are floats too, so the
+    room_temperatures dashboard pivots filter out room_type=pid to avoid
+    schema-collision noise on the temperature panels.
     """
-    valve_grouped: dict[int, dict[str, int]] = {}
-    pid_grouped: dict[int, dict[str, float]] = {}
-
+    grouped: dict[int, dict[str, float]] = {}
     for key, value in payload.items():
-        valve_mapping = VALVE_MAP.get(key)
-        if not valve_mapping:
+        mapping = ROOM_PID_MAP.get(key)
+        if not mapping:
             continue
-        is_on = to_bool(value)
-
-        v_field, v_floor = valve_mapping
-        valve_grouped.setdefault(v_floor, {})[v_field] = 1 if is_on else 0
-
-        pid_mapping = VALVE_TO_PID.get(key)
-        if pid_mapping:
-            p_field, p_floor = pid_mapping
-            pid_grouped.setdefault(p_floor, {})[p_field] = 100.0 if is_on else 0.0
+        try:
+            v = float(value)
+        except (TypeError, ValueError):
+            continue
+        v = max(0.0, min(100.0, v))
+        field, floor = mapping
+        grouped.setdefault(floor, {})[field] = v
 
     points = []
-    for floor, fields in valve_grouped.items():
-        p = Point("rooms").tag("room_type", "valve").tag("floor", str(floor))
-        for name, val in fields.items():
-            p = p.field(name, val)
-        points.append(p.time(ts, WritePrecision.S))
-    for floor, fields in pid_grouped.items():
+    for floor, fields in grouped.items():
         p = Point("rooms").tag("room_type", "pid").tag("floor", str(floor))
         for name, val in fields.items():
             p = p.field(name, val)
