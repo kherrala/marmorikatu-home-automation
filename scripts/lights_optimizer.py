@@ -32,7 +32,7 @@ from zoneinfo import ZoneInfo
 
 import paho.mqtt.publish as mqtt_publish
 from astral import LocationInfo
-from astral.sun import sun
+from astral.sun import sun, elevation as sun_elevation
 from influxdb_client import InfluxDBClient, Point, WritePrecision
 from influxdb_client.client.write_api import SYNCHRONOUS
 
@@ -63,7 +63,11 @@ LONG_ABSENCE_MIN = int(os.environ.get("LONG_ABSENCE_MIN", "120"))
 CO2_OCCUPANCY_DELTA_PPM = float(os.environ.get("CO2_OCCUPANCY_DELTA_PPM", "30"))
 MANUAL_HOLD_MIN = int(os.environ.get("MANUAL_HOLD_MIN", "15"))
 BEDROOM_HOLD_MIN = int(os.environ.get("BEDROOM_HOLD_MIN", "30"))
-TERRACE_OFF_HOUR = int(os.environ.get("TERRACE_OFF_HOUR", "22"))
+PORCH_OFF_HOUR = int(os.environ.get("PORCH_OFF_HOUR", os.environ.get("TERRACE_OFF_HOUR", "22")))
+# Sun elevation below this (°) → "dark enough indoors" for CO₂-driven auto-on.
+# 8° lands roughly 30–60 min either side of horizon depending on latitude/
+# season — covers the Finnish dim-evening / dim-morning the user notices.
+SUN_DARK_ELEVATION_DEG = float(os.environ.get("SUN_DARK_ELEVATION_DEG", "8"))
 
 # Sauna laude (bench) LED auto-control: track Ruuvi Sauna temperature.
 # Hysteresis dead-band (50–55°C) prevents flapping when löyly is poured.
@@ -103,7 +107,7 @@ LIGHT_POLICY: dict[int, str] = {
     17: "manual_only",  # MH alakerta kattovalo (downstairs bedroom / workspace)
     18: "manual_only",  # MH alakerta ikkuna    (downstairs bedroom / workspace)
     38: "manual_only", 39: "manual_only",
-    47: "manual_only",
+    48: "manual_only",  # Ulkovalo terassi (no schedule — used manually)
     49: "manual_only",  # Kellari etuosa
     50: "manual_only",  # Kellari takaosa
     51: "manual_only",  # Biljardipöytä
@@ -142,7 +146,7 @@ LIGHT_POLICY: dict[int, str] = {
     35: "general", 36: "general", 37: "general", 43: "general", 56: "general",
 
     # Schedule-driven
-    48: "terrace_schedule",  # Ulkovalo terassi
+    47: "porch_schedule",  # Sisäänkäynti (front porch) — sunset → PORCH_OFF_HOUR
 }
 
 
@@ -165,7 +169,7 @@ POLICIES: dict[str, Policy] = {
     "livingroom":       Policy(SUNRISE_GRACE_MIN, True, None,      True,  MANUAL_HOLD_MIN),
     "general":          Policy(SUNRISE_GRACE_MIN, True, None,      True,  MANUAL_HOLD_MIN),
     "manual_only":      Policy(None, False, None,                  False, 60),
-    "terrace_schedule": Policy(None, False, None,                  False, 5, terrace_schedule=True),
+    "porch_schedule":   Policy(None, False, None,                  False, 5, terrace_schedule=True),
 }
 
 
@@ -472,35 +476,41 @@ def check_and_control():
         len(states),
     )
 
-    # --- Terrace scheduler runs first; cares about state regardless of on/off
-    terrace_idx = 48
-    terr_state = states.get(terrace_idx)
-    pol = POLICIES["terrace_schedule"]
-    target_on = sunset <= now < now.replace(hour=TERRACE_OFF_HOUR, minute=0, second=0, microsecond=0)
-    if terr_state is None or terr_state[0] != target_on:
-        publish_state(terrace_idx, target_on, "terrace_schedule")
-        log_decision(terrace_idx, "on" if target_on else "off",
-                     "terrace_schedule", category="terrace_schedule")
+    # --- Front-porch scheduler (idx 47): on sunset → PORCH_OFF_HOUR.
+    porch_idx = 47
+    porch_state = states.get(porch_idx)
+    pol = POLICIES["porch_schedule"]
+    target_on = sunset <= now < now.replace(hour=PORCH_OFF_HOUR, minute=0, second=0, microsecond=0)
+    if porch_state is None or porch_state[0] != target_on:
+        publish_state(porch_idx, target_on, "porch_schedule")
+        log_decision(porch_idx, "on" if target_on else "off",
+                     "porch_schedule", category="porch_schedule")
     else:
-        log_decision(terrace_idx, "hold", "terrace_already_correct",
-                     category="terrace_schedule")
+        log_decision(porch_idx, "hold", "porch_already_correct",
+                     category="porch_schedule")
 
     # --- CO₂-driven auto-on/off for kitchen + living-room ceiling lights.
+    #     "Dark indoors" is defined as sun elevation < SUN_DARK_ELEVATION_DEG
+    #     (default 8°), which kicks in well before astronomical sunset/after
+    #     sunrise — matching the user's "getting pretty dark" experience.
     #     Eligible-to-turn-on windows:
-    #       - morning: now < sunrise + SUNRISE_GRACE_MIN  → idx 40 only
-    #       - evening: now ≥ sunset                       → idx 40 + 54
+    #       - morning (dark + before solar noon): idx 40 only
+    #       - evening (dark + after solar noon):  idx 40 + 54
     #     Auto-off any time CO₂ drops or after midnight. Manual dismissal
     #     (light off without us asking) suppresses re-enable until next day.
     co2 = co2_signal_class()
     today = now.date()
-    is_morning_dark = now < sunrise + timedelta(minutes=SUNRISE_GRACE_MIN)
-    is_evening_dark = now >= sunset
+    try:
+        sun_elev = sun_elevation(LOC.observer, dateandtime=now)
+    except Exception:
+        sun_elev = 0.0  # conservative: treat as borderline
+    is_dark_now = sun_elev < SUN_DARK_ELEVATION_DEG
+    is_morning = now.hour < 12
     eligible_for_on: set[int] = set()
-    if is_morning_dark:
+    if is_dark_now:
         eligible_for_on.add(CO2_AUTO_KITCHEN_IDX)
-    if is_evening_dark:
-        eligible_for_on.add(CO2_AUTO_KITCHEN_IDX)
-        eligible_for_on.add(CO2_AUTO_LIVINGROOM_IDX)
+        if not is_morning:
+            eligible_for_on.add(CO2_AUTO_LIVINGROOM_IDX)
 
     # Drop stale dismissal entries from previous days
     for idx_d, date_d in list(_co2_dismissed_date.items()):
@@ -538,7 +548,7 @@ def check_and_control():
             elif idx_co2 not in eligible_for_on:
                 log_decision(idx_co2, "hold", "outside_dark_window", category="co2_auto")
             elif co2 == "ELEVATED":
-                window = "morning" if is_morning_dark else "evening"
+                window = "morning" if is_morning else "evening"
                 publish_state(idx_co2, True, f"co2_occupancy_{window}")
                 _co2_auto_on_at[idx_co2] = now
                 log_decision(idx_co2, "on", f"co2_occupancy_{window}", category="co2_auto")
@@ -573,7 +583,7 @@ def check_and_control():
 
     # --- Per-light evaluation
     for idx, (is_on, _) in states.items():
-        if idx == terrace_idx:
+        if idx == porch_idx:
             continue  # handled above
         if idx == SAUNA_LAUDE_IDX:
             continue  # handled above
