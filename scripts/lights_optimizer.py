@@ -67,18 +67,30 @@ TERRACE_OFF_HOUR = int(os.environ.get("TERRACE_OFF_HOUR", "22"))
 
 DRY_RUN = os.environ.get("DRY_RUN", "0") in ("1", "true", "yes")
 
-# Bedrooms + Kellari etuosa/takaosa + Biljardipöytä + WC kellari are exempted
-# from the long-absence rule (someone may genuinely be there working/sleeping).
-ABSENCE_EXEMPT_INDICES = {17, 18, 49, 50, 51, 52}
+# Long-absence-rule exemptions for lights still in policies that respect
+# occupancy. Most of the originally-exempted indices are now in the
+# "windowless" policy which never auto-offs anyway — but if any future
+# light moves back to bedroom/general, this set is the toggle.
+ABSENCE_EXEMPT_INDICES: set[int] = set()
 
 # ── Light category map ────────────────────────────────────────────────────────
 # Names in comments are from light_labels.LIGHT_LABELS (buttontxt source).
 LIGHT_POLICY: dict[int, str] = {
-    # Windowless basement (no daylight, exempt from sunrise rule)
-    49: "windowless",  # Kellari etuosa
-    50: "windowless",  # Kellari takaosa
-    51: "windowless",  # Biljardipöytä
-    52: "windowless",  # WC kellari
+    # Never auto-managed. Includes the windowless basement (no daylight, no
+    # occupancy proxy) and the downstairs bedroom that doubles as a daytime
+    # home office (kitchen-Ruuvi CO₂ doesn't see her there, so the workday
+    # rule was turning lights off mid-Zoom-call).
+    4:  "manual_only",
+    17: "manual_only",  # MH alakerta kattovalo (downstairs bedroom / workspace)
+    18: "manual_only",  # MH alakerta ikkuna    (downstairs bedroom / workspace)
+    38: "manual_only", 39: "manual_only",
+    47: "manual_only",
+    49: "manual_only",  # Kellari etuosa
+    50: "manual_only",  # Kellari takaosa
+    51: "manual_only",  # Biljardipöytä
+    52: "manual_only",  # WC kellari
+    59: "manual_only", 60: "manual_only", 61: "manual_only",
+
     53: "general",     # Kellari varasto — small windows, follows sunrise rule
 
     # Toilets / bathrooms — frequently forgotten on
@@ -88,9 +100,7 @@ LIGHT_POLICY: dict[int, str] = {
     29: "toilet",      # Kylpyhuone yläkerta katto
     34: "toilet",      # Kylpyhuone yläkerta peilivalo
 
-    # Bedrooms — three upstairs + one downstairs. Aula is NOT a bedroom.
-    17: "bedroom",     # MH alakerta kattovalo
-    18: "bedroom",     # MH alakerta ikkuna
+    # Bedrooms (upstairs, sleeping use). Aula is NOT a bedroom.
     22: "bedroom", 23: "bedroom",                  # Aatu (upstairs)
     28: "bedroom", 30: "bedroom",                  # Onni (upstairs)
     31: "bedroom", 32: "bedroom", 33: "bedroom",   # Essi (upstairs) — vaatehuone + ikkuna + katto
@@ -110,10 +120,6 @@ LIGHT_POLICY: dict[int, str] = {
     3: "general", 6: "general", 24: "general", 26: "general",
     35: "general", 36: "general", 37: "general", 43: "general", 56: "general",
 
-    # Manual-only — never auto-managed
-    4: "manual_only", 38: "manual_only", 39: "manual_only",
-    47: "manual_only", 59: "manual_only", 60: "manual_only", 61: "manual_only",
-
     # Schedule-driven
     48: "terrace_schedule",  # Ulkovalo terassi
 }
@@ -131,7 +137,6 @@ class Policy:
 
 
 POLICIES: dict[str, Policy] = {
-    "windowless":       Policy(None, False, None,                  False, MANUAL_HOLD_MIN),
     "toilet":           Policy(None, False, TOILET_TIMEOUT_MIN,    True,  5),
     "staircase":        Policy(SUNRISE_GRACE_MIN, True, STAIRCASE_TIMEOUT_MIN, True, 5),
     "bedroom":          Policy(None, True,  None,                  True,  BEDROOM_HOLD_MIN),
