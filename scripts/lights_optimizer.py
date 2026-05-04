@@ -71,6 +71,18 @@ SAUNA_LAUDE_IDX = 4
 SAUNA_LAUDE_ON_C = float(os.environ.get("SAUNA_LAUDE_ON_C", "55"))
 SAUNA_LAUDE_OFF_C = float(os.environ.get("SAUNA_LAUDE_OFF_C", "50"))
 
+# CO₂-driven auto-on/off for kitchen + living-room ceiling lights.
+# - Evening (after sunset): kitchen (40) AND living-room (54).
+# - Morning (before sunrise + SUNRISE_GRACE_MIN): kitchen (40) only.
+# - Auto-off any time CO₂ has clearly dropped (occupancy gone) or after midnight.
+# - If user manually turns off after we auto-on, suppress until next day.
+CO2_AUTO_KITCHEN_IDX = 40       # Keittiö kattovalo
+CO2_AUTO_LIVINGROOM_IDX = 54    # Olohuone kattovalo
+CO2_AUTO_MANAGED = (CO2_AUTO_KITCHEN_IDX, CO2_AUTO_LIVINGROOM_IDX)
+CO2_AUTO_ON_DELTA_PPM = float(os.environ.get("CO2_AUTO_ON_DELTA_PPM", "50"))
+CO2_AUTO_OFF_DELTA_PPM = float(os.environ.get("CO2_AUTO_OFF_DELTA_PPM", "50"))
+CO2_AUTO_OFF_ABSOLUTE_PPM = float(os.environ.get("CO2_AUTO_OFF_ABSOLUTE_PPM", "550"))
+
 DRY_RUN = os.environ.get("DRY_RUN", "0") in ("1", "true", "yes")
 
 # Long-absence-rule exemptions for lights still in policies that respect
@@ -112,12 +124,14 @@ LIGHT_POLICY: dict[int, str] = {
     28: "bedroom", 30: "bedroom",                  # Onni (upstairs)
     31: "bedroom", 32: "bedroom", 33: "bedroom",   # Essi (upstairs) — vaatehuone + ikkuna + katto
 
-    # Kitchen
-    2: "kitchen", 7: "kitchen", 8: "kitchen", 40: "kitchen", 41: "kitchen",
+    # Kitchen — note: idx 40 (Keittiö kattovalo) is CO₂-auto-managed below,
+    # NOT in this policy.
+    2: "kitchen", 7: "kitchen", 8: "kitchen", 41: "kitchen",
 
-    # Living / dining
+    # Living / dining — note: idx 54 (Olohuone kattovalo) is CO₂-auto-managed
+    # below, NOT in this policy. Idx 55 (Olohuone kattovalo 2) is left here.
     5: "livingroom", 19: "livingroom", 20: "livingroom",
-    46: "livingroom", 54: "livingroom", 55: "livingroom",
+    46: "livingroom", 55: "livingroom",
 
     # Staircase — transient, often forgotten
     25: "staircase",   # Aula rappuset
@@ -170,6 +184,14 @@ LOC = LocationInfo("Tampere", "Finland", "Europe/Helsinki", HOME_LAT, HOME_LON)
 influx_client: InfluxDBClient | None = None
 write_api = None
 query_api = None
+
+# Per-idx tracking for the CO₂ auto-managed lights:
+#   _co2_auto_on_at[idx]  = the local-tz time we last auto-on'd this light.
+#                           Used to detect a manual off afterwards.
+#   _co2_dismissed_date[idx] = local date the user dismissed the auto-on, so
+#                              we don't re-enable it the same day.
+_co2_auto_on_at: dict[int, datetime] = {}
+_co2_dismissed_date: dict[int, date] = {}
 
 
 def signal_handler(sig, frame):
@@ -293,6 +315,44 @@ from(bucket: "{INFLUXDB_BUCKET}")
         return float(v) if v is not None else None
     except (TypeError, ValueError):
         return None
+
+
+def co2_signal_class() -> str:
+    """Classify the kitchen Ruuvi CO₂ trend over the last few minutes.
+
+    Returns one of:
+      "ELEVATED"  — recent 5-min mean is meaningfully above the 30-min baseline
+      "DROPPED"   — recent 5-min mean is meaningfully below baseline OR has
+                    fallen close to outdoor levels (≤ CO2_AUTO_OFF_ABSOLUTE_PPM)
+      "BASELINE"  — neither — within the dead-band
+      "UNKNOWN"   — sensor data missing
+    """
+    flux_recent = f'''
+from(bucket: "{INFLUXDB_BUCKET}")
+  |> range(start: -5m)
+  |> filter(fn: (r) => r._measurement == "ruuvi" and r.sensor_name == "Keittiö" and r._field == "co2")
+  |> mean()
+'''
+    flux_baseline = f'''
+from(bucket: "{INFLUXDB_BUCKET}")
+  |> range(start: -30m, stop: -5m)
+  |> filter(fn: (r) => r._measurement == "ruuvi" and r.sensor_name == "Keittiö" and r._field == "co2")
+  |> mean()
+'''
+    recent_rows = _query(flux_recent)
+    base_rows = _query(flux_baseline)
+    if not recent_rows or not base_rows:
+        return "UNKNOWN"
+    recent = recent_rows[0].get_value()
+    base = base_rows[0].get_value()
+    if recent is None or base is None:
+        return "UNKNOWN"
+    delta = recent - base
+    if delta >= CO2_AUTO_ON_DELTA_PPM:
+        return "ELEVATED"
+    if delta <= -CO2_AUTO_OFF_DELTA_PPM or recent <= CO2_AUTO_OFF_ABSOLUTE_PPM:
+        return "DROPPED"
+    return "BASELINE"
 
 
 def co2_recently_elevated(minutes: int) -> bool:
@@ -425,6 +485,66 @@ def check_and_control():
         log_decision(terrace_idx, "hold", "terrace_already_correct",
                      category="terrace_schedule")
 
+    # --- CO₂-driven auto-on/off for kitchen + living-room ceiling lights.
+    #     Eligible-to-turn-on windows:
+    #       - morning: now < sunrise + SUNRISE_GRACE_MIN  → idx 40 only
+    #       - evening: now ≥ sunset                       → idx 40 + 54
+    #     Auto-off any time CO₂ drops or after midnight. Manual dismissal
+    #     (light off without us asking) suppresses re-enable until next day.
+    co2 = co2_signal_class()
+    today = now.date()
+    is_morning_dark = now < sunrise + timedelta(minutes=SUNRISE_GRACE_MIN)
+    is_evening_dark = now >= sunset
+    eligible_for_on: set[int] = set()
+    if is_morning_dark:
+        eligible_for_on.add(CO2_AUTO_KITCHEN_IDX)
+    if is_evening_dark:
+        eligible_for_on.add(CO2_AUTO_KITCHEN_IDX)
+        eligible_for_on.add(CO2_AUTO_LIVINGROOM_IDX)
+
+    # Drop stale dismissal entries from previous days
+    for idx_d, date_d in list(_co2_dismissed_date.items()):
+        if date_d < today:
+            del _co2_dismissed_date[idx_d]
+
+    for idx_co2 in CO2_AUTO_MANAGED:
+        co2_state = states.get(idx_co2)
+        if co2_state is None:
+            continue
+        currently_on = co2_state[0]
+
+        # Detect dismissal: we auto-on'd, light is now off → user choice.
+        auto_on_t = _co2_auto_on_at.get(idx_co2)
+        if auto_on_t is not None and not currently_on:
+            _co2_dismissed_date[idx_co2] = today
+            del _co2_auto_on_at[idx_co2]
+
+        dismissed_today = _co2_dismissed_date.get(idx_co2) == today
+
+        if currently_on:
+            if in_after_midnight_window(now):
+                publish_state(idx_co2, False, "co2_auto_after_midnight")
+                log_decision(idx_co2, "off", "after_midnight", category="co2_auto")
+                _co2_auto_on_at.pop(idx_co2, None)
+            elif co2 == "DROPPED":
+                publish_state(idx_co2, False, "co2_no_occupancy")
+                log_decision(idx_co2, "off", "co2_no_occupancy", category="co2_auto")
+                _co2_auto_on_at.pop(idx_co2, None)
+            else:
+                log_decision(idx_co2, "hold", f"co2_{co2.lower()}", category="co2_auto")
+        else:
+            if dismissed_today:
+                log_decision(idx_co2, "hold", "dismissed_today", category="co2_auto")
+            elif idx_co2 not in eligible_for_on:
+                log_decision(idx_co2, "hold", "outside_dark_window", category="co2_auto")
+            elif co2 == "ELEVATED":
+                window = "morning" if is_morning_dark else "evening"
+                publish_state(idx_co2, True, f"co2_occupancy_{window}")
+                _co2_auto_on_at[idx_co2] = now
+                log_decision(idx_co2, "on", f"co2_occupancy_{window}", category="co2_auto")
+            else:
+                log_decision(idx_co2, "hold", f"co2_{co2.lower()}", category="co2_auto")
+
     # --- Sauna laude LED: ON when sauna ≥ SAUNA_LAUDE_ON_C, OFF when sauna
     #     ≤ SAUNA_LAUDE_OFF_C. Hysteresis dead-band keeps it stable as
     #     löyly causes brief drops. Acts regardless of current on/off state.
@@ -456,6 +576,8 @@ def check_and_control():
         if idx == terrace_idx:
             continue  # handled above
         if idx == SAUNA_LAUDE_IDX:
+            continue  # handled above
+        if idx in CO2_AUTO_MANAGED:
             continue  # handled above
         if not is_on:
             continue
