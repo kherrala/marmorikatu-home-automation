@@ -852,61 +852,23 @@
             "lineWidth": 0,
             "spanNulls": false
           },
-          "mappings": [
-            {
-              "options": {
-                "from": 0,
-                "result": {
-                  "color": "blue",
-                  "index": 0,
-                  "text": "Pois"
-                },
-                "to": 1
-              },
-              "type": "range"
-            },
-            {
-              "options": {
-                "from": 1,
-                "result": {
-                  "color": "yellow",
-                  "index": 1,
-                  "text": "Osittain"
-                },
-                "to": 99
-              },
-              "type": "range"
-            },
-            {
-              "options": {
-                "from": 99,
-                "result": {
-                  "color": "red",
-                  "index": 2,
-                  "text": "Täysi"
-                },
-                "to": 101
-              },
-              "type": "range"
-            }
-          ],
+          "mappings": [],
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              {
-                "color": "blue",
-                "value": 0
-              },
-              {
-                "color": "yellow",
-                "value": 1
-              },
-              {
-                "color": "red",
-                "value": 99
-              }
+              { "color": "blue", "value": null },
+              { "color": "super-light-blue", "value": 5 },
+              { "color": "super-light-green", "value": 15 },
+              { "color": "light-green", "value": 30 },
+              { "color": "green", "value": 50 },
+              { "color": "yellow", "value": 65 },
+              { "color": "orange", "value": 80 },
+              { "color": "red", "value": 95 }
             ]
           },
+          "min": 0,
+          "max": 100,
+          "decimals": 0,
           "unit": "percent"
         },
         "overrides": [
@@ -3476,5 +3438,5 @@
   "timezone": "Europe/Helsinki",
   "title": "Maalämpöpumppu",
   "uid": "thermia-heatpump",
-  "version": 27
+  "version": 28
 }
