@@ -83,9 +83,15 @@ SAUNA_LAUDE_OFF_C = float(os.environ.get("SAUNA_LAUDE_OFF_C", "50"))
 CO2_AUTO_KITCHEN_IDX = 40       # Keittiö kattovalo
 CO2_AUTO_LIVINGROOM_IDX = 54    # Olohuone kattovalo
 CO2_AUTO_MANAGED = (CO2_AUTO_KITCHEN_IDX, CO2_AUTO_LIVINGROOM_IDX)
-CO2_AUTO_ON_DELTA_PPM = float(os.environ.get("CO2_AUTO_ON_DELTA_PPM", "50"))
+# Sliding baseline (last 30→5 min) is too short — when occupancy ramps up
+# slowly, both the recent and baseline windows track the rise and the delta
+# stays small. Anchor the baseline further back (~2 h ago) so a steady climb
+# becomes visible. Defaults below trigger ELEVATED on a single occupant in
+# the kitchen / adjacent room within ~15–30 min of arrival.
+CO2_AUTO_ON_DELTA_PPM = float(os.environ.get("CO2_AUTO_ON_DELTA_PPM", "20"))
+CO2_AUTO_ON_ABSOLUTE_PPM = float(os.environ.get("CO2_AUTO_ON_ABSOLUTE_PPM", "580"))
 CO2_AUTO_OFF_DELTA_PPM = float(os.environ.get("CO2_AUTO_OFF_DELTA_PPM", "50"))
-CO2_AUTO_OFF_ABSOLUTE_PPM = float(os.environ.get("CO2_AUTO_OFF_ABSOLUTE_PPM", "550"))
+CO2_AUTO_OFF_ABSOLUTE_PPM = float(os.environ.get("CO2_AUTO_OFF_ABSOLUTE_PPM", "500"))
 
 DRY_RUN = os.environ.get("DRY_RUN", "0") in ("1", "true", "yes")
 
@@ -322,13 +328,17 @@ from(bucket: "{INFLUXDB_BUCKET}")
 
 
 def co2_signal_class() -> str:
-    """Classify the kitchen Ruuvi CO₂ trend over the last few minutes.
+    """Classify the kitchen Ruuvi CO₂ trend.
 
-    Returns one of:
-      "ELEVATED"  — recent 5-min mean is meaningfully above the 30-min baseline
-      "DROPPED"   — recent 5-min mean is meaningfully below baseline OR has
-                    fallen close to outdoor levels (≤ CO2_AUTO_OFF_ABSOLUTE_PPM)
-      "BASELINE"  — neither — within the dead-band
+    Baseline window is 2 h → 1 h ago — far enough back that a slow rise
+    in the recent 5 min isn't masked by the baseline drifting up with it.
+
+    Returns:
+      "ELEVATED"  — recent 5-min mean is ≥ baseline + CO2_AUTO_ON_DELTA_PPM,
+                    OR recent ≥ CO2_AUTO_ON_ABSOLUTE_PPM (someone clearly here)
+      "DROPPED"   — recent ≤ baseline − CO2_AUTO_OFF_DELTA_PPM, OR recent has
+                    fallen near outdoor (≤ CO2_AUTO_OFF_ABSOLUTE_PPM)
+      "BASELINE"  — within the dead-band
       "UNKNOWN"   — sensor data missing
     """
     flux_recent = f'''
@@ -339,23 +349,32 @@ from(bucket: "{INFLUXDB_BUCKET}")
 '''
     flux_baseline = f'''
 from(bucket: "{INFLUXDB_BUCKET}")
-  |> range(start: -30m, stop: -5m)
+  |> range(start: -2h, stop: -1h)
   |> filter(fn: (r) => r._measurement == "ruuvi" and r.sensor_name == "Keittiö" and r._field == "co2")
   |> mean()
 '''
     recent_rows = _query(flux_recent)
     base_rows = _query(flux_baseline)
-    if not recent_rows or not base_rows:
+    if not recent_rows:
         return "UNKNOWN"
     recent = recent_rows[0].get_value()
-    base = base_rows[0].get_value()
-    if recent is None or base is None:
+    base = base_rows[0].get_value() if base_rows else None
+    if recent is None:
         return "UNKNOWN"
-    delta = recent - base
-    if delta >= CO2_AUTO_ON_DELTA_PPM:
+
+    # Absolute fallbacks first — they don't need a baseline.
+    if recent >= CO2_AUTO_ON_ABSOLUTE_PPM:
         return "ELEVATED"
-    if delta <= -CO2_AUTO_OFF_DELTA_PPM or recent <= CO2_AUTO_OFF_ABSOLUTE_PPM:
+    if recent <= CO2_AUTO_OFF_ABSOLUTE_PPM:
         return "DROPPED"
+
+    # Delta-based classification (skip if baseline missing, e.g. after restart).
+    if base is not None:
+        delta = recent - base
+        if delta >= CO2_AUTO_ON_DELTA_PPM:
+            return "ELEVATED"
+        if delta <= -CO2_AUTO_OFF_DELTA_PPM:
+            return "DROPPED"
     return "BASELINE"
 
 
