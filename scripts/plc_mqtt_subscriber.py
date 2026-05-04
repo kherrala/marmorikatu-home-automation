@@ -117,8 +117,10 @@ OUTLET_MAP = {
 # Schema: list of (sensor_group, field_name, [candidate_keys...]).
 # (sensor_group, target field, candidate keys, scale factor).
 # Casa MVHR registers (Outdoor/Supply/Extract/Exhaust/Mode/HeaterCooling) are
-# already scaled by the PLC. Belimo 22DTH registers come as raw int×10 and
-# need ÷10 to match the existing humidity/dew-point/RH-temp schema.
+# already scaled by the PLC. Belimo 22DTH registers come as raw integers and
+# need scaling to engineering units:
+#   ÷10:  Temp (°C×10), RH (%×10), DewPoint (°C×10), Enthalpy (kJ/kg×10)
+#   ÷100: AbsHumidity (g/kg dry air × 100)
 VENTILATION_FIELDS = [
     ("ivk_temp", "Ulkolampotila",
         ["outdoortemp", "outdoor_temp", "ioutdoortemp", "out_temp"], 1.0),
@@ -143,7 +145,7 @@ VENTILATION_FIELDS = [
     ("humidity", "Suhteellinen_kosteus",
         ["relativehumidity", "relative_humidity", "irelativehumidity", "rh"], 0.1),
     ("humidity", "Absoluuttinen_kosteus",
-        ["abshumidity", "abs_humidity", "iabshumidity", "absolute_humidity"], 0.1),
+        ["abshumidity", "abs_humidity", "iabshumidity", "absolute_humidity"], 0.01),
     ("humidity", "Entalpia",
         ["enthalpy", "ienthalpy"], 0.1),
     ("humidity", "Kastepiste",
