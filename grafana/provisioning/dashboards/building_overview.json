@@ -1371,7 +1371,7 @@
             "type": "influxdb",
             "uid": "influxdb"
           },
-          "query": "temps = from(bucket: \"building_automation\")\n  |> range(start: -24h)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"temperature\")\n  |> filter(fn: (r) => r._field == \"supply_temp\" or r._field == \"return_temp\")\n  |> last()\n  |> keep(columns: [\"_time\", \"_field\", \"_value\"])\n  |> group()\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> filter(fn: (r) => exists r.supply_temp and exists r.return_temp)\n\nstatus = from(bucket: \"building_automation\")\n  |> range(start: -24h)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"status\")\n  |> filter(fn: (r) => r._field == \"compressor\" or r._field == \"aux_heater_3kw\" or r._field == \"aux_heater_6kw\")\n  |> last()\n  |> keep(columns: [\"_time\", \"_field\", \"_value\"])\n  |> group()\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> filter(fn: (r) => exists r.compressor and exists r.aux_heater_3kw and exists r.aux_heater_6kw)\n\njoin(tables: {temps: temps, status: status}, on: [\"_time\"])\n  |> map(fn: (r) => ({\n    _time: r._time,\n    _value: 1.965 * (r.supply_temp - r.return_temp) / (1.77 + (r.supply_temp - 35.0) * 0.5 / 15.0),\n    _field: \"COP\"\n  }))\n  |> filter(fn: (r) => r._value >= 0.0 and r._value <= 10.0)",
+          "query": "import \"join\"\n\ntemps = from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"temperature\")\n  |> filter(fn: (r) => r._field == \"supply_temp\" or r._field == \"return_temp\")\n  |> aggregateWindow(every: 1m, fn: mean, createEmpty: false)\n  |> group()\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> filter(fn: (r) => exists r.supply_temp and exists r.return_temp)\n\ncomp = from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"status\" and r._field == \"compressor\")\n  |> aggregateWindow(every: 1m, fn: max, createEmpty: false)\n  |> group()\n  |> keep(columns: [\"_time\", \"_value\"])\n\njoin.inner(\n  left: temps,\n  right: comp,\n  on: (l, r) => l._time == r._time,\n  as: (l, r) => ({_time: l._time, supply_temp: l.supply_temp, return_temp: l.return_temp, comp: r._value}),\n)\n  |> filter(fn: (r) => r.comp > 0.0)\n  |> map(fn: (r) => ({\n    _time: r._time,\n    _value: 1.965 * (r.supply_temp - r.return_temp) / (1.77 + (r.supply_temp - 35.0) * 0.5 / 15.0),\n    _field: \"COP\"\n  }))\n  |> filter(fn: (r) => r._value > 0.0 and r._value <= 10.0)\n  |> mean()\n  |> map(fn: (r) => ({r with _field: \"COP\"}))",
           "refId": "A"
         }
       ],
@@ -1821,5 +1821,5 @@
   "timezone": "Europe/Helsinki",
   "title": "Yleiskuva",
   "uid": "wago-overview",
-  "version": 46
+  "version": 47
 }
