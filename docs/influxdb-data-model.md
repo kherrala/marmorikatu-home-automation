@@ -37,30 +37,70 @@ Latin-1 encoding.
 
 | Tag | Values |
 |-----|--------|
-| `sensor_group` | `ivk_temp`, `humidity`, `power`, `energy`, `voltage`, `current`, `actuator`, `cooling` |
+| `sensor_group` | `ivk_temp`, `humidity`, `power`, `energy`, `voltage`, `current`, `actuator`, `cooling`, `performance`, `alarm` |
 | `meter` | `heatpump`, `extra` (only on energy-meter rows) |
 
 ### Fields by Sensor Group
 
 #### `sensor_group=ivk_temp` — Ventilation Temperatures
 
-| Field | Unit | CSV Column | Description |
-|-------|------|------------|-------------|
-| `Ulkolampotila` | °C | `IVK ulkolämpö[c°]` | Outdoor temperature |
-| `Tuloilma_ennen_lammitysta` | °C | `IVK tulo ennen lämmitystä[c°]` | Supply air after heat recovery, before heating coil |
-| `Tuloilma_asetusarvo` | °C | `IVK positolämpötila[c°]` | Supply air setpoint (also used as exhaust temp proxy) |
-| `Tuloilma_jalkeen_lammityksen` | °C | `IVK tulo jälkeen lämmityksen[c°]` | Supply air after heating coil |
-| `Jateilma` | °C | `IVK Jäteilma[c°]` | Exhaust air after heat recovery unit |
-| `Tuloilma_jalkeen_jaahdytyksen` | °C | `Tuloilma jäähdytyksen jälkeen[c°]` | Supply air after cooling (summer mode) |
-| `RH_lampotila` | °C | `RH Lämpötila[c°]` | RH sensor temperature reading |
+| Field | Unit | Source | Description |
+|-------|------|--------|-------------|
+| `Ulkolampotila` | °C | Casa MVHR `OutdoorTemp` | Outdoor air temperature |
+| `Tuloilma_ennen_lammitysta` | °C | Casa MVHR `SupplyTempPreHeat` | Supply air after heat recovery, before heating coil |
+| `Tuloilma_jalkeen_lammityksen` | °C | Casa MVHR `SupplyTempPostHeat` | Supply air after heating coil |
+| `Poistoilma` | °C | Casa MVHR `ExtractTemp` | **Extract air, room return, BEFORE the HRU** — used as denominator in LTO efficiency |
+| `Jateilma` | °C | Casa MVHR `ExhaustTemp` | Exhaust air, AFTER the HRU |
+| `Huonelampotila` | °C | Casa MVHR `RoomTemp` | Room air temp (no sensor installed yet — reports 0) |
+| `Tuloilmakanava` | °C | WAGO PT100 (separate) | Supply duct downstream temp |
+| `Tuloilma_jalkeen_jaahdytyksen` | °C | (legacy CSV) | Supply air after cooling (summer mode) |
+| `RH_lampotila` | °C | Belimo 22DTH `Belimo22DTH_Temp` | RH sensor probe temperature |
+
+> Legacy `Tuloilma_asetusarvo` (supply-air setpoint, used as an exhaust-temp
+> proxy in CSV-era LTO calculations) is no longer written by the MQTT
+> publisher. Historical CSV records still carry it; the field has been
+> superseded by `Poistoilma`, which is a real measurement.
 
 #### `sensor_group=humidity` — Humidity Sensors
 
-| Field | Unit | CSV Column | Description |
-|-------|------|------------|-------------|
-| `Suhteellinen_kosteus` | % | `RH suht kosteus[%]` | Relative humidity (exhaust side) |
-| `Kastepiste` | °C | `RH kastepiste[c°]` | Dew point temperature |
-| `TH_anturi_lampotila` | °C | `TH Lämpötila[c°]` | TH sensor temperature |
+All humidity values are emitted in engineering units by the WAGO MQTT
+publisher (no client-side scaling).
+
+| Field | Unit | Source | Description |
+|-------|------|--------|-------------|
+| `Suhteellinen_kosteus` | % | Casa MVHR `RelativeHumidity` | Relative humidity, extract side |
+| `Kastepiste` | °C | Casa MVHR `DewPoint` | Dew point of extract air |
+| `Absoluuttinen_kosteus` | g/kg | Casa MVHR `AbsHumidity` | Absolute humidity (water content) |
+| `Entalpia` | kJ/kg | Casa MVHR `Enthalpy` | Moist-air specific enthalpy |
+| `Sisakosteus` | % | Casa MVHR `IndoorRH` | Indoor RH (no sensor installed yet — reports 0) |
+| `TH_anturi_lampotila` | °C | (legacy CSV) | TH sensor temperature |
+
+#### `sensor_group=performance` — Casa MVHR Self-Reported Metrics
+
+| Field | Unit | Source | Description |
+|-------|------|--------|-------------|
+| `LTO_hyotysuhde` | % | Casa MVHR `HreEfficiency` | MVHR's own heat-recovery efficiency calculation |
+| `Tulopuhallin_nopeus` | % | Casa MVHR `SupplyFanSpeed` | Supply fan speed (no telemetry yet — 0) |
+| `Poistopuhallin_nopeus` | % | Casa MVHR `ExhaustFanSpeed` | Extract fan speed (no telemetry yet — 0) |
+
+#### `sensor_group=alarm` — Casa MVHR Alarm Flags
+
+All boolean fields (0 = clear, 1 = active). Numeric ints where noted.
+
+| Field | Type | Source | Description |
+|-------|------|--------|-------------|
+| `Alarm_freezing_danger` | bool | Casa MVHR `AlarmFreezingDanger` | Heat exchanger frost risk imminent |
+| `Alarm_filter_guard` | bool | Casa MVHR `AlarmFilterGuard` | Air filter needs cleaning/replacement |
+| `Alarm_temp_deviation` | bool | Casa MVHR `AlarmTempDeviation` | Supply temp far from setpoint |
+| `Alarm_overheat_after` | bool | Casa MVHR `AlarmOverheatAfter` | Post-heater overtemp |
+| `Alarm_efficiency` | bool | Casa MVHR `AlarmEfficiency` | Recovery efficiency anomalously low |
+| `Alarm_fan_failure_supply` | bool | Casa MVHR `AlarmFanFailureSA` | Supply fan failure |
+| `Alarm_fan_failure_extract` | bool | Casa MVHR `AlarmFanFailureEA` | Extract fan failure |
+| `Alarm_IR_sensor` | bool | Casa MVHR `AlarmIRSensor` | IR sensor fault |
+| `Alarm_service_reminder` | bool | Casa MVHR `AlarmServiceReminder` | Periodic service due |
+| `Alarm_temp_sensor` | int  | Casa MVHR `AlarmTempSensor` | Temperature-sensor fault code |
+| `Jalkilammitin_ylikuume` | bool | Casa MVHR `AfterheaterOvertemp` | After-heater overtemp interlock |
+| `Esilammitin_ylikuume` | bool | Casa MVHR `PreheaterOvertemp` | Pre-heater overtemp interlock |
 
 #### `sensor_group=power` — Electrical Power
 
@@ -123,13 +163,16 @@ Per-meter rows carry the `meter` tag.
 | `Jaahpatteri_1` | °C | `marmorikatu/temperatures` | Cooling-radiator 1 temperature |
 | `Jaahpatteri_2` | °C | `marmorikatu/temperatures` | Cooling-radiator 2 temperature |
 
-#### `sensor_group=actuator` — Heating Valve
+#### `sensor_group=actuator` — Damper, Mode, Bypass
 
-| Field | Unit | CSV Column | Description |
-|-------|------|------------|-------------|
-| `Toimilaite_asetusarvo` | °C | `Toimilaite SP[c°]` | Heating valve setpoint |
-| `Toimilaite_pakotus` | °C | `Toimilaite pakotus[c°]` | Heating valve override status |
-| `Toimilaite_ohjaus` | °C | `Toimilaite ohjaus[c°]` | Heating valve control output |
+| Field | Unit | Source | Description |
+|-------|------|--------|-------------|
+| `Toimilaite_ohjaus` | % | Casa MVHR `DamperPosition` | Damper position |
+| `IV_tila` | int | Casa MVHR `OperatingMode` | MVHR operating mode |
+| `IV_lammitys_jaahdytys` | int | Casa MVHR `HeaterCooling` | Heating/cooling mode select |
+| `Ohitus_auki` | bool | Casa MVHR `HxBypassOpen` | Heat-exchanger bypass open (summer mode) |
+| `Toimilaite_asetusarvo` | °C | (legacy CSV) | Heating valve setpoint |
+| `Toimilaite_pakotus` | °C | (legacy CSV) | Heating valve override status |
 
 ### Validation Rules
 
@@ -161,12 +204,17 @@ imported from `Temperatures*.csv` files.
 
 | Tag | Values | Description |
 |-----|--------|-------------|
-| `room_type` | `bedroom`, `common`, `basement`, `valve`, `pid` *(legacy)*, `energy` *(legacy)* | Category of data |
+| `room_type` | `bedroom`, `common`, `basement`, `pid`, `valve` *(legacy)*, `energy` *(legacy)* | Category of data |
 | `floor` | `0`, `1`, `2` | Floor level (0=basement, 1=ground, 2=upstairs) |
 
-`pid` and `energy` are populated only by historical CSV imports — the live
-MQTT pipeline does not produce them. Live valve activity is available under
-`room_type=valve` (binary 0/1 per zone).
+The WAGO MQTT publisher emits **integer 0–100 PID%** per zone on
+`marmorikatu/heating`, written as `room_type=pid` float fields (e.g.
+`MH_Seela_PID = 60.0` means the Aatu/Seela zone is calling for 60% heating
+output). This replaces the earlier scheme where the publisher emitted only
+boolean valve-open/closed and the subscriber synthesised 0/100% PID rows.
+Historical `room_type=valve` rows from that interim period remain in the
+bucket; new writes go to `room_type=pid` only. `room_type=energy` exists
+only in CSV-era imports.
 
 ### Fields by Room Type
 

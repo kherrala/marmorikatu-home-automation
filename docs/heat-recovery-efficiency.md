@@ -15,20 +15,32 @@ The dashboard includes four calculated panels:
 
 ## Data Sources
 
-All temperature and humidity data comes from the `hvac` measurement (WAGO CSV data,
-~2-hour sampling interval):
+All temperature and humidity data comes from the `hvac` measurement (Casa MVHR
+data via WAGO PLC MQTT publisher, ~13-second sampling interval). All values are
+emitted in engineering units (°C, %, g/kg, kJ/kg) — no client-side scaling.
 
 | Field Name | Description | Sensor Group |
 |------------|-------------|--------------|
 | `Ulkolampotila` | Outdoor temperature (°C) | `ivk_temp` |
 | `Tuloilma_ennen_lammitysta` | Supply air after HRU, before heating coil (°C) | `ivk_temp` |
 | `Tuloilma_jalkeen_lammityksen` | Supply air after heating coil (°C) | `ivk_temp` |
-| `Tuloilma_asetusarvo` | Supply air setpoint / exhaust proxy (°C) | `ivk_temp` |
-| `Jateilma` | Exhaust air after HRU (°C) | `ivk_temp` |
-| `Suhteellinen_kosteus` | Relative humidity, exhaust side (%) | `humidity` |
+| `Poistoilma` | Extract air, pre-recovery (room return) (°C) | `ivk_temp` |
+| `Jateilma` | Exhaust air, post-recovery (°C) | `ivk_temp` |
+| `Tuloilmakanava` | Supply duct downstream sensor (°C, separate PT100) | `ivk_temp` |
+| `Suhteellinen_kosteus` | Relative humidity, extract side (%) | `humidity` |
+| `Kastepiste` | Dew point, extract side (°C) | `humidity` |
+| `LTO_hyotysuhde` | Casa MVHR self-reported heat-recovery efficiency (%) | `performance` |
+| `Alarm_freezing_danger` | Casa MVHR freezing-danger alarm flag (0/1) | `alarm` |
 
 Outdoor humidity comes from the `ruuvi` measurement (`sensor_name=Ulkolämpötila`,
 field `humidity`), with an 85% RH fallback when unavailable.
+
+**Note on legacy fields:** The old WAGO CSV pipeline used `Tuloilma_asetusarvo`
+(supply-air setpoint) as a proxy for the exhaust temperature in efficiency
+calculations because the CSV had no `Poistoilma` field. The MQTT pipeline
+publishes `Poistoilma` directly, so the legacy proxy is retired and dashboards
+use `Poistoilma` for the denominator. Historical CSV-era records still contain
+`Tuloilma_asetusarvo` for backwards compatibility but it is no longer written.
 
 ## Airflow Constant
 
@@ -53,17 +65,17 @@ Measures heat recovery based on dry-bulb temperatures only.
 ### Formula
 
 ```
-η_sensible = (T_supply_after_HRU - T_outdoor) / (T_exhaust - T_outdoor) × 100%
+η_sensible = (T_supply_after_HRU - T_outdoor) / (T_extract - T_outdoor) × 100%
 ```
 
 Where:
 - `T_supply_after_HRU` = `Tuloilma_ennen_lammitysta` (air after HRU, before heating coil)
 - `T_outdoor` = `Ulkolampotila`
-- `T_exhaust` = `Tuloilma_asetusarvo` (supply setpoint used as exhaust proxy — see [Limitations](#limitations))
+- `T_extract` = `Poistoilma` (room return air, *before* the heat exchanger)
 
 ### Validity Filtering
 
-- Division by zero prevented: `T_exhaust ≠ T_outdoor`
+- Division by zero prevented: `T_extract ≠ T_outdoor`
 - Results filtered to 0–100% range
 
 ### Flux Query
@@ -74,22 +86,28 @@ from(bucket: "building_automation")
   |> filter(fn: (r) => r._measurement == "hvac")
   |> filter(fn: (r) => r._field == "Ulkolampotila"
       or r._field == "Tuloilma_ennen_lammitysta"
-      or r._field == "Tuloilma_asetusarvo")
+      or r._field == "Poistoilma")
   |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)
+  |> group()
   |> pivot(rowKey: ["_time"], columnKey: ["_field"], valueColumn: "_value")
   |> filter(fn: (r) => exists r.Ulkolampotila
       and exists r.Tuloilma_ennen_lammitysta
-      and exists r.Tuloilma_asetusarvo)
-  |> filter(fn: (r) => r.Tuloilma_asetusarvo != r.Ulkolampotila)
+      and exists r.Poistoilma)
+  |> filter(fn: (r) => r.Poistoilma != r.Ulkolampotila)
   |> map(fn: (r) => ({
     _time: r._time,
     _value: (r.Tuloilma_ennen_lammitysta - r.Ulkolampotila)
-            / (r.Tuloilma_asetusarvo - r.Ulkolampotila) * 100.0,
+            / (r.Poistoilma - r.Ulkolampotila) * 100.0,
     _field: "Tuntuva lämpö"
   }))
   |> filter(fn: (r) => r._value > 0.0 and r._value <= 100.0)
   |> group(columns: ["_field"])
 ```
+
+For comparison, the Casa MVHR's own self-reported `LTO_hyotysuhde` is also
+available under `_measurement="hvac" AND sensor_group="performance"`. It will
+not necessarily agree with the formula above (the unit's definition may differ
+slightly) but provides a useful sanity check.
 
 ## Enthalpy Efficiency
 
@@ -135,11 +153,11 @@ Where 101325 Pa = standard atmospheric pressure.
 
 ### Multi-Source Data Join
 
-The enthalpy query joins data from three sources, all aligned to 2-hour
-boundaries (see [Data Alignment](#data-alignment)):
+The enthalpy query joins data from three sources, aligned at the dashboard's
+auto-selected `v.windowPeriod`:
 
-1. **HVAC temperatures** — `Ulkolampotila`, `Tuloilma_ennen_lammitysta`, `Tuloilma_asetusarvo`
-2. **HVAC exhaust humidity** — `Suhteellinen_kosteus` (inner join)
+1. **HVAC temperatures** — `Ulkolampotila`, `Tuloilma_ennen_lammitysta`, `Poistoilma`
+2. **HVAC extract humidity** — `Suhteellinen_kosteus` (inner join)
 3. **Ruuvi outdoor humidity** — `humidity` from sensor `Ulkolämpötila` (left join, fallback to 85% RH)
 
 ### Humidity Assignments
@@ -148,7 +166,7 @@ boundaries (see [Data Alignment](#data-alignment)):
 |------------|-------------|----------|
 | Outdoor | `Ulkolampotila` | Ruuvi `humidity` (or 85% RH fallback) |
 | Supply (after HRU) | `Tuloilma_ennen_lammitysta` | Same as outdoor (no moisture added by HRU) |
-| Exhaust | `Tuloilma_asetusarvo` | `Suhteellinen_kosteus` |
+| Extract (room return) | `Poistoilma` | `Suhteellinen_kosteus` |
 
 ### Flux Query
 
@@ -161,27 +179,19 @@ temps = from(bucket: "building_automation")
   |> filter(fn: (r) => r._measurement == "hvac")
   |> filter(fn: (r) => r._field == "Ulkolampotila"
       or r._field == "Tuloilma_ennen_lammitysta"
-      or r._field == "Tuloilma_asetusarvo")
-  |> map(fn: (r) => ({r with
-      _time: time(v: ((int(v: r._time) / 7200000000000) * 7200000000000))
-    }))
-  |> group(columns: ["_time", "_field"])
-  |> mean()
+      or r._field == "Poistoilma")
+  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)
   |> group()
   |> pivot(rowKey: ["_time"], columnKey: ["_field"], valueColumn: "_value")
   |> filter(fn: (r) => exists r.Ulkolampotila
       and exists r.Tuloilma_ennen_lammitysta
-      and exists r.Tuloilma_asetusarvo)
+      and exists r.Poistoilma)
 
 hum = from(bucket: "building_automation")
   |> range(start: v.timeRangeStart, stop: v.timeRangeStop)
   |> filter(fn: (r) => r._measurement == "hvac")
   |> filter(fn: (r) => r._field == "Suhteellinen_kosteus")
-  |> map(fn: (r) => ({r with
-      _time: time(v: ((int(v: r._time) / 7200000000000) * 7200000000000))
-    }))
-  |> group(columns: ["_time"])
-  |> mean()
+  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)
   |> group()
   |> keep(columns: ["_time", "_value"])
 
@@ -190,11 +200,7 @@ ruuvi = from(bucket: "building_automation")
   |> filter(fn: (r) => r._measurement == "ruuvi"
       and r.sensor_name == "Ulkolämpötila")
   |> filter(fn: (r) => r._field == "humidity")
-  |> map(fn: (r) => ({r with
-      _time: time(v: ((int(v: r._time) / 7200000000000) * 7200000000000))
-    }))
-  |> group(columns: ["_time"])
-  |> mean()
+  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)
   |> group()
   |> keep(columns: ["_time", "_value"])
 
@@ -211,7 +217,7 @@ join.left(
     _time: l._time,
     Ulkolampotila: l.Ulkolampotila,
     Tuloilma_ennen_lammitysta: l.Tuloilma_ennen_lammitysta,
-    Tuloilma_asetusarvo: l.Tuloilma_asetusarvo,
+    Poistoilma: l.Poistoilma,
     Suhteellinen_kosteus: l.Suhteellinen_kosteus,
     RH_outdoor: if exists r._value then r._value else 85.0
   })
@@ -219,20 +225,20 @@ join.left(
   |> map(fn: (r) => {
     psat_out = 610.78 * math.pow(x: 10.0,
         y: 7.5 * r.Ulkolampotila / (237.3 + r.Ulkolampotila))
-    psat_exh = 610.78 * math.pow(x: 10.0,
-        y: 7.5 * r.Tuloilma_asetusarvo / (237.3 + r.Tuloilma_asetusarvo))
+    psat_ext = 610.78 * math.pow(x: 10.0,
+        y: 7.5 * r.Poistoilma / (237.3 + r.Poistoilma))
     w_out = 0.622 * (r.RH_outdoor / 100.0) * psat_out
             / (101325.0 - (r.RH_outdoor / 100.0) * psat_out)
-    w_exh = 0.622 * (r.Suhteellinen_kosteus / 100.0) * psat_exh
-            / (101325.0 - (r.Suhteellinen_kosteus / 100.0) * psat_exh)
+    w_ext = 0.622 * (r.Suhteellinen_kosteus / 100.0) * psat_ext
+            / (101325.0 - (r.Suhteellinen_kosteus / 100.0) * psat_ext)
     h_out = 1.006 * r.Ulkolampotila
             + w_out * (2501.0 + 1.86 * r.Ulkolampotila)
     h_sup = 1.006 * r.Tuloilma_ennen_lammitysta
             + w_out * (2501.0 + 1.86 * r.Tuloilma_ennen_lammitysta)
-    h_exh = 1.006 * r.Tuloilma_asetusarvo
-            + w_exh * (2501.0 + 1.86 * r.Tuloilma_asetusarvo)
-    eta = if h_exh != h_out
-          then (h_sup - h_out) / (h_exh - h_out) * 100.0
+    h_ext = 1.006 * r.Poistoilma
+            + w_ext * (2501.0 + 1.86 * r.Poistoilma)
+    eta = if h_ext != h_out
+          then (h_sup - h_out) / (h_ext - h_out) * 100.0
           else 0.0
     return {_time: r._time, _value: eta, _field: "Entalpia"}
   })
@@ -242,21 +248,12 @@ join.left(
 
 ## Data Alignment
 
-HVAC data (~2-hour sampling) and Ruuvi data (~1-second sampling) use different
-rates. To join them, all timestamps are aligned to 2-hour boundaries using
-integer division on nanosecond timestamps:
-
-```flux
-_time: time(v: ((int(v: r._time) / 7200000000000) * 7200000000000))
-```
-
-Where `7200000000000` = 2 hours × 3600 seconds × 1,000,000,000 nanoseconds.
-
-This floors each timestamp to the nearest 2-hour boundary (00:00, 02:00, 04:00, ...),
-then groups by that aligned time to compute means within each window before joining.
-
-The sensible heat efficiency panel uses `aggregateWindow(every: v.windowPeriod)`
-instead, since it only uses HVAC data (no cross-measurement joins needed).
+Both HVAC and Ruuvi data are now aligned via `aggregateWindow(every:
+v.windowPeriod, fn: mean)` — Grafana picks `windowPeriod` based on the
+selected time range and panel pixel width, giving consistent resolution at
+any zoom. The legacy 2-hour bucket alignment (used when WAGO data was
+sampled every ~2 h via the CSV pipeline) was retired with the migration to
+the MQTT publisher (~13 s sampling).
 
 ## Recovered Heat Power
 
@@ -368,19 +365,37 @@ with existing sensors.
 
 | Component | Weight | Low Risk (0%) | High Risk (100%) |
 |-----------|--------|---------------|------------------|
-| Dew point proximity (`Jateilma - Kastepiste`) | 60% | ≥ 5°C margin | 0°C margin (at dew point) |
+| Dew point proximity (`Jateilma - Kastepiste`) × cold-exhaust gate | 60% | margin ≥ 5°C **OR** Jateilma ≥ 5°C | margin ≤ 0°C and Jateilma ≤ 0°C |
 | Outdoor temperature | 25% | ≥ -5°C | ≤ -25°C |
 | Exhaust air temperature | 15% | ≥ 5°C | ≤ 0°C |
 
 Each component is linearly mapped to 0–100% within its range, then multiplied
-by its weight. The total is capped at 95%.
+by its weight. Total is capped at 95%.
+
+### Cold-Exhaust Gate
+
+The dew-point margin component is **multiplied by a cold-exhaust factor** so
+that a small margin only contributes to risk when the exhaust is also
+approaching zero. Without this gate, the formula incorrectly fired in mild
+conditions (e.g. autumn shoulder season with extract air at 22°C, exhaust at
+10°C, dew point at 6°C — physically no freezing possible because exhaust is
+well above 0°C, but margin = 4°C would otherwise trigger the dew leg).
+
+```
+cold_factor = clamp((5 − Jateilma) / 5, 0, 1)
+```
+
+- Jateilma ≥ 5°C → factor = 0 → dew_risk component zeroed
+- Jateilma = 2.5°C → factor = 0.5 → half weight
+- Jateilma ≤ 0°C → factor = 1 → full weight
 
 ### Formulas
 
 ```
-margin = Jateilma - Kastepiste
+margin       = Jateilma - Kastepiste
+cold_factor  = clamp((5 - Jateilma) / 5, 0, 1)
 
-dew_risk   = clamp((5 - margin) / 5, 0, 1) × 60
+dew_risk   = clamp((5 - margin) / 5, 0, 1) × cold_factor × 60
 temp_risk  = clamp((-5 - Ulkolampotila) / 20, 0, 1) × 25
 exh_risk   = clamp((5 - Jateilma) / 5, 0, 1) × 15
 total      = dew_risk + temp_risk + exh_risk
@@ -389,8 +404,19 @@ total      = dew_risk + temp_risk + exh_risk
 ### Override Rules
 
 - If `Jateilma < 0°C` → probability forced to **60%** (exhaust air already below freezing)
-- If `margin < 0°C` → probability forced to minimum **80%** (condensation + freezing actively occurring)
+- If `margin < 0°C` AND `Jateilma < 5°C` → probability forced to minimum **80%**
+  (condensation + freezing actively occurring; the additional Jateilma constraint
+  prevents the floor firing on humid summer days)
 - Maximum capped at **95%**
+
+### Casa MVHR Authoritative Signal
+
+The dashboard panel also overlays `Alarm_freezing_danger` (boolean, scaled
+to 0/100% for the same axis) — the Casa MVHR's own internally-computed
+freezing-risk alarm. This is the authoritative "now" signal; the heuristic
+above is a leading-indicator with finer time resolution. They should agree
+at high values; persistent divergence is a hint to retune the heuristic
+weights.
 
 ### Risk Levels
 
@@ -420,11 +446,16 @@ from(bucket: "building_automation")
   |> map(fn: (r) => {
       margin = r.Jateilma - r.Kastepiste
 
+      cold_factor_raw = (5.0 - r.Jateilma) / 5.0
+      cold_factor = if cold_factor_raw < 0.0 then 0.0
+                    else if cold_factor_raw > 1.0 then 1.0
+                    else cold_factor_raw
+
       dew_raw = (5.0 - margin) / 5.0
       dew_risk = if dew_raw < 0.0 then 0.0
                  else if dew_raw > 1.0 then 1.0
                  else dew_raw
-      dew_score = dew_risk * 60.0
+      dew_score = dew_risk * cold_factor * 60.0
 
       temp_raw = (-5.0 - r.Ulkolampotila) / 20.0
       temp_risk = if temp_raw < 0.0 then 0.0
@@ -440,7 +471,7 @@ from(bucket: "building_automation")
 
       total = dew_score + temp_score + exh_score
       prob = if r.Jateilma < 0.0 then 60.0
-             else if margin < 0.0 then
+             else if margin < 0.0 and r.Jateilma < 5.0 then
                (if total > 95.0 then 95.0
                 else if total < 80.0 then 80.0
                 else total)
@@ -451,36 +482,31 @@ from(bucket: "building_automation")
   })
 ```
 
-The gauge uses `-6h` range with `last()` to get the most recent WAGO data point,
-since WAGO data is sampled approximately every 2 hours.
+With MQTT sampling at ~13 s, the panel uses `aggregateWindow(every:
+v.windowPeriod)` so the chart resolution scales naturally with the
+dashboard zoom, replacing the legacy 2-hour bucketing that was needed for
+the slower CSV pipeline.
 
 ## Limitations
 
-1. **Exhaust temperature proxy**: There is no dedicated exhaust air temperature
-   sensor before the HRU. `Tuloilma_asetusarvo` (supply air setpoint) is used as
-   a proxy for exhaust air temperature, which is approximately correct since
-   exhaust air is room-temperature air being expelled.
-
-2. **Outdoor humidity fallback**: When Ruuvi outdoor humidity data is unavailable
+1. **Outdoor humidity fallback**: When Ruuvi outdoor humidity data is unavailable
    (sensor offline, out of range), 85% RH is used as a conservative default.
    This is reasonable for Finnish outdoor conditions but may overestimate
    enthalpy in dry weather.
 
-3. **Sampling rate differences**: HVAC data is logged every ~2 hours, while Ruuvi
-   data arrives every ~1 second. The 2-hour boundary alignment averages Ruuvi
-   data within each window, which is appropriate but means short-duration events
-   are smoothed out.
-
-4. **Constant airflow assumption**: The 414 m³/h airflow (and derived 0.1387 kW/K
+2. **Constant airflow assumption**: The 414 m³/h airflow (and derived 0.1387 kW/K
    constant) assumes the ventilation system runs at a fixed speed. Variable-speed
-   operation would require actual airflow measurement.
+   operation would require actual airflow measurement (the new
+   `Tulopuhallin_nopeus` and `Poistopuhallin_nopeus` `sensor_group=performance`
+   fields will provide this once the Casa MVHR fan-speed registers are wired).
 
-5. **No condensation modeling**: The enthalpy calculation assumes no condensation
+3. **No condensation modeling**: The enthalpy calculation assumes no condensation
    occurs within the HRU. In practice, moisture may condense on cold HRU surfaces,
    releasing additional latent heat that increases actual efficiency beyond the
    calculated value.
 
-6. **Freezing probability is heuristic**: The dew point proximity model is
+4. **Freezing probability is heuristic**: The dew point proximity model is
    a physically-motivated risk estimate but not a full ice formation model.
    Actual freezing depends on HRU geometry, surface temperatures, defrost cycle
-   behavior, and local airflow patterns within the heat exchanger.
+   behavior, and local airflow patterns within the heat exchanger. Use the Casa
+   MVHR's own `Alarm_freezing_danger` flag as the authoritative signal.

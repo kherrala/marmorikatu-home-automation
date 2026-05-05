@@ -6,14 +6,14 @@ Eight provisioned dashboards for building automation data visualization.
 
 | File | UID | Title | Content |
 |------|-----|-------|---------|
-| `building_overview.json` | `wago-overview` | Temperature Overview | Home dashboard with canvas floorplan, all temperature sources |
-| `hvac_dashboard.json` | `wago-hvac` | HVAC | Ventilation temps, heat recovery efficiency, freezing risk, power |
-| `hvac_temp_histogram.json` | `hvac-temp-histogram` | HVAC lämpötilojen jakauma | HVAC temperature distribution histograms |
-| `room_temp_histogram.json` | `room-temp-histogram` | Huonelämpötilojen jakauma | Room temperature distribution histograms |
+| `building_overview.json` | `wago-overview` | Temperature Overview | Home dashboard with canvas floorplan; LTO efficiency, COP, freezing risk overview |
+| `hvac_dashboard.json` | `wago-hvac` | HVAC | LTO efficiency + freezing risk (heuristic + Casa MVHR `Alarm_freezing_danger` overlay), IVK temps, RH, heating-circuit-vs-IVK diagnostic, IVK temp + RH histograms |
+| `room_temperatures.json` | `room-temperatures` | Huonelämpötilat | Per-room temps, Lämmitystarve PID summary, room temperature histograms |
+| `heating_control.json` | `heating-control` | Lämmityksen ohjaus | Thermia tier, setpoints, integrator |
 | `lights_status.json` | `wago-lights` | Light Switch Status | Light switch on/off status by floor |
 | `ruuvi_sensors.json` | `ruuvi-sensors` | Ruuvi Sensors | Ruuvi sensor data, air quality |
-| `thermia_heatpump.json` | `thermia-heatpump` | Maalämpöpumppu | Heat pump temps, COP, power, runtimes |
-| `energy_cost.json` | `energy-cost` | Energiakustannukset | Estimated consumption & costs by consumer |
+| `thermia_heatpump.json` | `thermia-heatpump` | Maalämpöpumppu | Heat pump temps, COP (window mean), power, runtimes; PID-summa vs Thermia integraali |
+| `energy_cost.json` | `energy-cost` | Energiakustannukset | Estimated consumption & costs by consumer (heat-direction-aware sauna detection) |
 
 All files in `grafana/provisioning/dashboards/`.
 
@@ -34,12 +34,13 @@ All dashboards are tagged `building-automation` plus a topic-specific tag:
 
 | Tag | Dashboards |
 |-----|------------|
-| `wago` | Temperature Overview |
-| `hvac` | HVAC, HVAC lämpötilojen jakauma |
+| `wago` | Temperature Overview, Huonelämpötilat |
+| `hvac` | HVAC |
 | `ruuvi` | Ruuvi Sensors |
 | `thermia` | Maalämpöpumppu |
 | `lights` | Light Switch Status |
 | `energy` | Energiakustannukset |
+| `heating` | Lämmityksen ohjaus |
 
 ### Cross-Dashboard Navigation
 
@@ -195,9 +196,12 @@ Panels: summary stats (total kWh, total €, avg price, pie chart), stacked bar
 charts (consumption and cost by consumer per interval), electricity price
 timeseries, and per-consumer breakdown table.
 
-### Histogram Dashboards
+### Histogram Sections
 
-Two histogram dashboards showing temperature distribution over the selected
-time range:
-- **HVAC lämpötilojen jakauma**: Distribution of ventilation system temperatures
-- **Huonelämpötilojen jakauma**: Distribution of room temperatures across all rooms
+Temperature-distribution histograms are inlined at the bottom of the
+relevant main dashboards (no longer standalone):
+
+- **HVAC dashboard** — *IVK lampotilojen jakauma* and *Suhteellisen
+  kosteuden jakauma*
+- **Huonelämpötilat** — *Makuuhuoneiden / Yleisten tilojen / Kellarin
+  lampotilajakauma*
