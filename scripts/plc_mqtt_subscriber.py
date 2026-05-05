@@ -111,17 +111,25 @@ OUTLET_MAP = {
 }
 
 # Ventilation (marmorikatu/ventilation) → hvac with sensor_group=ivk_temp /
-# humidity / actuator. Multiple key candidates per logical field cover
-# minor naming differences in the PLC publisher.
+# humidity / actuator / performance / alarm. The PLC publisher emits all
+# values pre-scaled to engineering units (°C, %, g/kg, kJ/kg, etc.) — no
+# scale factor needed. Boolean fields (alarms, bypass) are mapped via
+# Python float() which yields 0.0/1.0.
 #
-# Schema: list of (sensor_group, field_name, [candidate_keys...]).
-# (sensor_group, target field, candidate keys, scale factor).
-# Casa MVHR registers (Outdoor/Supply/Extract/Exhaust/Mode/HeaterCooling) are
-# already scaled by the PLC. Belimo 22DTH registers come as raw integers and
-# need scaling to engineering units:
-#   ÷10:  Temp (°C×10), RH (%×10), DewPoint (°C×10), Enthalpy (kJ/kg×10)
-#   ÷100: AbsHumidity (g/kg dry air × 100)
+# NOTE: Some fields are listed but the corresponding physical sensor is
+# NOT currently installed on the MVHR — they will report 0 indefinitely
+# until hardware is added. These are mapped now so values flow through
+# automatically once the sensors come online; do NOT use them in
+# dashboards yet:
+#   - Huonelampotila          (RoomTemp — no sensor)
+#   - Sisakosteus             (IndoorRH — no sensor)
+#   - LTO_hyotysuhde          (HreEfficiency — Casa-side calc not connected)
+#   - Tulopuhallin_nopeus     (SupplyFanSpeed — no telemetry yet)
+#   - Poistopuhallin_nopeus   (ExhaustFanSpeed — no telemetry yet)
+#
+# Schema: list of (sensor_group, field_name, [candidate_keys...], scale).
 VENTILATION_FIELDS = [
+    # Casa MVHR temperatures
     ("ivk_temp", "Ulkolampotila",
         ["outdoortemp", "outdoor_temp", "ioutdoortemp", "out_temp"], 1.0),
     ("ivk_temp", "Tuloilma_ennen_lammitysta",
@@ -134,25 +142,25 @@ VENTILATION_FIELDS = [
         ["extracttemp", "extract_temp", "iextracttemp"], 1.0),
     ("ivk_temp", "Jateilma",
         ["exhausttemp", "exhaust_temp", "iexhausttemp"], 1.0),
-    # Legacy CSV had a separate Tuloilma_asetusarvo (supply-air setpoint),
-    # used by the LTO/LVK heat-recovery efficiency Flux query as an exhaust-
-    # temp proxy (per docs/heat-recovery-efficiency.md). The WAGO MQTT
-    # publisher does not emit a setpoint, so we alias real ExhaustTemp to
-    # the legacy field name — that's a more accurate denominator than the
-    # original supply-setpoint proxy ever was.
-    ("ivk_temp", "Tuloilma_asetusarvo",
-        ["exhausttemp", "exhaust_temp", "iexhausttemp"], 1.0),
+    ("ivk_temp", "Huonelampotila",
+        ["roomtemp", "room_temp"], 1.0),
+
+    # Belimo 22DTH humidity sensor
     ("humidity", "Suhteellinen_kosteus",
-        ["relativehumidity", "relative_humidity", "irelativehumidity", "rh"], 0.1),
+        ["relativehumidity", "relative_humidity", "irelativehumidity", "rh"], 1.0),
     ("humidity", "Absoluuttinen_kosteus",
-        ["abshumidity", "abs_humidity", "iabshumidity", "absolute_humidity"], 0.01),
+        ["abshumidity", "abs_humidity", "iabshumidity", "absolute_humidity"], 1.0),
     ("humidity", "Entalpia",
-        ["enthalpy", "ienthalpy"], 0.1),
+        ["enthalpy", "ienthalpy"], 1.0),
     ("humidity", "Kastepiste",
-        ["dewpoint", "dew_point", "idewpoint"], 0.1),
+        ["dewpoint", "dew_point", "idewpoint"], 1.0),
     ("humidity", "RH_lampotila",
         ["belimo22dth_temp", "belimo_22dth_temp", "temperature",
-         "itemperature", "sensor_temp"], 0.1),
+         "itemperature", "sensor_temp"], 1.0),
+    ("humidity", "Sisakosteus",
+        ["indoorrh", "indoor_rh"], 1.0),
+
+    # Actuator / state
     ("actuator", "Toimilaite_ohjaus",
         ["damperposition", "damper_position", "rel_position",
          "uirelposition", "relposition"], 1.0),
@@ -160,6 +168,44 @@ VENTILATION_FIELDS = [
         ["operatingmode", "operating_mode", "ioperatingmode", "mode"], 1.0),
     ("actuator", "IV_lammitys_jaahdytys",
         ["heatercooling", "heater_cooling", "iheatercooling"], 1.0),
+    ("actuator", "Ohitus_auki",
+        ["hxbypassopen", "hx_bypass_open", "bypass_open"], 1.0),
+
+    # MVHR-reported performance metrics
+    ("performance", "LTO_hyotysuhde",
+        ["hreefficiency", "hre_efficiency"], 1.0),
+    ("performance", "Tulopuhallin_nopeus",
+        ["supplyfanspeed", "supply_fan_speed"], 1.0),
+    ("performance", "Poistopuhallin_nopeus",
+        ["exhaustfanspeed", "exhaust_fan_speed"], 1.0),
+
+    # Heater overtemp interlocks (also exposed as alarms by the unit)
+    ("alarm", "Jalkilammitin_ylikuume",
+        ["afterheaterovertemp", "afterheater_overtemp"], 1.0),
+    ("alarm", "Esilammitin_ylikuume",
+        ["preheaterovertemp", "preheater_overtemp"], 1.0),
+
+    # Casa MVHR alarm flags (booleans → 0/1)
+    ("alarm", "Alarm_IR_sensor",
+        ["alarmirsensor", "alarm_ir_sensor"], 1.0),
+    ("alarm", "Alarm_temp_deviation",
+        ["alarmtempdeviation", "alarm_temp_deviation"], 1.0),
+    ("alarm", "Alarm_freezing_danger",
+        ["alarmfreezingdanger", "alarm_freezing_danger"], 1.0),
+    ("alarm", "Alarm_filter_guard",
+        ["alarmfilterguard", "alarm_filter_guard"], 1.0),
+    ("alarm", "Alarm_overheat_after",
+        ["alarmoverheatafter", "alarm_overheat_after"], 1.0),
+    ("alarm", "Alarm_efficiency",
+        ["alarmefficiency", "alarm_efficiency"], 1.0),
+    ("alarm", "Alarm_fan_failure_supply",
+        ["alarmfanfailuresa", "alarm_fan_failure_sa"], 1.0),
+    ("alarm", "Alarm_fan_failure_extract",
+        ["alarmfanfailureea", "alarm_fan_failure_ea"], 1.0),
+    ("alarm", "Alarm_service_reminder",
+        ["alarmservicereminder", "alarm_service_reminder"], 1.0),
+    ("alarm", "Alarm_temp_sensor",
+        ["alarmtempsensor", "alarm_temp_sensor"], 1.0),
 ]
 
 # Energy-meter field groupings shared by both heatpump and extra meters.
