@@ -196,12 +196,17 @@ write_api = None
 query_api = None
 
 # Per-idx tracking for the CO₂ auto-managed lights:
-#   _co2_auto_on_at[idx]  = the local-tz time we last auto-on'd this light.
-#                           Used to detect a manual off afterwards.
-#   _co2_dismissed_date[idx] = local date the user dismissed the auto-on, so
-#                              we don't re-enable it the same day.
+#   _co2_auto_on_at[idx]        = local-tz time we last auto-on'd this light.
+#   _co2_auto_on_confirmed[idx] = True once we've observed is_on=1 after
+#                                 our publish — needed to distinguish a
+#                                 user dismissal from a silently-failed
+#                                 publish (e.g. unresponsive relay).
+#   _co2_dismissed_date[idx]    = local date the user dismissed the auto-on,
+#                                 so we don't re-enable it the same day.
 _co2_auto_on_at: dict[int, datetime] = {}
+_co2_auto_on_confirmed: dict[int, bool] = {}
 _co2_dismissed_date: dict[int, date] = {}
+_CO2_PUBLISH_GRACE_SECONDS = 90.0  # how long to wait for the relay to confirm
 
 
 def signal_handler(sig, frame):
@@ -542,11 +547,24 @@ def check_and_control():
             continue
         currently_on = co2_state[0]
 
-        # Detect dismissal: we auto-on'd, light is now off → user choice.
+        # Track whether our auto-on actually took effect at the PLC. We
+        # need this to distinguish a real user dismissal from a publish
+        # that silently failed (relay unresponsive, MQTT lost, etc.).
         auto_on_t = _co2_auto_on_at.get(idx_co2)
-        if auto_on_t is not None and not currently_on:
-            _co2_dismissed_date[idx_co2] = today
-            del _co2_auto_on_at[idx_co2]
+        if auto_on_t is not None:
+            if currently_on:
+                # Relay confirmed our publish.
+                _co2_auto_on_confirmed[idx_co2] = True
+            elif _co2_auto_on_confirmed.get(idx_co2):
+                # Was on, now off → user turned it off after our auto-on.
+                _co2_dismissed_date[idx_co2] = today
+                _co2_auto_on_at.pop(idx_co2, None)
+                _co2_auto_on_confirmed.pop(idx_co2, None)
+            elif (now - auto_on_t).total_seconds() > _CO2_PUBLISH_GRACE_SECONDS:
+                # Publish never confirmed — relay/PLC isn't responding.
+                # Clear the attempt without marking dismissed so we keep
+                # retrying on the next eligible tick.
+                _co2_auto_on_at.pop(idx_co2, None)
 
         dismissed_today = _co2_dismissed_date.get(idx_co2) == today
 
@@ -555,10 +573,12 @@ def check_and_control():
                 publish_state(idx_co2, False, "co2_auto_after_midnight")
                 log_decision(idx_co2, "off", "after_midnight", category="co2_auto")
                 _co2_auto_on_at.pop(idx_co2, None)
+                _co2_auto_on_confirmed.pop(idx_co2, None)
             elif co2 == "DROPPED":
                 publish_state(idx_co2, False, "co2_no_occupancy")
                 log_decision(idx_co2, "off", "co2_no_occupancy", category="co2_auto")
                 _co2_auto_on_at.pop(idx_co2, None)
+                _co2_auto_on_confirmed.pop(idx_co2, None)
             else:
                 log_decision(idx_co2, "hold", f"co2_{co2.lower()}", category="co2_auto")
         else:
@@ -570,7 +590,12 @@ def check_and_control():
                 window = "morning" if is_morning else "evening"
                 publish_state(idx_co2, True, f"co2_occupancy_{window}")
                 _co2_auto_on_at[idx_co2] = now
+                _co2_auto_on_confirmed.pop(idx_co2, None)
                 log_decision(idx_co2, "on", f"co2_occupancy_{window}", category="co2_auto")
+                # Brief pause so a second publish in the same tick (the
+                # other CO₂-managed light) doesn't pile onto the PLC's
+                # MQTT command handler before it has finished the first.
+                time.sleep(0.3)
             else:
                 log_decision(idx_co2, "hold", f"co2_{co2.lower()}", category="co2_auto")
 
