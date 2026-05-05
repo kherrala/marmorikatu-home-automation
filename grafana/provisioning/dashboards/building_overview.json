@@ -519,7 +519,7 @@
             "type": "influxdb",
             "uid": "influxdb"
           },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: -6h)\n  |> filter(fn: (r) => r._measurement == \"hvac\")\n  |> filter(fn: (r) => r._field == \"Ulkolampotila\" or r._field == \"Tuloilma_ennen_lammitysta\" or r._field == \"Tuloilma_asetusarvo\")\n  |> last()\n  |> map(fn: (r) => ({r with _time: now()}))\n  |> group()\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> filter(fn: (r) => exists r.Ulkolampotila and exists r.Tuloilma_ennen_lammitysta and exists r.Tuloilma_asetusarvo)\n  |> filter(fn: (r) => r.Tuloilma_asetusarvo != r.Ulkolampotila)\n  |> map(fn: (r) => ({\n    _time: r._time,\n    _value: (r.Tuloilma_ennen_lammitysta - r.Ulkolampotila) / (r.Tuloilma_asetusarvo - r.Ulkolampotila) * 100.0,\n    _field: \"LTO hyötysuhde\"\n  }))\n  |> filter(fn: (r) => r._value > 0.0 and r._value <= 100.0)",
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: -6h)\n  |> filter(fn: (r) => r._measurement == \"hvac\")\n  |> filter(fn: (r) => r._field == \"Ulkolampotila\" or r._field == \"Tuloilma_ennen_lammitysta\" or r._field == \"Poistoilma\")\n  |> last()\n  |> map(fn: (r) => ({r with _time: now()}))\n  |> group()\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> filter(fn: (r) => exists r.Ulkolampotila and exists r.Tuloilma_ennen_lammitysta and exists r.Poistoilma)\n  |> filter(fn: (r) => r.Poistoilma != r.Ulkolampotila)\n  |> map(fn: (r) => ({\n    _time: r._time,\n    _value: (r.Tuloilma_ennen_lammitysta - r.Ulkolampotila) / (r.Poistoilma - r.Ulkolampotila) * 100.0,\n    _field: \"LTO hyötysuhde\"\n  }))\n  |> filter(fn: (r) => r._value > 0.0 and r._value <= 100.0)",
           "refId": "A"
         }
       ],
@@ -1821,5 +1821,5 @@
   "timezone": "Europe/Helsinki",
   "title": "Yleiskuva",
   "uid": "wago-overview",
-  "version": 45
+  "version": 46
 }
