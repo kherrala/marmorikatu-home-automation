@@ -141,8 +141,9 @@ without needing a baseline (also handles cold-start after restart when the
 | `SUN_DARK_ELEVATION_DEG` | 8 | Dark threshold for CO₂ auto-on |
 | `CO2_AUTO_ON_DELTA_PPM` | 20 | ELEVATED delta threshold |
 | `CO2_AUTO_ON_ABSOLUTE_PPM` | 580 | ELEVATED absolute fallback |
-| `CO2_AUTO_OFF_DELTA_PPM` | 50 | DROPPED delta threshold |
-| `CO2_AUTO_OFF_ABSOLUTE_PPM` | 500 | DROPPED absolute fallback |
+| `CO2_AUTO_OFF_DELTA_PPM` | 100 | DROPPED delta threshold (stricter than ON to provide hysteresis) |
+| `CO2_AUTO_OFF_ABSOLUTE_PPM` | 450 | DROPPED absolute fallback (close to outdoor ~420) |
+| `CO2_AUTO_MIN_ON_SECONDS` | 1200 | Minimum on-time before auto-off can fire (20 min) |
 | `SAUNA_LAUDE_ON_C` | 55 | Sauna LED on threshold |
 | `SAUNA_LAUDE_OFF_C` | 50 | Sauna LED off threshold |
 | `DRY_RUN` | 0 | Set to 1 to log decisions without publishing |

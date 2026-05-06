@@ -90,8 +90,16 @@ CO2_AUTO_MANAGED = (CO2_AUTO_KITCHEN_IDX, CO2_AUTO_LIVINGROOM_IDX)
 # the kitchen / adjacent room within ~15–30 min of arrival.
 CO2_AUTO_ON_DELTA_PPM = float(os.environ.get("CO2_AUTO_ON_DELTA_PPM", "20"))
 CO2_AUTO_ON_ABSOLUTE_PPM = float(os.environ.get("CO2_AUTO_ON_ABSOLUTE_PPM", "580"))
-CO2_AUTO_OFF_DELTA_PPM = float(os.environ.get("CO2_AUTO_OFF_DELTA_PPM", "50"))
-CO2_AUTO_OFF_ABSOLUTE_PPM = float(os.environ.get("CO2_AUTO_OFF_ABSOLUTE_PPM", "500"))
+# DROPPED is now stricter than ELEVATED to provide real hysteresis. The
+# previous 500 ppm absolute threshold was barely above outdoor (~420) and
+# too close to "single occupant settled" levels (550–650 ppm), causing the
+# kitchen light to flap on/off when CO₂ wandered through the dead-band.
+CO2_AUTO_OFF_DELTA_PPM = float(os.environ.get("CO2_AUTO_OFF_DELTA_PPM", "100"))
+CO2_AUTO_OFF_ABSOLUTE_PPM = float(os.environ.get("CO2_AUTO_OFF_ABSOLUTE_PPM", "450"))
+# Minimum on-time after a CO₂-driven auto-on before another auto-off can
+# fire. Hard floor against rapid flapping when CO₂ wanders just above the
+# threshold and dips briefly. Manual off (= dismissal) bypasses this.
+CO2_AUTO_MIN_ON_SECONDS = float(os.environ.get("CO2_AUTO_MIN_ON_SECONDS", "1200"))
 
 DRY_RUN = os.environ.get("DRY_RUN", "0") in ("1", "true", "yes")
 
@@ -575,10 +583,22 @@ def check_and_control():
                 _co2_auto_on_at.pop(idx_co2, None)
                 _co2_auto_on_confirmed.pop(idx_co2, None)
             elif co2 == "DROPPED":
-                publish_state(idx_co2, False, "co2_no_occupancy")
-                log_decision(idx_co2, "off", "co2_no_occupancy", category="co2_auto")
-                _co2_auto_on_at.pop(idx_co2, None)
-                _co2_auto_on_confirmed.pop(idx_co2, None)
+                # Don't auto-off too soon after our own auto-on — prevents
+                # flapping when CO₂ wanders through the dead-band.
+                seconds_since_on = (
+                    (now - auto_on_t).total_seconds() if auto_on_t else float("inf")
+                )
+                if seconds_since_on < CO2_AUTO_MIN_ON_SECONDS:
+                    log_decision(
+                        idx_co2, "hold",
+                        f"min_on_time_remaining_{int(CO2_AUTO_MIN_ON_SECONDS - seconds_since_on)}s",
+                        category="co2_auto",
+                    )
+                else:
+                    publish_state(idx_co2, False, "co2_no_occupancy")
+                    log_decision(idx_co2, "off", "co2_no_occupancy", category="co2_auto")
+                    _co2_auto_on_at.pop(idx_co2, None)
+                    _co2_auto_on_confirmed.pop(idx_co2, None)
             else:
                 log_decision(idx_co2, "hold", f"co2_{co2.lower()}", category="co2_auto")
         else:
