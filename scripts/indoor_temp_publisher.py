@@ -31,10 +31,62 @@ INFLUXDB_TOKEN  = os.environ.get("INFLUXDB_TOKEN",  "wago-secret-token")
 INFLUXDB_ORG    = os.environ.get("INFLUXDB_ORG",    "wago")
 INFLUXDB_BUCKET = os.environ.get("INFLUXDB_BUCKET", "building_automation")
 
-# Ruuvi sensor name used as the indoor reference
-INDOOR_SENSOR   = os.environ.get("INDOOR_SENSOR",  "Olohuone")
-# Averaging window (minutes) — also controls how much the value can jump
+# Sensors that contribute to the published indoor temperature. The published
+# value is the MEDIAN of the per-sensor means over AVERAGE_MINUTES — robust
+# against an outlier room (e.g. one warm room with sun, or a sauna left
+# warm) and far more representative than a single sensor. Two lists, comma-
+# separated:
+#
+#   INDOOR_RUUVI_SENSORS — Ruuvi sensor_name values (measurement="ruuvi",
+#                          field="temperature"). Names with non-ASCII chars
+#                          (e.g. "Keittiö") are fine — the query matches
+#                          exactly.
+#   INDOOR_ROOM_FIELDS   — WAGO `rooms` measurement field names (any
+#                          room_type), e.g. MH_Seela, Ylakerran_aula.
+#
+# Defaults exclude basement (intentionally cooler) and sauna (transient).
+# Backwards compatibility: if neither is set but the legacy single-sensor
+# INDOOR_SENSOR env var is, fall back to that one sensor.
+# Hard blacklist — sauna readings must never influence the published indoor
+# temperature regardless of any env var override (sauna swings 23–80 °C and
+# would push the median into nonsense the moment the sauna is on).
+_SENSOR_BLACKLIST = {"sauna", "sauna ruuvi"}
+
+
+def _split_csv_no_blacklist(value: str) -> list[str]:
+    return [
+        s for s in (s.strip() for s in value.split(","))
+        if s and s.lower() not in _SENSOR_BLACKLIST
+    ]
+
+
+INDOOR_RUUVI_SENSORS = _split_csv_no_blacklist(os.environ.get(
+    "INDOOR_RUUVI_SENSORS",
+    "Olohuone,Keittiö,Takka",
+))
+INDOOR_ROOM_FIELDS = _split_csv_no_blacklist(os.environ.get(
+    "INDOOR_ROOM_FIELDS",
+    "MH_Seela,MH_Aarni,MH_aikuiset,MH_alakerta,Ylakerran_aula,Keittio,Eteinen",
+))
+_legacy_single = os.environ.get("INDOOR_SENSOR")
+if _legacy_single and not (os.environ.get("INDOOR_RUUVI_SENSORS")
+                           or os.environ.get("INDOOR_ROOM_FIELDS")):
+    INDOOR_RUUVI_SENSORS = _split_csv_no_blacklist(_legacy_single)
+    INDOOR_ROOM_FIELDS = []
+# Averaging window (minutes) — per-sensor mean window, also bounds jumps
 AVERAGE_MINUTES = int(os.environ.get("AVERAGE_MINUTES", "15"))
+
+# Tier-aware bias: instead of writing the Thermia setpoint / EVU / reduction
+# registers each price-tier transition (which would wear the heat pump's
+# internal flash), we bias the published INDR_T so the Thermia naturally
+# computes less supply temp during EXPENSIVE and more during CHEAP. INDR_T
+# is treated as a sensor input by ThermIQ — no flash write.
+TIER_BIAS = {
+    "CHEAP":     float(os.environ.get("TIER_BIAS_CHEAP_C",     "-0.5")),
+    "PRE_HEAT":  float(os.environ.get("TIER_BIAS_PRE_HEAT_C",  "-0.5")),
+    "NORMAL":    float(os.environ.get("TIER_BIAS_NORMAL_C",    "0.0")),
+    "EXPENSIVE": float(os.environ.get("TIER_BIAS_EXPENSIVE_C", "2.0")),
+}
 # How often to check and potentially publish (seconds)
 CHECK_INTERVAL  = int(os.environ.get("CHECK_INTERVAL", "300"))
 # Minimum change (°C) required to trigger a new publish
@@ -66,25 +118,90 @@ def signal_handler(sig, frame):
 
 # ── InfluxDB ──────────────────────────────────────────────────────────────────
 
-def fetch_mean_indoor_temp(query_api):
-    """Return mean temperature from the configured indoor sensor over the last
-    AVERAGE_MINUTES minutes, or None if no data is available."""
-    flux = f"""
+def _per_sensor_means(query_api):
+    """Return [(label, mean_temp)] for every configured sensor that has data.
+
+    Ruuvi sensors are queried by sensor_name; WAGO room fields by _field. Any
+    sensor missing data over AVERAGE_MINUTES is silently skipped.
+    """
+    out = []
+    if INDOOR_RUUVI_SENSORS:
+        flux_filter = " or ".join(f'r.sensor_name == "{s}"' for s in INDOOR_RUUVI_SENSORS)
+        flux = f"""
 from(bucket: "{INFLUXDB_BUCKET}")
   |> range(start: -{AVERAGE_MINUTES}m)
   |> filter(fn: (r) => r._measurement == "ruuvi"
        and r._field == "temperature"
-       and r.sensor_name == "{INDOOR_SENSOR}")
+       and ({flux_filter}))
+  |> group(columns: ["sensor_name"])
   |> mean()
 """
+        try:
+            for table in query_api.query(flux, org=INFLUXDB_ORG):
+                for record in table.records:
+                    v = record.get_value()
+                    if v is None:
+                        continue
+                    out.append((f"ruuvi:{record.values.get('sensor_name', '?')}", float(v)))
+        except Exception as e:
+            log.error(f"Ruuvi query failed: {e}")
+
+    if INDOOR_ROOM_FIELDS:
+        flux_filter = " or ".join(f'r._field == "{f}"' for f in INDOOR_ROOM_FIELDS)
+        flux = f"""
+from(bucket: "{INFLUXDB_BUCKET}")
+  |> range(start: -{AVERAGE_MINUTES}m)
+  |> filter(fn: (r) => r._measurement == "rooms" and ({flux_filter}))
+  |> group(columns: ["_field"])
+  |> mean()
+"""
+        try:
+            for table in query_api.query(flux, org=INFLUXDB_ORG):
+                for record in table.records:
+                    v = record.get_value()
+                    if v is None:
+                        continue
+                    out.append((f"rooms:{record.values.get('_field', '?')}", float(v)))
+        except Exception as e:
+            log.error(f"Rooms query failed: {e}")
+
+    return out
+
+
+def fetch_median_indoor_temp(query_api):
+    """Return (median, [(label, value)]) of available indoor sensors.
+
+    Sensors are queried per-sensor and combined via median in Python (more
+    robust against an outlier room than mean). If no sensor reports data,
+    returns (None, []).
+    """
+    samples = _per_sensor_means(query_api)
+    if not samples:
+        return None, []
+    values = sorted(v for _, v in samples)
+    n = len(values)
+    median = values[n // 2] if n % 2 == 1 else (values[n // 2 - 1] + values[n // 2]) / 2.0
+    return median, samples
+
+
+def fetch_current_tier(query_api):
+    """Return the latest heating-optimizer tier (CHEAP/NORMAL/EXPENSIVE/PRE_HEAT)
+    or 'NORMAL' if not available."""
+    flux = f"""
+from(bucket: "{INFLUXDB_BUCKET}")
+  |> range(start: -10m)
+  |> filter(fn: (r) => r._measurement == "heating_optimizer" and r._field == "tier")
+  |> last()
+"""
     try:
-        tables = query_api.query(flux, org=INFLUXDB_ORG)
-        for table in tables:
+        for table in query_api.query(flux, org=INFLUXDB_ORG):
             for record in table.records:
-                return record.get_value()
+                v = record.get_value()
+                if isinstance(v, str) and v:
+                    return v
     except Exception as e:
-        log.error(f"InfluxDB query failed: {e}")
-    return None
+        log.warning(f"Could not fetch tier: {e}")
+    return "NORMAL"
 
 
 # ── MQTT ──────────────────────────────────────────────────────────────────────
@@ -114,24 +231,33 @@ def publish_indr_t(value):
 def check_and_publish(query_api):
     global last_published
 
-    temp = fetch_mean_indoor_temp(query_api)
-    if temp is None:
-        log.warning(f"No indoor temperature data for '{INDOOR_SENSOR}' in the last {AVERAGE_MINUTES} min")
+    median_temp, samples = fetch_median_indoor_temp(query_api)
+    if median_temp is None:
+        log.warning(f"No indoor sensor data in the last {AVERAGE_MINUTES} min — skipping")
         return
 
-    log.info(f"Indoor mean ({AVERAGE_MINUTES} min): {temp:.2f}°C  (last sent: "
-             f"{f'{last_published:.1f}°C' if last_published is not None else 'none'})")
+    tier = fetch_current_tier(query_api)
+    bias = TIER_BIAS.get(tier, TIER_BIAS["NORMAL"])
+    biased_temp = median_temp + bias
 
-    if temp < INDOOR_MIN or temp > INDOOR_MAX:
-        log.warning(f"Temperature {temp:.2f}°C outside bounds [{INDOOR_MIN}, {INDOOR_MAX}] — skipping")
+    sample_str = ", ".join(f"{lbl}={v:.1f}" for lbl, v in samples)
+    log.info(
+        f"Indoor median ({AVERAGE_MINUTES} min, n={len(samples)}): "
+        f"{median_temp:.2f}°C  tier={tier}  bias={bias:+.1f}°C  → INDR_T={biased_temp:.2f}°C  "
+        f"(last sent: {f'{last_published:.1f}°C' if last_published is not None else 'none'})"
+    )
+    log.info(f"  per-sensor: {sample_str}")
+
+    if biased_temp < INDOOR_MIN or biased_temp > INDOOR_MAX:
+        log.warning(f"Biased temp {biased_temp:.2f}°C outside bounds [{INDOOR_MIN}, {INDOOR_MAX}] — skipping")
         return
 
-    if last_published is not None and abs(temp - last_published) < MIN_CHANGE:
-        log.info(f"Change {abs(temp - last_published):.2f}°C < threshold {MIN_CHANGE}°C — no publish needed")
+    if last_published is not None and abs(biased_temp - last_published) < MIN_CHANGE:
+        log.info(f"Change {abs(biased_temp - last_published):.2f}°C < threshold {MIN_CHANGE}°C — no publish needed")
         return
 
-    if publish_indr_t(temp):
-        last_published = temp
+    if publish_indr_t(biased_temp):
+        last_published = biased_temp
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
@@ -146,10 +272,13 @@ def main():
     log.info("=" * 60)
     log.info("Indoor Temperature Publisher")
     log.info("=" * 60)
-    log.info(f"Sensor:    {INDOOR_SENSOR} (mean over {AVERAGE_MINUTES} min)")
+    log.info(f"Ruuvi:     {INDOOR_RUUVI_SENSORS or '(none)'}")
+    log.info(f"Rooms:     {INDOOR_ROOM_FIELDS or '(none)'}")
+    log.info(f"Aggregate: median over {AVERAGE_MINUTES} min")
+    log.info(f"Tier bias: {TIER_BIAS}")
     log.info(f"MQTT:      {MQTT_BROKER}:{MQTT_PORT}  topic={MQTT_SET_TOPIC}")
     log.info(f"Interval:  {CHECK_INTERVAL}s  min_change={MIN_CHANGE}°C")
-    log.info(f"Bounds:    {INDOOR_MIN}–{INDOOR_MAX}°C")
+    log.info(f"Bounds:    {INDOOR_MIN}–{INDOOR_MAX}°C  (applied to biased value)")
     if DRY_RUN:
         log.info("*** DRY RUN MODE — no MQTT commands will be sent ***")
     log.info("-" * 60)
