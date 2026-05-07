@@ -20,21 +20,18 @@ Controls:
 Replaces the simpler evu_controller.py service.
 """
 
-import json
 import logging
 import os
 import signal
 import time
 from datetime import datetime, timedelta, timezone
 
-import paho.mqtt.client as mqtt
 from influxdb_client import InfluxDBClient, Point, WritePrecision
 from influxdb_client.client.write_api import SYNCHRONOUS
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 MQTT_BROKER = os.environ.get("MQTT_BROKER", "freenas.kherrala.fi")
 MQTT_PORT = int(os.environ.get("MQTT_PORT", "1883"))
-MQTT_WRITE_TOPIC = os.environ.get("MQTT_WRITE_TOPIC", "ThermIQ/marmorikatu/write")
 MQTT_SET_TOPIC = os.environ.get("MQTT_SET_TOPIC", "ThermIQ/marmorikatu/set")
 
 INFLUXDB_URL = os.environ.get("INFLUXDB_URL", "http://localhost:8086")
@@ -114,15 +111,27 @@ def signal_handler(sig, frame):
     running = False
 
 
-# ── MQTT helpers ──────────────────────────────────────────────────────────────
+# Note: the optimizer no longer writes the heat pump's setpoint,
+# reduction_t, or boiler-steps PERSISTENT registers — tier-aware
+# behaviour is driven by the indoor_temp_publisher biasing the published
+# INDR_T (a runtime sensor input — no flash wear). The values computed
+# below for those quantities are still surfaced via log_decision for
+# dashboard analytics, just not commanded to the unit.
+#
+# EVU IS still written: it's a wired-input signal on the heat pump, not
+# a flash register, so toggling it is free. Useful as a hard kill-switch
+# during very expensive slots.
+
 
 def mqtt_publish(topic, payload_dict):
     """Publish a JSON payload to an MQTT topic. Returns True on success."""
+    import json
     message = json.dumps(payload_dict)
     if DRY_RUN:
         log.info(f"[DRY RUN] Would publish to {topic}: {message}")
         return True
     try:
+        import paho.mqtt.client as mqtt
         client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
         client.connect(MQTT_BROKER, MQTT_PORT, keepalive=10)
         result = client.publish(topic, message)
@@ -135,19 +144,9 @@ def mqtt_publish(topic, payload_dict):
         return False
 
 
-def set_setpoint(value):
-    """Set indoor target temperature (d50 / r32)."""
-    global current_setpoint, last_change_time
-    if current_setpoint == value:
-        return
-    if mqtt_publish(MQTT_WRITE_TOPIC, {"r32": value}):
-        current_setpoint = value
-        last_change_time = time.monotonic()
-        log.info(f"Setpoint → {value}°C")
-
-
 def set_evu(enabled):
-    """Enable or disable EVU mode."""
+    """Toggle EVU input on the heat pump (wired signal, NOT a register
+    write — safe to publish as often as needed)."""
     global current_evu, last_change_time
     if current_evu == enabled:
         return
@@ -155,24 +154,6 @@ def set_evu(enabled):
         current_evu = enabled
         last_change_time = time.monotonic()
         log.info(f"EVU → {'ON' if enabled else 'OFF'}")
-
-
-def set_reduction_t(value):
-    """Set reduction_t register (d59 / r3b) at startup."""
-    mqtt_publish(MQTT_WRITE_TOPIC, {"r3b": value})
-    log.info(f"reduction_t (d59) → {value}°C")
-
-
-def set_boiler_steps(value):
-    """Set elect_boiler_steps_max (d81 / r51). 0=disabled, 1=3kW, 2=3+6kW."""
-    global current_boiler_steps, last_change_time
-    if current_boiler_steps == value:
-        return
-    if mqtt_publish(MQTT_WRITE_TOPIC, {"r51": value}):
-        current_boiler_steps = value
-        last_change_time = time.monotonic()
-        label = {0: "OFF", 1: "3kW", 2: "3+6kW"}.get(value, str(value))
-        log.info(f"Boiler steps → {value} ({label})")
 
 
 # ── InfluxDB queries ─────────────────────────────────────────────────────────
@@ -550,10 +531,7 @@ def check_and_control(query_api, write_api):
     # 1. Fetch price forecast
     prices = fetch_price_forecast(query_api)
     if len(prices) < 12:  # less than 3 hours of data
-        log.warning(f"Insufficient price data ({len(prices)} points, need ≥12) — using defaults")
-        set_setpoint(COMFORT_DEFAULT)
-        set_evu(False)
-        set_boiler_steps(BOILER_STEPS_DEFAULT)
+        log.warning(f"Insufficient price data ({len(prices)} points, need ≥12) — assuming NORMAL")
         return
 
     log.info(f"Fetched {len(prices)} forecast price points")
@@ -620,15 +598,20 @@ def check_and_control(query_api, write_api):
                          current_tier, current_price, outdoor_temp)
             return
 
-    # 8. Apply changes
+    # 8. EVU stays a wired-signal write (no flash); setpoint and
+    #    boiler_steps are tracked-only (no MQTT — INDR_T bias steers the
+    #    unit's heating output).
+    global current_setpoint, current_boiler_steps, last_change_time
+    if (setpoint != current_setpoint or boiler_steps != current_boiler_steps):
+        last_change_time = time.monotonic()
+    current_setpoint = setpoint
+    current_boiler_steps = boiler_steps
+    set_evu(evu)
+
     effective = setpoint - REDUCTION_T if evu else setpoint
     boiler_label = {0: "OFF", 1: "3kW", 2: "3+6kW"}.get(boiler_steps, str(boiler_steps))
-    log.info(f"Action: setpoint={setpoint}°C, EVU={'ON' if evu else 'OFF'}, "
+    log.info(f"Decision (logged only): setpoint={setpoint}°C, EVU={'ON' if evu else 'OFF'}, "
              f"boiler={boiler_label}, effective={effective}°C")
-
-    set_setpoint(setpoint)
-    set_evu(evu)
-    set_boiler_steps(boiler_steps)
 
     # 9. Log decision
     now_utc = datetime.now(timezone.utc)
@@ -662,9 +645,8 @@ def main():
     log.info("=" * 60)
     log.info("Floor Heating Temperature Optimizer")
     log.info("=" * 60)
-    log.info(f"MQTT:       {MQTT_BROKER}:{MQTT_PORT}")
-    log.info(f"  write:    {MQTT_WRITE_TOPIC}")
-    log.info(f"  set:      {MQTT_SET_TOPIC}")
+    log.info("Mode:       analytics-only — INDR_T bias from indoor_temp_publisher")
+    log.info("            steers the heat pump; no Thermia register writes.")
     log.info(f"Setpoints:  min={COMFORT_MIN}, default={COMFORT_DEFAULT}, max={COMFORT_MAX}")
     log.info(f"Reduction:  {REDUCTION_T}°C (effective min = {COMFORT_DEFAULT - REDUCTION_T}°C)")
     log.info(f"Boiler:     default={BOILER_STEPS_DEFAULT} steps, disabled during expensive (outdoor > {BOILER_COLD_LIMIT}°C)")
@@ -678,8 +660,6 @@ def main():
     log.info(f"Min block:  {MIN_EXPENSIVE_SLOTS} slots ({MIN_EXPENSIVE_SLOTS * 15}min) — shorter EXPENSIVE blocks filtered")
     log.info(f"Boiler gate: {BOILER_DISABLE_MIN_HOURS}h ({BOILER_DISABLE_MIN_SLOTS} slots) — shorter blocks keep aux heaters")
     log.info(f"Interval:   15-min price boundaries (+5s buffer), hold: {MIN_HOLD_MINUTES}min")
-    if DRY_RUN:
-        log.info("*** DRY RUN MODE — no MQTT commands will be sent ***")
     log.info("-" * 60)
 
     signal.signal(signal.SIGINT, signal_handler)
@@ -696,9 +676,6 @@ def main():
     query_api = influx_client.query_api()
     write_api = influx_client.write_api(write_options=SYNCHRONOUS)
 
-    # Configure reduction_t at startup
-    set_reduction_t(REDUCTION_T)
-
     # Run immediately, then at each 15-minute price slot boundary
     check_and_control(query_api, write_api)
 
@@ -708,12 +685,6 @@ def main():
         sleep_interruptible(secs)
         if running:
             check_and_control(query_api, write_api)
-
-    # Restore defaults on shutdown
-    log.info("Restoring defaults before exit...")
-    set_setpoint(COMFORT_DEFAULT)
-    set_evu(False)
-    set_boiler_steps(BOILER_STEPS_DEFAULT)
 
     influx_client.close()
     log.info("Shutdown complete")
