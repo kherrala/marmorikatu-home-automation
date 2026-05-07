@@ -528,6 +528,7 @@ def log_decision(write_api, setpoint, evu, boiler_steps, tier, price, outdoor_te
 
 def check_and_control(query_api, write_api):
     """Main control cycle: fetch data, classify, apply actions."""
+    global current_setpoint, current_boiler_steps, last_change_time
     # 1. Fetch price forecast
     prices = fetch_price_forecast(query_api)
     if len(prices) < 12:  # less than 3 hours of data
@@ -601,7 +602,6 @@ def check_and_control(query_api, write_api):
     # 8. EVU stays a wired-signal write (no flash); setpoint and
     #    boiler_steps are tracked-only (no MQTT — INDR_T bias steers the
     #    unit's heating output).
-    global current_setpoint, current_boiler_steps, last_change_time
     if (setpoint != current_setpoint or boiler_steps != current_boiler_steps):
         last_change_time = time.monotonic()
     current_setpoint = setpoint
