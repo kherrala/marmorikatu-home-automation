@@ -504,12 +504,16 @@ def get_current_action(schedule, outdoor_temp):
 
 def log_decision(write_api, setpoint, evu, boiler_steps, tier, price, outdoor_temp):
     """Write optimizer decision to InfluxDB for dashboard visualization."""
+    # effective_target was `setpoint - REDUCTION_T if evu else setpoint` back
+    # when we wrote EVU + reduction_t. Those writes are retired so the
+    # firmware applies no reduction; effective_target is simply the setpoint.
+    # Field kept for backwards-compat with existing dashboards.
     point = Point("heating_optimizer") \
         .field("setpoint", setpoint) \
         .field("evu_active", 1 if evu else 0) \
         .field("boiler_steps", boiler_steps) \
         .field("tier", tier) \
-        .field("effective_target", setpoint - REDUCTION_T if evu else setpoint)
+        .field("effective_target", setpoint)
 
     if price is not None:
         point = point.field("price", price)
@@ -611,10 +615,9 @@ def check_and_control(query_api, write_api):
     current_evu = evu
     current_boiler_steps = boiler_steps
 
-    effective = setpoint - REDUCTION_T if evu else setpoint
     boiler_label = {0: "OFF", 1: "3kW", 2: "3+6kW"}.get(boiler_steps, str(boiler_steps))
-    log.info(f"Decision (logged only): setpoint={setpoint}°C, EVU={'ON' if evu else 'OFF'}, "
-             f"boiler={boiler_label}, effective={effective}°C")
+    log.info(f"Decision (logged only): setpoint={setpoint}°C, EVU(intended)={'ON' if evu else 'OFF'}, "
+             f"boiler={boiler_label} — INDR_T bias is the only real mechanism")
 
     # 9. Log decision
     now_utc = datetime.now(timezone.utc)

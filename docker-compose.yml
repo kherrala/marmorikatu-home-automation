@@ -339,7 +339,10 @@ services:
       - INDOOR_RUUVI_SENSORS=Olohuone,Keittiö,Takka
       - INDOOR_ROOM_FIELDS=MH_Seela,MH_Aarni,MH_aikuiset,MH_alakerta,Ylakerran_aula,Keittio,Eteinen
       - AVERAGE_MINUTES=15
-      - CHECK_INTERVAL=300
+      # INDR_T is a runtime sensor input (no flash wear). 60s = quick
+      # response to tier and demand changes; MIN_CHANGE=0.1°C still
+      # gates actual MQTT publishes when the value hasn't moved.
+      - CHECK_INTERVAL=60
       - MIN_CHANGE=0.1
       - INDOOR_MIN=19.0
       - INDOOR_MAX=25.0
