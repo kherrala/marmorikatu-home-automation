@@ -87,6 +87,20 @@ TIER_BIAS = {
     "NORMAL":    float(os.environ.get("TIER_BIAS_NORMAL_C",    "0.0")),
     "EXPENSIVE": float(os.environ.get("TIER_BIAS_EXPENSIVE_C", "2.0")),
 }
+
+# Demand-aware counter-bias: when the per-room PID controllers (WAGO) are
+# calling for max heat, the rooms genuinely need warming and the
+# tier-based suppression should NOT win. We add a negative bias scaled
+# by the mean of all per-room PID demand (0–100%). At full demand
+# (mean_pid = 100), demand_bias = -DEMAND_BIAS_MAX_C, which cancels the
+# EXPENSIVE tier suppression and adds extra push during NORMAL/CHEAP.
+#
+#   final_bias = tier_bias + demand_bias
+#                tier_bias   ∈ {-0.5, 0, +2.0} (per tier)
+#                demand_bias = -(mean_pid / 100) * DEMAND_BIAS_MAX_C  ≤ 0
+#
+# Set DEMAND_BIAS_MAX_C=0 to disable and revert to pure tier-bias.
+DEMAND_BIAS_MAX_C = float(os.environ.get("DEMAND_BIAS_MAX_C", "2.0"))
 # How often to check and potentially publish (seconds)
 CHECK_INTERVAL  = int(os.environ.get("CHECK_INTERVAL", "300"))
 # Minimum change (°C) required to trigger a new publish
@@ -184,6 +198,32 @@ def fetch_median_indoor_temp(query_api):
     return median, samples
 
 
+def fetch_mean_pid_demand(query_api):
+    """Mean of all per-room PID demand percentages (room_type=pid) over the
+    last AVERAGE_MINUTES, returned as a 0–100 float. None if no data.
+
+    These are produced by the WAGO PLC's per-room PID controllers and
+    represent how much heating each underfloor circuit is calling for.
+    100% across many rooms = building genuinely under-heated."""
+    flux = f"""
+from(bucket: "{INFLUXDB_BUCKET}")
+  |> range(start: -{AVERAGE_MINUTES}m)
+  |> filter(fn: (r) => r._measurement == "rooms" and r.room_type == "pid")
+  |> mean()
+  |> group()
+  |> mean()
+"""
+    try:
+        for table in query_api.query(flux, org=INFLUXDB_ORG):
+            for record in table.records:
+                v = record.get_value()
+                if v is not None:
+                    return float(v)
+    except Exception as e:
+        log.warning(f"Could not fetch PID demand: {e}")
+    return None
+
+
 def fetch_current_tier(query_api):
     """Return the latest heating-optimizer tier (CHEAP/NORMAL/EXPENSIVE/PRE_HEAT)
     or 'NORMAL' if not available."""
@@ -237,13 +277,24 @@ def check_and_publish(query_api):
         return
 
     tier = fetch_current_tier(query_api)
-    bias = TIER_BIAS.get(tier, TIER_BIAS["NORMAL"])
+    tier_bias = TIER_BIAS.get(tier, TIER_BIAS["NORMAL"])
+
+    mean_pid = fetch_mean_pid_demand(query_api)
+    if mean_pid is not None and DEMAND_BIAS_MAX_C > 0:
+        demand_bias = -(max(0.0, min(100.0, mean_pid)) / 100.0) * DEMAND_BIAS_MAX_C
+    else:
+        demand_bias = 0.0
+
+    bias = tier_bias + demand_bias
     biased_temp = median_temp + bias
 
     sample_str = ", ".join(f"{lbl}={v:.1f}" for lbl, v in samples)
+    pid_str = f"{mean_pid:.0f}%" if mean_pid is not None else "—"
     log.info(
         f"Indoor median ({AVERAGE_MINUTES} min, n={len(samples)}): "
-        f"{median_temp:.2f}°C  tier={tier}  bias={bias:+.1f}°C  → INDR_T={biased_temp:.2f}°C  "
+        f"{median_temp:.2f}°C  tier={tier}  PID={pid_str}  "
+        f"bias=tier{tier_bias:+.1f}+demand{demand_bias:+.1f}={bias:+.2f}°C  "
+        f"→ INDR_T={biased_temp:.2f}°C  "
         f"(last sent: {f'{last_published:.1f}°C' if last_published is not None else 'none'})"
     )
     log.info(f"  per-sensor: {sample_str}")
@@ -276,6 +327,7 @@ def main():
     log.info(f"Rooms:     {INDOOR_ROOM_FIELDS or '(none)'}")
     log.info(f"Aggregate: median over {AVERAGE_MINUTES} min")
     log.info(f"Tier bias: {TIER_BIAS}")
+    log.info(f"Demand bias: max -{DEMAND_BIAS_MAX_C}°C at 100% PID demand")
     log.info(f"MQTT:      {MQTT_BROKER}:{MQTT_PORT}  topic={MQTT_SET_TOPIC}")
     log.info(f"Interval:  {CHECK_INTERVAL}s  min_change={MIN_CHANGE}°C")
     log.info(f"Bounds:    {INDOOR_MIN}–{INDOOR_MAX}°C  (applied to biased value)")
