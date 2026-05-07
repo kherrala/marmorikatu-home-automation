@@ -411,7 +411,8 @@
           "refId": "A"
         }
       ],
-      "title": "EVU",
+      "description": "Optimizer's tier classification flag (1 = current slot was classified EXPENSIVE). Not a wired EVU command — actual heat suppression is via INDR_T bias.",
+      "title": "EVU-aikomus",
       "type": "stat"
     },
     {
@@ -817,7 +818,7 @@
               },
               {
                 "id": "displayName",
-                "value": "EVU"
+                "value": "EVU-aikomus"
               }
             ]
           },
@@ -1520,5 +1521,5 @@
   "timezone": "Europe/Helsinki",
   "title": "Lämmityksen ohjaus",
   "uid": "heating-control",
-  "version": 3
+  "version": 4
 }

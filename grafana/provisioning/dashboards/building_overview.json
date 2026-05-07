@@ -1715,41 +1715,35 @@
         "type": "influxdb",
         "uid": "influxdb"
       },
+      "description": "Active INDR_T offset fed to the heat pump (tier suppression + room-demand counter-bias). Negative = boosting heat, positive = suppressing.",
       "fieldConfig": {
         "defaults": {
           "color": {
             "mode": "thresholds"
           },
-          "mappings": [
-            {
-              "options": {
-                "0": {
-                  "color": "dark-green",
-                  "index": 0,
-                  "text": "OFF"
-                },
-                "1": {
-                  "color": "yellow",
-                  "index": 1,
-                  "text": "ON"
-                }
-              },
-              "type": "value"
-            }
-          ],
+          "decimals": 1,
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
-                "color": "dark-green",
-                "value": 0
+                "color": "blue",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": -0.1
               },
               {
                 "color": "yellow",
-                "value": 1
+                "value": 0.5
+              },
+              {
+                "color": "red",
+                "value": 1.5
               }
             ]
-          }
+          },
+          "unit": "celsius"
         },
         "overrides": []
       },
@@ -1762,7 +1756,7 @@
       "id": 26,
       "options": {
         "colorMode": "background",
-        "graphMode": "none",
+        "graphMode": "area",
         "justifyMode": "auto",
         "orientation": "auto",
         "percentChangeColorMode": "standard",
@@ -1784,11 +1778,11 @@
             "type": "influxdb",
             "uid": "influxdb"
           },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: -15m)\n  |> filter(fn: (r) => r._measurement == \"heating_optimizer\" and r._field == \"evu_active\")\n  |> last()",
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: -15m)\n  |> filter(fn: (r) => r._measurement == \"indoor_publisher\" and r._field == \"total_bias\")\n  |> last()",
           "refId": "A"
         }
       ],
-      "title": "EVU",
+      "title": "Lämmitysbias",
       "type": "stat"
     }
   ],
@@ -1821,5 +1815,5 @@
   "timezone": "Europe/Helsinki",
   "title": "Yleiskuva",
   "uid": "wago-overview",
-  "version": 47
+  "version": 48
 }

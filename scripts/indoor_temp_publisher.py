@@ -19,7 +19,8 @@ import time
 from datetime import datetime, timezone
 
 import paho.mqtt.client as mqtt
-from influxdb_client import InfluxDBClient
+from influxdb_client import InfluxDBClient, Point
+from influxdb_client.client.write_api import SYNCHRONOUS
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 MQTT_BROKER    = os.environ.get("MQTT_BROKER",    "freenas.kherrala.fi")
@@ -268,7 +269,32 @@ def publish_indr_t(value):
 
 # ── Control loop ──────────────────────────────────────────────────────────────
 
-def check_and_publish(query_api):
+def write_telemetry(write_api, *, median_temp, tier, tier_bias,
+                    demand_bias, total_bias, biased_temp, mean_pid,
+                    sensor_count, last_sent):
+    """Persist publisher state so dashboards can chart the actual control
+    mechanism (bias, sensor median, sent INDR_T)."""
+    p = (
+        Point("indoor_publisher")
+        .field("sensor_median", float(median_temp))
+        .field("sent_indr_t", float(biased_temp))
+        .field("tier_bias", float(tier_bias))
+        .field("demand_bias", float(demand_bias))
+        .field("total_bias", float(total_bias))
+        .field("sensor_count", int(sensor_count))
+        .field("tier", str(tier))
+    )
+    if mean_pid is not None:
+        p = p.field("mean_pid_demand", float(mean_pid))
+    if last_sent is not None:
+        p = p.field("last_published", float(last_sent))
+    try:
+        write_api.write(bucket=INFLUXDB_BUCKET, org=INFLUXDB_ORG, record=p)
+    except Exception as e:
+        log.warning(f"InfluxDB write failed: {e}")
+
+
+def check_and_publish(query_api, write_api):
     global last_published
 
     median_temp, samples = fetch_median_indoor_temp(query_api)
@@ -298,6 +324,19 @@ def check_and_publish(query_api):
         f"(last sent: {f'{last_published:.1f}°C' if last_published is not None else 'none'})"
     )
     log.info(f"  per-sensor: {sample_str}")
+
+    write_telemetry(
+        write_api,
+        median_temp=median_temp,
+        tier=tier,
+        tier_bias=tier_bias,
+        demand_bias=demand_bias,
+        total_bias=bias,
+        biased_temp=biased_temp,
+        mean_pid=mean_pid,
+        sensor_count=len(samples),
+        last_sent=last_published,
+    )
 
     if biased_temp < INDOOR_MIN or biased_temp > INDOOR_MAX:
         log.warning(f"Biased temp {biased_temp:.2f}°C outside bounds [{INDOOR_MIN}, {INDOOR_MAX}] — skipping")
@@ -347,14 +386,16 @@ def main():
         log.warning(f"InfluxDB health check: {e}")
 
     query_api = influx_client.query_api()
+    write_api = influx_client.write_api(write_options=SYNCHRONOUS)
 
-    check_and_publish(query_api)
+    check_and_publish(query_api, write_api)
 
     while running:
         sleep_interruptible(CHECK_INTERVAL)
         if running:
-            check_and_publish(query_api)
+            check_and_publish(query_api, write_api)
 
+    write_api.close()
     influx_client.close()
     log.info("Shutdown complete")
 
