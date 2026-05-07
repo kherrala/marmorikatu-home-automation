@@ -334,7 +334,10 @@ services:
       - INFLUXDB_TOKEN=wago-secret-token
       - INFLUXDB_ORG=wago
       - INFLUXDB_BUCKET=building_automation
-      - INDOOR_SENSOR=Olohuone
+      # Median across many sensors (Sauna hard-blacklisted in code).
+      # Keittiö is reportedly the most accurate Ruuvi unit; included.
+      - INDOOR_RUUVI_SENSORS=Olohuone,Keittiö,Takka
+      - INDOOR_ROOM_FIELDS=MH_Seela,MH_Aarni,MH_aikuiset,MH_alakerta,Ylakerran_aula,Keittio,Eteinen
       - AVERAGE_MINUTES=15
       - CHECK_INTERVAL=300
       - MIN_CHANGE=0.1
