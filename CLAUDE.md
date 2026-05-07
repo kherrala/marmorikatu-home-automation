@@ -76,6 +76,12 @@ The Energy Cost dashboard (`energy-cost`) estimates electricity consumption from
 
 See [docs/heat-recovery-efficiency.md](docs/heat-recovery-efficiency.md) for complete formulas, Flux queries, and derivations. See also [docs/heatpump-efficiency.md](docs/heatpump-efficiency.md) for heat pump COP calculations and [docs/thermiq_register_map.md](docs/thermiq_register_map.md) for ThermIQ register definitions.
 
+## Heating Optimizer + INDR_T Publisher
+
+`scripts/heating_optimizer.py` classifies electricity spot prices into tiers (CHEAP / NORMAL / EXPENSIVE / PRE_HEAT) and toggles the heat pump's wired EVU input accordingly. It **does not** write the Thermia's persistent registers (setpoint, reduction_t, boiler_steps) — those would wear flash. Instead, `scripts/indoor_temp_publisher.py` reads the latest tier from InfluxDB, computes the **median** of 10 indoor sensors (3 Ruuvis + 7 WAGO room fields, sauna hard-blacklisted, basement excluded), adds a tier-aware bias (default −0.5 / 0 / +2 °C for CHEAP/NORMAL/EXPENSIVE), and publishes the result as `INDR_T` to ThermIQ. The Thermia uses `INDR_T` for room-factor compensation, so a positive bias suppresses heating and a negative bias amplifies it — all via a runtime sensor input, no flash-write. EVU remains a wired hardware signal so it's also flash-free.
+
+See [docs/heating-optimizer.md](docs/heating-optimizer.md) for the tier algorithm, action mapping table, INDR_T bias details, and analytics measurement schema.
+
 ## Lights Optimizer
 
 The `lights-optimizer` service applies per-light auto-off rules and a few special-case auto-on/off blocks: front-porch sunset schedule (idx 47), sauna laude LED temperature hysteresis (idx 4), and CO₂-driven kitchen + living-room ceiling lights (idx 40, 54) gated on a sun-elevation darkness threshold with user-dismissal-until-tomorrow logic. Decisions log to InfluxDB measurement `lights_optimizer`.

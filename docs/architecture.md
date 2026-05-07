@@ -149,8 +149,12 @@ by the `plc` MQTT subscriber. They are kept in the file for emergency rollback.
 | Depends on | `influxdb` (healthy) |
 
 Subscribes to Ruuvi gateway MQTT topics and writes sensor data to InfluxDB.
-Also forwards indoor temperature (from the Olohuone sensor) to the ThermIQ
-heat pump via MQTT.
+
+> Indoor-temperature forwarding to ThermIQ (`INDR_T`) is handled by the
+> separate `indoor` service (`scripts/indoor_temp_publisher.py`) — see
+> [docs/heating-optimizer.md](heating-optimizer.md#tier-aware-indr_t-bias)
+> and [docs/data-pipelines.md](data-pipelines.md#indoor-temperature-forwarding-indr_t)
+> for the multi-sensor median + tier-bias mechanism.
 
 Environment:
 

@@ -103,11 +103,15 @@ python scripts/import_data.py --incremental # append new lines only
 | `EF:AA:DF:C0:4F:8C` | Pakastin | 5 (basic) | Inside freezer |
 | `F1:19:ED:0F:9A:F6` | Ulkolämpötila | 5 (basic) | Outdoor |
 
-### Indoor Temperature Forwarding
+### Indoor Temperature Forwarding (INDR_T)
 
-The Ruuvi service forwards the Olohuone sensor's temperature to the ThermIQ
-heat pump via MQTT (`ThermIQ/marmorikatu/set` topic, `INDR_T` field).
-Temperature values outside 19–25°C are rejected as out of bounds.
+A separate service `scripts/indoor_temp_publisher.py` (container `marmorikatu-indoor`) computes the **median** of 10 indoor sensors over the last 15 min — 3 Ruuvis (Olohuone, Keittiö, Takka) plus 7 WAGO room fields (4 bedrooms + 3 common areas). Sauna is hard-blacklisted in code; basement is excluded by default (intentionally cooler).
+
+It then reads the latest electricity-price tier from the `heating_optimizer` measurement and applies a tier-aware bias (default −0.5 / 0 / +2 °C for CHEAP/NORMAL/EXPENSIVE) to make the Thermia naturally produce more or less heat without writing the unit's persistent registers. The biased value is published to MQTT (`ThermIQ/marmorikatu/set` topic, `INDR_T` field).
+
+Temperature values outside 19–25 °C (after bias) are rejected as out of bounds. Min change of 0.1 °C is required to publish a new value.
+
+See [docs/heating-optimizer.md](heating-optimizer.md#tier-aware-indr_t-bias) for the full bias mechanism.
 
 ## ThermIQ MQTT Pipeline
 

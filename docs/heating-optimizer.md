@@ -1,23 +1,52 @@
 # Floor Heating Temperature Optimizer
 
-Optimizes heating costs for a Thermia Diplomat 8 ground-source heat pump with floor heating (290 m², 3 floors) by adjusting setpoint, EVU mode, and auxiliary heater availability based on electricity spot prices.
+Optimizes heating costs for a Thermia Diplomat 8 ground-source heat pump with floor heating (290 m², 3 floors) by classifying electricity spot prices into tiers and steering heating output without writing the heat pump's persistent registers (which would wear flash).
 
 The building's concrete floor heating system has significant thermal mass, allowing the optimizer to pre-load heat during cheap price periods and coast during expensive periods without impacting comfort.
 
+## Architecture
+
+```
+                ┌──────────────────────────────────┐
+                │  scripts/heating_optimizer.py    │
+                │  - classify electricity tier     │
+                │  - log decision to InfluxDB      │
+                │  - toggle EVU wire (only write)  │
+                └────────────────┬─────────────────┘
+                                 │ tier (CHEAP/NORMAL/EXPENSIVE/PRE_HEAT)
+                                 ▼
+                ┌──────────────────────────────────┐
+                │  scripts/indoor_temp_publisher   │
+                │  - median over 10 indoor sensors │
+                │  - + tier-aware INDR_T bias      │
+                │  - publish INDR_T to ThermIQ     │
+                └────────────────┬─────────────────┘
+                                 │ INDR_T (median + bias)
+                                 ▼
+                          [ Thermia heat pump ]
+                          (no flash writes)
+```
+
+The optimizer's role is **price-tier classification + EVU control + analytics logging**. The actual "heat more / heat less" command is delivered as a biased `INDR_T` sensor reading by `indoor_temp_publisher` — see [Tier-Aware INDR_T Bias](#tier-aware-indr_t-bias) below.
+
 ## Control Mechanisms
 
-Four control levers via ThermIQ-ROOM2 MQTT interface:
+Two write channels remain:
 
-| Control | Register | Hex | MQTT Topic | Payload | Effect |
-|---------|----------|-----|------------|---------|--------|
-| Indoor setpoint | d50 | `r32` | `write` | `{"r32": 23}` | Sets indoor target (10–30°C) |
-| EVU mode | — | — | `set` | `{"EVU": 1}` | Firmware reduces target by `reduction_t` |
-| Reduction amount | d59 | `r3b` | `write` | `{"r3b": 2}` | Configures EVU reduction (0–10°C) |
-| Aux heater limit | d81 | `r51` | `write` | `{"r51": 0}` | Max electric boiler steps (0–3) |
+| Control | Topic | Payload | Effect | Flash? |
+|---|---|---|---|---|
+| EVU input | `ThermIQ/marmorikatu/set` | `{"EVU": 1}` | Activates wired EVU input on the heat pump (hard kill-switch for compressor in unit configuration) | **No** — wired input |
+| INDR_T sensor reading | `ThermIQ/marmorikatu/set` | `{"INDR_T": 22.0}` | Indoor-air sensor input — heat pump uses it for room-factor compensation | **No** — runtime sensor input |
 
-**Key insight**: EVU mode does NOT block the compressor — it reduces the indoor target by `reduction_t` degrees while the compressor continues running. This makes it a clean way to lower demand during expensive hours.
+Three persistent registers were retired in this codebase to avoid flash wear:
 
-**Aux heater values**: 0 = disabled, 1 = 3 kW only, 2 = 3 kW + 6 kW (9 kW total).
+| Register | What it was | Now |
+|---|---|---|
+| `r32` (d50, indoor_requested_t) | Setpoint (e.g. 22 °C) | Untouched. Whatever was last written manually persists. The publisher's INDR_T bias steers behaviour around it. |
+| `r3b` (d59, reduction_t) | EVU-mode target reduction | Untouched. Was set once at startup; no longer written. |
+| `r51` (d81, elect_boiler_steps_max) | Max electric boiler steps | Untouched. Default value persists. |
+
+**Aux heater control**: still computed (boiler_steps = 0/1/2 per tier) and **logged** for analytics, but no register write. The Thermia firmware decides aux activation based on its internal integrator vs A1/A2 limits independently. If we need to actually disable aux heaters in future, we can do so via the wired EVU signal which the compressor + integrator behaviour respects.
 
 ## Algorithm Overview
 
@@ -55,16 +84,28 @@ Before each EXPENSIVE block, the preceding `PRE_HEAT_HOURS` (default: 2 hours = 
 
 ### Action Mapping
 
-| Tier | d50 Setpoint | EVU | Aux Heaters | Effective Target |
-|------|-------------|-----|-------------|-----------------|
-| PRE_HEAT | COMFORT_MAX (23°C) | OFF | Default (2) | 23°C |
-| CHEAP | COMFORT_DEFAULT (22°C) | OFF | Default (2) | 22°C |
-| NORMAL | COMFORT_DEFAULT (22°C) | OFF | Default (2) | 22°C |
-| EXPENSIVE (block ≥ 4h) | COMFORT_DEFAULT (22°C) | ON | **0 (disabled)** | 19°C |
-| EXPENSIVE (block < 4h, outdoor > −10°C) | COMFORT_DEFAULT (22°C) | ON | Default (2) | 19°C |
-| EXPENSIVE (block < 4h, outdoor ≤ −10°C) | COMFORT_DEFAULT (22°C) | ON | **0 (disabled)** | 19°C |
+The following values are **computed and logged** to InfluxDB
+(`heating_optimizer` measurement) for dashboard analytics. Only **EVU** is
+actually commanded to the heat pump. Setpoint / aux-heater columns are
+kept in the table because the publisher reads `tier` to choose the
+INDR_T bias that achieves the same effect.
 
-Aux heater disabling is gated by the contiguous EXPENSIVE block length: blocks shorter than `BOILER_DISABLE_MIN_HOURS` (default: 4h) keep aux heaters enabled when outdoor temperature is mild (> −10°C), since the compressor handles the load fine without aux heaters. In cold weather (≤ −10°C), short blocks still disable aux heaters (the cold-weather safety at −15°C overrides this if needed). This reduces unnecessary r51 register writes.
+| Tier | Logged setpoint | EVU (wired) | Logged aux | Logged effective | Publisher INDR_T bias |
+|---|---|---|---|---|---|
+| PRE_HEAT | 23 °C | OFF | 2 | 23 °C | **−0.5 °C** (publish lower → produce more) |
+| CHEAP | 22 °C | OFF | 2 | 22 °C | **−0.5 °C** |
+| NORMAL | 22 °C | OFF | 2 | 22 °C | 0 |
+| EXPENSIVE (block ≥ 4h) | 22 °C | ON | 0 | 19 °C | **+2.0 °C** (publish higher → produce less) |
+| EXPENSIVE (block < 4h, outdoor > −10 °C) | 22 °C | ON | 2 | 19 °C | **+2.0 °C** |
+| EXPENSIVE (block < 4h, outdoor ≤ −10 °C) | 22 °C | ON | 0 | 19 °C | **+2.0 °C** |
+
+The "logged setpoint" and "logged aux" columns are now historical/
+analytics-only. The actual heat-pump-side levers are: EVU (wired) and
+the published INDR_T value, which is `median(indoor sensors) + tier_bias`.
+
+Aux heater logic in the optimizer's classifier still gates by block
+length and outdoor temperature for analytics — see the
+[Aux Heater Block-Length Gate](#aux-heater-block-length-gate) section below — but no register write happens.
 
 ## Safety Protections
 
@@ -86,7 +127,27 @@ Aux heaters are only disabled during EXPENSIVE blocks that are long enough to ju
 | 30 min – 4h | EVU only, **boiler stays enabled** | EVU + boiler disabled | EVU only, boiler stays enabled (cold safety) |
 | ≥ 4h | EVU + boiler disabled | EVU + boiler disabled | EVU only, boiler stays enabled (cold safety) |
 
-The `BOILER_DISABLE_MIN_HOURS` threshold (default: 4h) prevents unnecessary r51 register writes during moderate expensive blocks where the compressor handles the load alone.
+(Historical: this gate originally also prevented unnecessary `r51` register writes during moderate expensive blocks. With register writes retired the gate now only affects the logged `boiler_steps` analytic; the dashboard still shows it.)
+
+## Tier-Aware INDR_T Bias
+
+`scripts/indoor_temp_publisher.py` performs the heavy lifting of "tell the heat pump to make more / less heat." On each tick (default 5 min) it:
+
+1. Computes the **median** of 10 indoor temperature sensors over the last 15 min:
+   - 3 Ruuvis: Olohuone, Keittiö, Takka
+   - 7 WAGO room fields: 4 bedrooms (`MH_*`) + 3 common areas (`Ylakerran_aula`, `Keittio`, `Eteinen`)
+   - Sauna is **hard-blacklisted in code** regardless of env-var override.
+2. Reads the latest `tier` from the `heating_optimizer` measurement.
+3. Applies a per-tier bias (env vars):
+   - `TIER_BIAS_CHEAP_C` (default −0.5)
+   - `TIER_BIAS_PRE_HEAT_C` (default −0.5)
+   - `TIER_BIAS_NORMAL_C` (default 0)
+   - `TIER_BIAS_EXPENSIVE_C` (default +2.0)
+4. Publishes `INDR_T = median + bias` to `ThermIQ/marmorikatu/set`.
+
+The Thermia treats `INDR_T` as a sensor input and uses it for room-factor compensation. With `room_factor=2` and `setpoint=22 °C`, an `INDR_T` of `24 °C` (median 22 + EXPENSIVE bias 2) computes a supply target of `curve(outdoor) − 4 °C` — strongly suppressing heating without writing any persistent register. When tier transitions back to NORMAL, the bias drops to 0 and the heat pump resumes its natural curve-driven response.
+
+See the **"INDR_T sent vs sensor median (bias visualisation)"** panel on the heating-control dashboard for live visibility into the bias being applied — yellow line is what's sent, blue dashed is the raw median.
 
 ### Aux Heater Cold-Weather Protection
 
@@ -131,12 +192,13 @@ Every `CHECK_INTERVAL` (5 minutes):
 6. Filter short EXPENSIVE blocks (< MIN_EXPENSIVE_SLOTS → NORMAL)
 7. Apply EVU cap (max 3h consecutive EXPENSIVE)
 8. Apply pre-heat look-ahead (boost CHEAP before EXPENSIVE)
-9. Look up current 15-min slot → determine setpoint, EVU, boiler steps
-10. Apply block-length gate on aux heaters (short blocks keep boiler enabled)
+9. Look up current 15-min slot → determine tier, intended setpoint, EVU, boiler steps
+10. Apply block-length gate on aux heaters (only affects logged value now)
 11. Apply cold-weather constraints (pre-heat limiting, aux heater protection)
-12. Rate-limit check → skip publish if too recent
-13. Publish changes via MQTT (only if values changed)
-14. Log decision to InfluxDB
+12. Rate-limit check → skip log if too recent
+13. **Toggle EVU wire** if changed (the only command sent to the heat pump)
+14. Log decision to InfluxDB (`heating_optimizer` measurement)
+15. Publisher (separate service) reads tier and applies INDR_T bias
 ```
 
 ## InfluxDB Measurement
@@ -145,11 +207,11 @@ Measurement: `heating_optimizer`
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `setpoint` | int | Published d50 value (°C) |
-| `evu_active` | int | 0 or 1 |
-| `boiler_steps` | int | 0, 1, or 2 (elect_boiler_steps_max) |
-| `effective_target` | int | setpoint − reduction_t if EVU on, else setpoint |
-| `tier` | string | CHEAP, NORMAL, EXPENSIVE, or PRE_HEAT |
+| `setpoint` | int | Logged "intended" setpoint (°C) — not commanded to heat pump |
+| `evu_active` | int | 0 or 1 — actually toggled on the heat pump's EVU wire |
+| `boiler_steps` | int | Logged "intended" 0/1/2 value — not commanded |
+| `effective_target` | int | setpoint − reduction_t if EVU on, else setpoint — analytic |
+| `tier` | string | CHEAP, NORMAL, EXPENSIVE, or PRE_HEAT — read by indoor_temp_publisher |
 | `price` | float | Current electricity price (c/kWh, with VAT) |
 | `outdoor_temp` | float | Outdoor temperature (°C) |
 
@@ -161,7 +223,6 @@ All via environment variables (with defaults):
 |----------|---------|-------------|
 | `MQTT_BROKER` | freenas.kherrala.fi | MQTT broker hostname |
 | `MQTT_PORT` | 1883 | MQTT broker port |
-| `MQTT_WRITE_TOPIC` | ThermIQ/marmorikatu/write | Topic for register writes (d50, d59, d81) |
 | `MQTT_SET_TOPIC` | ThermIQ/marmorikatu/set | Topic for EVU control |
 | `COMFORT_MIN` | 20 | Hard floor temperature (°C) |
 | `COMFORT_DEFAULT` | 22 | Normal setpoint (°C) |
@@ -197,23 +258,43 @@ The optimizer controls the Thermia via ThermIQ-ROOM2. Key heat pump settings tha
 
 ### Indoor Temperature
 
-The indoor temperature is provided to the Thermia via INDR_T from the `indoor_temp_publisher` service, which reads the 15-minute mean from the Ruuvi Olohuone sensor in InfluxDB. The wired indoor sensor is not connected (permanent `indoor_sensor_alm`).
+The indoor temperature is provided to the Thermia via `INDR_T` from the
+`indoor_temp_publisher` service. As of the flash-wear-mitigation refactor
+(see [Tier-Aware INDR_T Bias](#tier-aware-indr_t-bias) above), it
+publishes the **median of 10 indoor sensors** with a tier-aware bias
+applied. The wired indoor sensor is not connected (permanent
+`indoor_sensor_alm`), so `INDR_T` is the only indoor reference the heat
+pump sees.
 
-It is critical that INDR_T reflects the actual indoor temperature. A stale or incorrect value causes the firmware to over- or under-compensate via the room factor correction.
+It is critical that the publisher's median + bias reflects what the
+home actually wants — a stale, biased-the-wrong-way, or single-sensor
+reading causes the firmware's room-factor compensation to over- or
+under-produce heat.
 
 ## Grafana Integration
 
 ### Building Overview (`building_overview.json`)
 
-EVU stat panel reads the latest value from `heating_optimizer.evu_active`.
+EVU stat panel reads the latest value from `heating_optimizer.evu_active` (still meaningful — EVU is the one signal still actively commanded).
+
+### Heating Control (`heating_control.json`)
+
+The dashboard now has an **"INDR_T sent vs sensor median (bias visualisation)"** panel showing:
+
+- Yellow line — `thermia.indoor_temp` (what we're sending the heat pump = median + bias)
+- Blue dashed — same-formula median across the 10 indoor sensors **without** the bias
+
+The gap between the two visualises the live tier bias. Other panels
+("Asetusarvo", "Todellinen tavoite", "Lammitysteho") still work but
+are now logged-intended values rather than commanded register values.
 
 ### Energy Cost (`energy_cost.json`)
 
 "Lämmityksen optimointi" time series panel shows:
 - **Electricity price** (bars, right axis) — from `electricity.price_with_tax`
-- **Asetusarvo** (orange line) — optimizer setpoint from `heating_optimizer.setpoint`
-- **Todellinen tavoite** (green line) — effective target from `heating_optimizer.effective_target`
-- **EVU** (red fill) — EVU active periods from `heating_optimizer.evu_active`
+- **Asetusarvo** (orange line) — optimizer's intended setpoint (analytic only)
+- **Todellinen tavoite** (green line) — effective target (analytic only)
+- **EVU** (red fill) — EVU active periods from `heating_optimizer.evu_active` (still real)
 
 ## Docker Compose
 
