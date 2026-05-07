@@ -528,7 +528,7 @@ def log_decision(write_api, setpoint, evu, boiler_steps, tier, price, outdoor_te
 
 def check_and_control(query_api, write_api):
     """Main control cycle: fetch data, classify, apply actions."""
-    global current_setpoint, current_boiler_steps, last_change_time
+    global current_setpoint, current_evu, current_boiler_steps, last_change_time
     # 1. Fetch price forecast
     prices = fetch_price_forecast(query_api)
     if len(prices) < 12:  # less than 3 hours of data
@@ -599,14 +599,17 @@ def check_and_control(query_api, write_api):
                          current_tier, current_price, outdoor_temp)
             return
 
-    # 8. EVU stays a wired-signal write (no flash); setpoint and
-    #    boiler_steps are tracked-only (no MQTT — INDR_T bias steers the
-    #    unit's heating output).
-    if (setpoint != current_setpoint or boiler_steps != current_boiler_steps):
+    # 8. All Thermia commands retired. EVU on this unit only reduces the
+    #    target by reduction_t (does NOT block the compressor), and we
+    #    want the publisher's INDR_T bias to be the single tier-driven
+    #    mechanism instead. Setpoint / EVU / boiler_steps are tracked
+    #    here for analytics (log_decision below) but no MQTT is sent.
+    if (setpoint != current_setpoint or evu != current_evu
+            or boiler_steps != current_boiler_steps):
         last_change_time = time.monotonic()
     current_setpoint = setpoint
+    current_evu = evu
     current_boiler_steps = boiler_steps
-    set_evu(evu)
 
     effective = setpoint - REDUCTION_T if evu else setpoint
     boiler_label = {0: "OFF", 1: "3kW", 2: "3+6kW"}.get(boiler_steps, str(boiler_steps))
