@@ -415,9 +415,13 @@ def write_telemetry(write_api, *, median_temp, price, price_bias,
                     cheap_threshold, expensive_threshold):
     """Persist publisher state so dashboards can chart the actual control
     mechanism (bias, sensor median, sent INDR_T, seasonal thresholds)."""
+    # season is written as a string FIELD (not a tag) — making it a tag would
+    # split the time series each time the season rolls over, producing
+    # duplicated traces in any chart that doesn't explicitly drop/group on
+    # the season column.
     p = (
         Point("indoor_publisher")
-        .tag("season", season)
+        .field("season", str(season))
         .field("sensor_median", float(median_temp))
         .field("sent_indr_t", float(biased_temp))
         .field("price_bias", float(price_bias))

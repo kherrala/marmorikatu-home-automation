@@ -888,106 +888,6 @@
           "color": {
             "mode": "thresholds"
           },
-          "mappings": [
-            {
-              "options": {
-                "from": 0,
-                "result": {
-                  "color": "blue",
-                  "index": 0,
-                  "text": "Poissa"
-                },
-                "to": 1
-              },
-              "type": "range"
-            },
-            {
-              "options": {
-                "from": 1,
-                "result": {
-                  "color": "green",
-                  "index": 1,
-                  "text": "ON"
-                },
-                "to": 1.75
-              },
-              "type": "range"
-            },
-            {
-              "options": {
-                "from": 1.75,
-                "result": {
-                  "color": "orange",
-                  "index": 2,
-                  "text": "Tehostus"
-                },
-                "to": 10
-              },
-              "type": "range"
-            }
-          ],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": 0
-              },
-              {
-                "color": "green",
-                "value": 1
-              },
-              {
-                "color": "orange",
-                "value": 1.75
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 3,
-        "w": 3,
-        "x": 15,
-        "y": 3
-      },
-      "id": 22,
-      "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "percentChangeColorMode": "standard",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "showPercentChange": false,
-        "textMode": "auto",
-        "wideLayout": true
-      },
-      "pluginVersion": "12.3.2",
-      "targets": [
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "influxdb"
-          },
-          "query": "import \"array\"\n\nkeittio = from(bucket: \"building_automation\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"ruuvi\" and r.sensor_name == \"Keittiö\")\n  |> filter(fn: (r) => r._field == \"pressure\")\n  |> last()\n  |> findRecord(fn: (key) => true, idx: 0)\n\nulko = from(bucket: \"building_automation\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"ruuvi\" and r.sensor_name == \"Ulkolämpötila\")\n  |> filter(fn: (r) => r._field == \"pressure\")\n  |> last()\n  |> findRecord(fn: (key) => true, idx: 0)\n\nval = if exists keittio._value and exists ulko._value then keittio._value - ulko._value else 0.0\n\narray.from(rows: [{_time: now(), _value: val, _field: \"IVK tila\"}])",
-          "refId": "A"
-        }
-      ],
-      "title": "IVK tila",
-      "type": "stat",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
           "unit": "pressurehpa",
           "decimals": 2,
           "mappings": [
@@ -1055,16 +955,68 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              {"color": "yellow", "value": null},
-              {"color": "green", "value": -0.2},
-              {"color": "dark-green", "value": -0.05},
-              {"color": "orange", "value": 0.05},
-              {"color": "red", "value": 0.2}
+              {
+                "color": "yellow",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": -0.2
+              },
+              {
+                "color": "dark-green",
+                "value": -0.05
+              },
+              {
+                "color": "orange",
+                "value": 0.05
+              },
+              {
+                "color": "red",
+                "value": 0.2
+              }
             ]
           }
         },
         "overrides": []
-      }
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 3,
+        "x": 15,
+        "y": 3
+      },
+      "id": 22,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "12.3.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
+          "query": "import \"array\"\n\nkeittio = from(bucket: \"building_automation\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"ruuvi\" and r.sensor_name == \"Keittiö\")\n  |> filter(fn: (r) => r._field == \"pressure\")\n  |> last()\n  |> findRecord(fn: (key) => true, idx: 0)\n\nulko = from(bucket: \"building_automation\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"ruuvi\" and r.sensor_name == \"Ulkolämpötila\")\n  |> filter(fn: (r) => r._field == \"pressure\")\n  |> last()\n  |> findRecord(fn: (key) => true, idx: 0)\n\nval = if exists keittio._value and exists ulko._value then keittio._value - ulko._value else 0.0\n\narray.from(rows: [{_time: now(), _value: val, _field: \"IVK tila\"}])",
+          "refId": "A"
+        }
+      ],
+      "title": "IVK tila",
+      "type": "stat"
     },
     {
       "datasource": {
@@ -1178,13 +1130,34 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "blue", "value": 0 },
-              { "color": "light-green", "value": 50 },
-              { "color": "green", "value": 150 },
-              { "color": "yellow", "value": 300 },
-              { "color": "orange", "value": 500 },
-              { "color": "dark-orange", "value": 700 },
-              { "color": "red", "value": 800 }
+              {
+                "color": "blue",
+                "value": 0
+              },
+              {
+                "color": "light-green",
+                "value": 50
+              },
+              {
+                "color": "green",
+                "value": 150
+              },
+              {
+                "color": "yellow",
+                "value": 300
+              },
+              {
+                "color": "orange",
+                "value": 500
+              },
+              {
+                "color": "dark-orange",
+                "value": 700
+              },
+              {
+                "color": "red",
+                "value": 800
+              }
             ]
           },
           "unit": "percent"
@@ -1778,7 +1751,7 @@
             "type": "influxdb",
             "uid": "influxdb"
           },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: -15m)\n  |> filter(fn: (r) => r._measurement == \"indoor_publisher\" and r._field == \"total_bias\")\n  |> last()",
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: -15m)\n  |> filter(fn: (r) => r._measurement == \"indoor_publisher\" and r._field == \"total_bias\")\n  |> drop(columns: [\"season\"])\n  |> last()",
           "refId": "A"
         }
       ],
@@ -1815,5 +1788,5 @@
   "timezone": "Europe/Helsinki",
   "title": "Yleiskuva",
   "uid": "wago-overview",
-  "version": 48
+  "version": 49
 }
