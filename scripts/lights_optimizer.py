@@ -75,6 +75,20 @@ SAUNA_LAUDE_IDX = 4
 SAUNA_LAUDE_ON_C = float(os.environ.get("SAUNA_LAUDE_ON_C", "55"))
 SAUNA_LAUDE_OFF_C = float(os.environ.get("SAUNA_LAUDE_OFF_C", "50"))
 
+# Post-sauna cooldown auto-off for the bathroom + sauna ceiling lights.
+# Logic: when the sauna has been heated above SAUNA_AFTER_PEAK_C in the
+# past SAUNA_AFTER_LOOKBACK_H hours AND has now been below
+# SAUNA_AFTER_OFF_C for at least SAUNA_AFTER_DELAY_MIN minutes, infer
+# the session has ended and auto-off lights that were left on. These
+# lights are otherwise `manual_only` (idx 1, 38, 39) since a regular
+# auto-off timer would cut showers/baths short — the sauna temperature
+# drop is a much more reliable "session over" signal than a wall clock.
+SAUNA_AFTER_LIGHTS = (1, 38, 39)
+SAUNA_AFTER_PEAK_C = float(os.environ.get("SAUNA_AFTER_PEAK_C", "55"))
+SAUNA_AFTER_OFF_C = float(os.environ.get("SAUNA_AFTER_OFF_C", "40"))
+SAUNA_AFTER_DELAY_MIN = int(os.environ.get("SAUNA_AFTER_DELAY_MIN", "30"))
+SAUNA_AFTER_LOOKBACK_H = int(os.environ.get("SAUNA_AFTER_LOOKBACK_H", "6"))
+
 # CO₂-driven auto-on/off for kitchen + living-room ceiling lights.
 # - Evening (after sunset): kitchen (40) AND living-room (54).
 # - Morning (before sunrise + SUNRISE_GRACE_MIN): kitchen (40) only.
@@ -343,6 +357,59 @@ from(bucket: "{INFLUXDB_BUCKET}")
         return float(v) if v is not None else None
     except (TypeError, ValueError):
         return None
+
+
+def sauna_session_ended_minutes_ago() -> float | None:
+    """Return minutes elapsed since the sauna temperature dropped below
+    SAUNA_AFTER_OFF_C, IF the sauna previously peaked above
+    SAUNA_AFTER_PEAK_C in the past SAUNA_AFTER_LOOKBACK_H hours.
+
+    Returns None if no recent session is detected, or if the sauna is
+    still hot, or if the sensor data is missing.
+
+    Used to time the auto-off of bathroom + sauna ceiling lights after
+    a session — they otherwise stay manual_only so showers/baths don't
+    get interrupted by a wall-clock timeout."""
+    flux = f'''
+from(bucket: "{INFLUXDB_BUCKET}")
+  |> range(start: -{SAUNA_AFTER_LOOKBACK_H}h)
+  |> filter(fn: (r) => r._measurement == "ruuvi" and r.sensor_name == "Sauna" and r._field == "temperature")
+  |> sort(columns: ["_time"])
+'''
+    rows = _query(flux)
+    if not rows:
+        return None
+    samples: list[tuple[datetime, float]] = []
+    for r in rows:
+        try:
+            t = r.get_time()
+            v = r.get_value()
+            if t is not None and v is not None:
+                samples.append((t, float(v)))
+        except (TypeError, ValueError):
+            continue
+    if not samples:
+        return None
+
+    peak = max(v for _, v in samples)
+    if peak < SAUNA_AFTER_PEAK_C:
+        return None  # no session in the lookback window
+
+    latest_t, latest_v = samples[-1]
+    if latest_v >= SAUNA_AFTER_OFF_C:
+        return None  # still cooling down or warming back up
+
+    # Find the latest moment the sauna was still above SAUNA_AFTER_OFF_C;
+    # the first sample after that is when "post-session" started.
+    drop_time: datetime | None = None
+    for t, v in samples:
+        if v < SAUNA_AFTER_OFF_C and drop_time is None:
+            drop_time = t
+        elif v >= SAUNA_AFTER_OFF_C:
+            drop_time = None  # any rebound resets the timer
+    if drop_time is None:
+        return None
+    return (datetime.now(timezone.utc) - drop_time).total_seconds() / 60.0
 
 
 def co2_signal_class() -> str:
@@ -649,6 +716,22 @@ def check_and_control():
     elif laude_state is not None:
         log_decision(SAUNA_LAUDE_IDX, "hold", "no_sauna_temp_data",
                      category="sauna_laude")
+
+    # --- Post-sauna cooldown: bathroom + sauna ceiling lights are
+    #     `manual_only` so showers don't get interrupted, but once the
+    #     sauna has been cooling for SAUNA_AFTER_DELAY_MIN we infer the
+    #     session is over and auto-off them. The Saunan laude LED (idx
+    #     SAUNA_LAUDE_IDX) is handled above by hysteresis on the live
+    #     temperature directly, so it's not in this list.
+    ended_min = sauna_session_ended_minutes_ago()
+    if ended_min is not None and ended_min >= SAUNA_AFTER_DELAY_MIN:
+        for idx_after in SAUNA_AFTER_LIGHTS:
+            after_state = states.get(idx_after)
+            if after_state is None or not after_state[0]:
+                continue
+            reason = f"post_sauna_cooled_{ended_min:.0f}min_ago"
+            publish_state(idx_after, False, reason)
+            log_decision(idx_after, "off", reason, category="sauna_post_session")
 
     # --- Per-light evaluation
     for idx, (is_on, _) in states.items():

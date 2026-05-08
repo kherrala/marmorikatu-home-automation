@@ -251,16 +251,25 @@ def fetch_median_indoor_temp(query_api):
 
 
 def fetch_mean_pid_demand(query_api):
-    """Mean of all per-room PID demand percentages (room_type=pid) over the
+    """Mean of per-room PID demand percentages (room_type=pid) over the
     last AVERAGE_MINUTES, returned as a 0–100 float. None if no data.
 
     These are produced by the WAGO PLC's per-room PID controllers and
     represent how much heating each underfloor circuit is calling for.
-    100% across many rooms = building genuinely under-heated."""
+    100% across many rooms = building genuinely under-heated.
+
+    The basement rooms (Kellari*) are EXCLUDED to keep the demand-bias
+    semantics symmetric with the sensor-median definition: the basement
+    runs intentionally cool with its own setpoint, so its PID being at
+    100% is its normal steady state — not a building-wide signal that
+    we should boost the upstairs INDR_T. Including them produced a
+    persistent ~−0.3 °C demand-bias even when the heated rooms were
+    fully satisfied."""
     flux = f"""
 from(bucket: "{INFLUXDB_BUCKET}")
   |> range(start: -{AVERAGE_MINUTES}m)
   |> filter(fn: (r) => r._measurement == "rooms" and r.room_type == "pid")
+  |> filter(fn: (r) => not (r._field =~ /^Kellari/))
   |> mean()
   |> group()
   |> mean()
