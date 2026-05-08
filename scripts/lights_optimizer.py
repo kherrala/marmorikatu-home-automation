@@ -120,6 +120,12 @@ LIGHT_POLICY: dict[int, str] = {
     # temperature-driven block in check_and_control(), see SAUNA_LAUDE_IDX.
     17: "manual_only",  # MH alakerta kattovalo (downstairs bedroom / workspace)
     18: "manual_only",  # MH alakerta ikkuna    (downstairs bedroom / workspace)
+    1:  "manual_only",  # Kylpyhuone alakerta — bathroom needs to stay on for
+                        # showers/baths; no Ruuvi sensor here so we can't
+                        # drive it from humidity like the sauna laude LED
+                        # tracks temperature, so behave like the regular
+                        # sauna ceiling lights (idx 38, 39): no auto-off,
+                        # user toggles manually.
     38: "manual_only", 39: "manual_only",
     48: "manual_only",  # Ulkovalo terassi (no schedule — used manually)
     49: "manual_only",  # Kellari etuosa
@@ -131,7 +137,6 @@ LIGHT_POLICY: dict[int, str] = {
     53: "general",     # Kellari varasto — small windows, follows sunrise rule
 
     # Toilets / bathrooms — frequently forgotten on
-    1:  "toilet",      # Kylpyhuone alakerta
     44: "toilet",      # WC alakerta katto
     45: "toilet",      # WC alakerta peili
     29: "toilet",      # Kylpyhuone yläkerta katto
