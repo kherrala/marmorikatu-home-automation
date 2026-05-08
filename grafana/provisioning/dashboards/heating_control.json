@@ -1144,7 +1144,40 @@
               },
               {
                 "id": "displayName",
-                "value": "Lämmitysteho"
+                "value": "Lämpöteho (sähkö × COP 3.5)"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "B"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "blue",
+                  "mode": "fixed"
+                }
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 5
+              },
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "dash": [
+                    4,
+                    4
+                  ],
+                  "fill": "dash"
+                }
+              },
+              {
+                "id": "displayName",
+                "value": "Sähköteho (mittari)"
               }
             ]
           }
@@ -1179,11 +1212,20 @@
             "type": "influxdb",
             "uid": "influxdb"
           },
-          "query": "import \"join\"\n\nsupply = from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"temperature\" and r._field == \"supply_temp\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> keep(columns: [\"_time\", \"_value\"])\n\nret = from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"temperature\" and r._field == \"return_temp\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> keep(columns: [\"_time\", \"_value\"])\n\njoin.inner(\n  left: supply,\n  right: ret,\n  on: (l, r) => l._time == r._time,\n  as: (l, r) => ({_time: l._time, _value: (l._value - r._value) * 1.965, _field: \"power\"}),\n)\n  |> filter(fn: (r) => r._value >= 0.0 and r._value <= 19.65)",
+          "query": "// Thermal output estimate: electrical input × COP_ESTIMATE (3.5)\nfrom(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvac\" and r.meter == \"heatpump\" and r._field == \"Total_Active_Power\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> map(fn: (r) => ({r with _value: r._value * 3.5, _field: \"thermal_power\"}))",
           "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
+          "query": "// Raw electrical input from the heat-pump OR-WE-517 meter\nfrom(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvac\" and r.meter == \"heatpump\" and r._field == \"Total_Active_Power\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)",
+          "refId": "B"
         }
       ],
-      "title": "Lammitysteho",
+      "title": "Lämmitysteho (mittari × COP)",
+      "description": "Lämpöpumpun lämpöteho arvioituna OR-WE-517-energiamittarista (sähköteho × COP-arvio 3.5). Aiempi versio käytti meno- ja paluuveden ΔT-laskentaa, jossa virtausoletus aiheutti virhettä.",
       "type": "timeseries"
     },
     {
@@ -1326,6 +1368,154 @@
       ],
       "title": "Laitetila",
       "type": "state-timeline"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb"
+      },
+      "description": "Aktiivinen INDR_T-bias = price_bias + demand_bias. Negatiivinen = boostataan lämmitystä, positiivinen = vähennetään. Sama arvo kuin etusivun 'Lämmitysbias'-mittari.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": -0.1
+              },
+              {
+                "color": "yellow",
+                "value": 0.5
+              },
+              {
+                "color": "red",
+                "value": 1.5
+              }
+            ]
+          },
+          "unit": "celsius"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 3,
+        "x": 9,
+        "y": 0
+      },
+      "id": 100,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "12.3.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: -15m)\n  |> filter(fn: (r) => r._measurement == \"indoor_publisher\" and r._field == \"total_bias\")\n  |> drop(columns: [\"season\"])\n  |> last()",
+          "refId": "A"
+        }
+      ],
+      "title": "Lämmitysbias",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb"
+      },
+      "description": "Lämpöpumpun OR-WE-517-energiamittarin lukema. Sähköteho nyt — kerrottuna COP-arviolla 3.5 saadaan Lämmitysteho-aikasarjan päälinja.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1.0
+              },
+              {
+                "color": "orange",
+                "value": 2.5
+              },
+              {
+                "color": "red",
+                "value": 4.0
+              }
+            ]
+          },
+          "unit": "kwatt"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 3,
+        "x": 18,
+        "y": 0
+      },
+      "id": 101,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "12.3.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"hvac\" and r.meter == \"heatpump\" and r._field == \"Total_Active_Power\")\n  |> last()",
+          "refId": "A"
+        }
+      ],
+      "title": "Sähköteho (MLP)",
+      "type": "stat"
     }
   ],
   "preload": false,
@@ -1354,5 +1544,5 @@
   "timezone": "Europe/Helsinki",
   "title": "Lämmityksen ohjaus",
   "uid": "heating-control",
-  "version": 9
+  "version": 10
 }
