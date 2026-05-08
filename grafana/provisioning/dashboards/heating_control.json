@@ -420,6 +420,7 @@
         "type": "influxdb",
         "uid": "influxdb"
       },
+      "description": "INDR_T:n raaka anturipohja (Ruuvi + WAGO huoneanturien mediaani 15 min ikkunalta). Bias lasketaan tästä lukemasta — vertailupiste 'Lähetetty INDR_T'-arvolle.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -431,8 +432,20 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "blue",
                 "value": null
+              },
+              {
+                "color": "green",
+                "value": 20
+              },
+              {
+                "color": "yellow",
+                "value": 24
+              },
+              {
+                "color": "orange",
+                "value": 26
               }
             ]
           },
@@ -449,7 +462,7 @@
       "id": 1,
       "options": {
         "colorMode": "value",
-        "graphMode": "none",
+        "graphMode": "area",
         "justifyMode": "auto",
         "orientation": "auto",
         "reduceOptions": {
@@ -470,11 +483,11 @@
             "type": "influxdb",
             "uid": "influxdb"
           },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"heating_optimizer\" and r._field == \"setpoint\")\n  |> last()",
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: -15m)\n  |> filter(fn: (r) => r._measurement == \"indoor_publisher\" and r._field == \"sensor_median\")\n  |> drop(columns: [\"season\"])\n  |> last()",
           "refId": "A"
         }
       ],
-      "title": "Asetusarvo",
+      "title": "Anturien mediaani",
       "type": "stat"
     },
     {
@@ -482,6 +495,7 @@
         "type": "influxdb",
         "uid": "influxdb"
       },
+      "description": "ThermIQ:lle lähetetty INDR_T (anturien mediaani + lämmitysbias). Heat pump käyttää tätä room-factor-kompensaation lähtötietona — kallis hinta nostaa arvoa, jolloin pumppu vähentää tehoa.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -501,8 +515,12 @@
                 "value": 21
               },
               {
-                "color": "orange",
+                "color": "yellow",
                 "value": 23
+              },
+              {
+                "color": "orange",
+                "value": 25
               }
             ]
           },
@@ -519,7 +537,7 @@
       "id": 2,
       "options": {
         "colorMode": "value",
-        "graphMode": "none",
+        "graphMode": "area",
         "justifyMode": "auto",
         "orientation": "auto",
         "reduceOptions": {
@@ -540,11 +558,11 @@
             "type": "influxdb",
             "uid": "influxdb"
           },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"temperature\" and r._field == \"indoor_target_temp\")\n  |> last()",
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: -15m)\n  |> filter(fn: (r) => r._measurement == \"indoor_publisher\" and r._field == \"sent_indr_t\")\n  |> drop(columns: [\"season\"])\n  |> last()",
           "refId": "A"
         }
       ],
-      "title": "Todellinen tavoite",
+      "title": "Lähetetty INDR_T",
       "type": "stat"
     },
     {
@@ -1493,5 +1511,5 @@
   "timezone": "Europe/Helsinki",
   "title": "Lämmityksen ohjaus",
   "uid": "heating-control",
-  "version": 6
+  "version": 7
 }
