@@ -45,12 +45,14 @@ INFLUXDB_BUCKET = os.environ.get("INFLUXDB_BUCKET", "building_automation")
 #   INDOOR_ROOM_FIELDS   — WAGO `rooms` measurement field names (any
 #                          room_type), e.g. MH_Seela, Ylakerran_aula.
 #
-# Defaults exclude basement (intentionally cooler) and sauna (transient).
-# Backwards compatibility: if neither is set but the legacy single-sensor
-# INDOOR_SENSOR env var is, fall back to that one sensor.
-# Hard blacklist — sauna readings must never influence the published indoor
-# temperature regardless of any env var override (sauna swings 23–80 °C and
-# would push the median into nonsense the moment the sauna is on).
+# Defaults include the basement (Kellari, Kellari_eteinen) so its
+# coolness contributes to the median the same way its PID demand
+# contributes to the demand-bias term — the two halves see the same
+# rooms. Sauna is hard-blacklisted regardless of env override (swings
+# 23–80 °C, would push the median into nonsense the moment a session
+# starts). Backwards compatibility: if neither room/Ruuvi list is set
+# but the legacy single-sensor INDOOR_SENSOR env var is, fall back to
+# that one sensor.
 _SENSOR_BLACKLIST = {"sauna", "sauna ruuvi"}
 
 
@@ -67,7 +69,7 @@ INDOOR_RUUVI_SENSORS = _split_csv_no_blacklist(os.environ.get(
 ))
 INDOOR_ROOM_FIELDS = _split_csv_no_blacklist(os.environ.get(
     "INDOOR_ROOM_FIELDS",
-    "MH_Seela,MH_Aarni,MH_aikuiset,MH_alakerta,Ylakerran_aula,Keittio,Eteinen",
+    "MH_Seela,MH_Aarni,MH_aikuiset,MH_alakerta,Ylakerran_aula,Keittio,Eteinen,Kellari,Kellari_eteinen",
 ))
 _legacy_single = os.environ.get("INDOOR_SENSOR")
 if _legacy_single and not (os.environ.get("INDOOR_RUUVI_SENSORS")
@@ -258,18 +260,14 @@ def fetch_mean_pid_demand(query_api):
     represent how much heating each underfloor circuit is calling for.
     100% across many rooms = building genuinely under-heated.
 
-    The basement rooms (Kellari*) are EXCLUDED to keep the demand-bias
-    semantics symmetric with the sensor-median definition: the basement
-    runs intentionally cool with its own setpoint, so its PID being at
-    100% is its normal steady state — not a building-wide signal that
-    we should boost the upstairs INDR_T. Including them produced a
-    persistent ~−0.3 °C demand-bias even when the heated rooms were
-    fully satisfied."""
+    Includes ALL rooms (basement included). The publisher's
+    sensor-median list (INDOOR_ROOM_FIELDS) also includes the basement
+    by default, so the two halves of the bias formula see the same
+    room set."""
     flux = f"""
 from(bucket: "{INFLUXDB_BUCKET}")
   |> range(start: -{AVERAGE_MINUTES}m)
   |> filter(fn: (r) => r._measurement == "rooms" and r.room_type == "pid")
-  |> filter(fn: (r) => not (r._field =~ /^Kellari/))
   |> mean()
   |> group()
   |> mean()
