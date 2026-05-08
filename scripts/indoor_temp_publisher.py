@@ -77,30 +77,36 @@ if _legacy_single and not (os.environ.get("INDOOR_RUUVI_SENSORS")
 # Averaging window (minutes) — per-sensor mean window, also bounds jumps
 AVERAGE_MINUTES = int(os.environ.get("AVERAGE_MINUTES", "15"))
 
-# Tier-aware bias: instead of writing the Thermia setpoint / EVU / reduction
-# registers each price-tier transition (which would wear the heat pump's
-# internal flash), we bias the published INDR_T so the Thermia naturally
-# computes less supply temp during EXPENSIVE and more during CHEAP. INDR_T
-# is treated as a sensor input by ThermIQ — no flash write.
-TIER_BIAS = {
-    "CHEAP":     float(os.environ.get("TIER_BIAS_CHEAP_C",     "-0.5")),
-    "PRE_HEAT":  float(os.environ.get("TIER_BIAS_PRE_HEAT_C",  "-0.5")),
-    "NORMAL":    float(os.environ.get("TIER_BIAS_NORMAL_C",    "0.0")),
-    "EXPENSIVE": float(os.environ.get("TIER_BIAS_EXPENSIVE_C", "2.0")),
-}
+# Price-aware bias: instead of writing the Thermia setpoint / EVU / reduction
+# registers each price transition (which would wear the heat pump's flash),
+# we bias the published INDR_T so the Thermia naturally computes less
+# supply temp at expensive prices and more at cheap. INDR_T is treated as a
+# sensor input by ThermIQ — no flash write, and ThermIQ accepts decimal
+# values, so the bias is a continuous linear function of the current spot
+# price (no discrete tier buckets — those caused step changes whenever
+# prices crossed a threshold or the optimizer's tier classification cycle
+# fell out of the publisher's lookback window).
+#
+#   price ≤ PRICE_CHEAP        → bias = BIAS_AT_CHEAP    (negative, boost)
+#   price ≥ PRICE_EXPENSIVE    → bias = BIAS_AT_EXPENSIVE (positive, suppress)
+#   else                      → linear interpolation
+PRICE_BIAS_CHEAP_C_KWH     = float(os.environ.get("PRICE_BIAS_CHEAP_C_KWH",     "2.0"))
+PRICE_BIAS_EXPENSIVE_C_KWH = float(os.environ.get("PRICE_BIAS_EXPENSIVE_C_KWH", "8.0"))
+BIAS_AT_CHEAP_C            = float(os.environ.get("BIAS_AT_CHEAP_C",            "-0.5"))
+BIAS_AT_EXPENSIVE_C        = float(os.environ.get("BIAS_AT_EXPENSIVE_C",        "2.0"))
 
 # Demand-aware counter-bias: when the per-room PID controllers (WAGO) are
-# calling for max heat, the rooms genuinely need warming and the
-# tier-based suppression should NOT win. We add a negative bias scaled
-# by the mean of all per-room PID demand (0–100%). At full demand
-# (mean_pid = 100), demand_bias = -DEMAND_BIAS_MAX_C, which cancels the
-# EXPENSIVE tier suppression and adds extra push during NORMAL/CHEAP.
+# calling for max heat, the rooms genuinely need warming and price-based
+# suppression should NOT win. We add a negative bias scaled by the mean of
+# all per-room PID demand (0–100%). At full demand (mean_pid = 100),
+# demand_bias = -DEMAND_BIAS_MAX_C, which cancels typical price suppression
+# and adds extra push during cheap/normal periods.
 #
-#   final_bias = tier_bias + demand_bias
-#                tier_bias   ∈ {-0.5, 0, +2.0} (per tier)
+#   final_bias = price_bias + demand_bias
+#                price_bias  ∈ [BIAS_AT_CHEAP_C, BIAS_AT_EXPENSIVE_C]
 #                demand_bias = -(mean_pid / 100) * DEMAND_BIAS_MAX_C  ≤ 0
 #
-# Set DEMAND_BIAS_MAX_C=0 to disable and revert to pure tier-bias.
+# Set DEMAND_BIAS_MAX_C=0 to disable demand counter-bias.
 DEMAND_BIAS_MAX_C = float(os.environ.get("DEMAND_BIAS_MAX_C", "2.0"))
 # How often to check and potentially publish (seconds)
 CHECK_INTERVAL  = int(os.environ.get("CHECK_INTERVAL", "300"))
@@ -225,24 +231,41 @@ from(bucket: "{INFLUXDB_BUCKET}")
     return None
 
 
-def fetch_current_tier(query_api):
-    """Return the latest heating-optimizer tier (CHEAP/NORMAL/EXPENSIVE/PRE_HEAT)
-    or 'NORMAL' if not available."""
+def fetch_current_price(query_api):
+    """Latest electricity spot price (c/kWh, with tax). None on failure.
+
+    `electricity.price_with_tax` is written once per quarter-hour slot.
+    A 2 h lookback always finds the current value even across publisher
+    restarts or upstream feed hiccups."""
     flux = f"""
 from(bucket: "{INFLUXDB_BUCKET}")
-  |> range(start: -10m)
-  |> filter(fn: (r) => r._measurement == "heating_optimizer" and r._field == "tier")
+  |> range(start: -2h)
+  |> filter(fn: (r) => r._measurement == "electricity" and r._field == "price_with_tax")
   |> last()
 """
     try:
         for table in query_api.query(flux, org=INFLUXDB_ORG):
             for record in table.records:
                 v = record.get_value()
-                if isinstance(v, str) and v:
-                    return v
+                if v is not None:
+                    return float(v)
     except Exception as e:
-        log.warning(f"Could not fetch tier: {e}")
-    return "NORMAL"
+        log.warning(f"Could not fetch spot price: {e}")
+    return None
+
+
+def price_to_bias(price):
+    """Linear interpolation of price (c/kWh) → bias (°C), clamped at the
+    cheap and expensive endpoints. Returns 0 if price is unknown so we
+    fall back to a neutral bias rather than a step jump."""
+    if price is None:
+        return 0.0
+    span = PRICE_BIAS_EXPENSIVE_C_KWH - PRICE_BIAS_CHEAP_C_KWH
+    if span <= 0:
+        return 0.0
+    n = (price - PRICE_BIAS_CHEAP_C_KWH) / span
+    n = max(0.0, min(1.0, n))
+    return BIAS_AT_CHEAP_C + n * (BIAS_AT_EXPENSIVE_C - BIAS_AT_CHEAP_C)
 
 
 # ── MQTT ──────────────────────────────────────────────────────────────────────
@@ -269,7 +292,7 @@ def publish_indr_t(value):
 
 # ── Control loop ──────────────────────────────────────────────────────────────
 
-def write_telemetry(write_api, *, median_temp, tier, tier_bias,
+def write_telemetry(write_api, *, median_temp, price, price_bias,
                     demand_bias, total_bias, biased_temp, mean_pid,
                     sensor_count, last_sent):
     """Persist publisher state so dashboards can chart the actual control
@@ -278,12 +301,13 @@ def write_telemetry(write_api, *, median_temp, tier, tier_bias,
         Point("indoor_publisher")
         .field("sensor_median", float(median_temp))
         .field("sent_indr_t", float(biased_temp))
-        .field("tier_bias", float(tier_bias))
+        .field("price_bias", float(price_bias))
         .field("demand_bias", float(demand_bias))
         .field("total_bias", float(total_bias))
         .field("sensor_count", int(sensor_count))
-        .field("tier", str(tier))
     )
+    if price is not None:
+        p = p.field("spot_price", float(price))
     if mean_pid is not None:
         p = p.field("mean_pid_demand", float(mean_pid))
     if last_sent is not None:
@@ -302,8 +326,8 @@ def check_and_publish(query_api, write_api):
         log.warning(f"No indoor sensor data in the last {AVERAGE_MINUTES} min — skipping")
         return
 
-    tier = fetch_current_tier(query_api)
-    tier_bias = TIER_BIAS.get(tier, TIER_BIAS["NORMAL"])
+    price = fetch_current_price(query_api)
+    price_bias = price_to_bias(price)
 
     mean_pid = fetch_mean_pid_demand(query_api)
     if mean_pid is not None and DEMAND_BIAS_MAX_C > 0:
@@ -311,15 +335,16 @@ def check_and_publish(query_api, write_api):
     else:
         demand_bias = 0.0
 
-    bias = tier_bias + demand_bias
+    bias = price_bias + demand_bias
     biased_temp = median_temp + bias
 
     sample_str = ", ".join(f"{lbl}={v:.1f}" for lbl, v in samples)
     pid_str = f"{mean_pid:.0f}%" if mean_pid is not None else "—"
+    price_str = f"{price:.2f} c/kWh" if price is not None else "—"
     log.info(
         f"Indoor median ({AVERAGE_MINUTES} min, n={len(samples)}): "
-        f"{median_temp:.2f}°C  tier={tier}  PID={pid_str}  "
-        f"bias=tier{tier_bias:+.1f}+demand{demand_bias:+.1f}={bias:+.2f}°C  "
+        f"{median_temp:.2f}°C  price={price_str}  PID={pid_str}  "
+        f"bias=price{price_bias:+.2f}+demand{demand_bias:+.2f}={bias:+.2f}°C  "
         f"→ INDR_T={biased_temp:.2f}°C  "
         f"(last sent: {f'{last_published:.1f}°C' if last_published is not None else 'none'})"
     )
@@ -328,8 +353,8 @@ def check_and_publish(query_api, write_api):
     write_telemetry(
         write_api,
         median_temp=median_temp,
-        tier=tier,
-        tier_bias=tier_bias,
+        price=price,
+        price_bias=price_bias,
         demand_bias=demand_bias,
         total_bias=bias,
         biased_temp=biased_temp,
@@ -365,7 +390,12 @@ def main():
     log.info(f"Ruuvi:     {INDOOR_RUUVI_SENSORS or '(none)'}")
     log.info(f"Rooms:     {INDOOR_ROOM_FIELDS or '(none)'}")
     log.info(f"Aggregate: median over {AVERAGE_MINUTES} min")
-    log.info(f"Tier bias: {TIER_BIAS}")
+    log.info(
+        f"Price bias: linear "
+        f"{PRICE_BIAS_CHEAP_C_KWH}→{BIAS_AT_CHEAP_C:+.1f}°C, "
+        f"{PRICE_BIAS_EXPENSIVE_C_KWH}→{BIAS_AT_EXPENSIVE_C:+.1f}°C "
+        f"(c/kWh → °C, clamped)"
+    )
     log.info(f"Demand bias: max -{DEMAND_BIAS_MAX_C}°C at 100% PID demand")
     log.info(f"MQTT:      {MQTT_BROKER}:{MQTT_PORT}  topic={MQTT_SET_TOPIC}")
     log.info(f"Interval:  {CHECK_INTERVAL}s  min_change={MIN_CHANGE}°C")
