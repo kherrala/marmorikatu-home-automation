@@ -746,13 +746,13 @@
               {
                 "id": "color",
                 "value": {
-                  "fixedColor": "orange",
+                  "fixedColor": "blue",
                   "mode": "fixed"
                 }
               },
               {
                 "id": "displayName",
-                "value": "Asetusarvo (°C)"
+                "value": "Anturien mediaani (°C)"
               }
             ]
           },
@@ -765,13 +765,13 @@
               {
                 "id": "color",
                 "value": {
-                  "fixedColor": "green",
+                  "fixedColor": "orange",
                   "mode": "fixed"
                 }
               },
               {
                 "id": "displayName",
-                "value": "Todellinen tavoite (°C)"
+                "value": "Lähetetty INDR_T (°C)"
               }
             ]
           },
@@ -782,43 +782,15 @@
             },
             "properties": [
               {
-                "id": "custom.drawStyle",
-                "value": "line"
-              },
-              {
-                "id": "custom.lineInterpolation",
-                "value": "stepAfter"
-              },
-              {
-                "id": "custom.fillOpacity",
-                "value": 20
-              },
-              {
-                "id": "custom.lineWidth",
-                "value": 0
-              },
-              {
                 "id": "color",
                 "value": {
-                  "fixedColor": "red",
+                  "fixedColor": "green",
                   "mode": "fixed"
                 }
               },
               {
-                "id": "unit",
-                "value": "none"
-              },
-              {
-                "id": "max",
-                "value": 1
-              },
-              {
-                "id": "custom.axisPlacement",
-                "value": "hidden"
-              },
-              {
                 "id": "displayName",
-                "value": "EVU-aikomus"
+                "value": "Lämpöpumpun tavoite (°C)"
               }
             ]
           },
@@ -833,8 +805,47 @@
                 "value": "right"
               },
               {
+                "id": "custom.drawStyle",
+                "value": "line"
+              },
+              {
+                "id": "custom.lineInterpolation",
+                "value": "smooth"
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 15
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 2
+              },
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "red",
+                  "mode": "fixed"
+                }
+              },
+              {
                 "id": "unit",
-                "value": "none"
+                "value": "celsius"
+              },
+              {
+                "id": "displayName",
+                "value": "Lämmitysbias (°C, oikea akseli)"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "E"
+            },
+            "properties": [
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
               },
               {
                 "id": "custom.drawStyle",
@@ -842,7 +853,7 @@
               },
               {
                 "id": "custom.fillOpacity",
-                "value": 30
+                "value": 25
               },
               {
                 "id": "custom.lineWidth",
@@ -856,27 +867,53 @@
                 }
               },
               {
+                "id": "unit",
+                "value": "none"
+              },
+              {
                 "id": "displayName",
-                "value": "Hinta (c/kWh)"
+                "value": "Sähkön hinta (c/kWh)"
               }
             ]
           },
           {
             "matcher": {
               "id": "byFrameRefID",
-              "options": "E"
+              "options": "F"
             },
             "properties": [
               {
-                "id": "color",
+                "id": "custom.axisPlacement",
+                "value": "right"
+              },
+              {
+                "id": "custom.drawStyle",
+                "value": "line"
+              },
+              {
+                "id": "custom.lineStyle",
                 "value": {
-                  "fixedColor": "purple",
-                  "mode": "fixed"
+                  "dash": [
+                    6,
+                    4
+                  ],
+                  "fill": "dash"
                 }
               },
               {
-                "id": "custom.axisPlacement",
-                "value": "hidden"
+                "id": "custom.lineWidth",
+                "value": 1
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              },
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "green",
+                  "mode": "fixed"
+                }
               },
               {
                 "id": "unit",
@@ -884,7 +921,56 @@
               },
               {
                 "id": "displayName",
-                "value": "Lisävastus sallittu (taso)"
+                "value": "Halpa-raja (c/kWh)"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "G"
+            },
+            "properties": [
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              },
+              {
+                "id": "custom.drawStyle",
+                "value": "line"
+              },
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "dash": [
+                    6,
+                    4
+                  ],
+                  "fill": "dash"
+                }
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 1
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              },
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "red",
+                  "mode": "fixed"
+                }
+              },
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "displayName",
+                "value": "Kallis-raja (c/kWh)"
               }
             ]
           }
@@ -897,6 +983,7 @@
         "y": 8
       },
       "id": 10,
+      "description": "Aktiivinen ohjausmekanismi: lämpöpumpulle lähetetty INDR_T (anturien mediaani + hinta- ja kysyntäbias) verrattuna lämpöpumpun todelliseen tavoitteeseen. Hinta ja sen kausikohtaiset rajat oikealla akselilla.",
       "options": {
         "legend": {
           "calcs": [],
@@ -916,7 +1003,7 @@
             "type": "influxdb",
             "uid": "influxdb"
           },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"heating_optimizer\" and r._field == \"setpoint\")\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)",
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"indoor_publisher\" and r._field == \"sensor_median\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)",
           "refId": "A"
         },
         {
@@ -924,7 +1011,7 @@
             "type": "influxdb",
             "uid": "influxdb"
           },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"temperature\" and r._field == \"indoor_target_temp\")\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)",
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"indoor_publisher\" and r._field == \"sent_indr_t\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)",
           "refId": "B"
         },
         {
@@ -932,7 +1019,7 @@
             "type": "influxdb",
             "uid": "influxdb"
           },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"heating_optimizer\" and r._field == \"evu_active\")\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)",
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"temperature\" and r._field == \"indoor_target_temp\")\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)",
           "refId": "C"
         },
         {
@@ -940,7 +1027,7 @@
             "type": "influxdb",
             "uid": "influxdb"
           },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"electricity\" and r._field == \"price_with_tax\")\n  |> group()\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)",
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"indoor_publisher\" and r._field == \"total_bias\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)",
           "refId": "D"
         },
         {
@@ -948,11 +1035,27 @@
             "type": "influxdb",
             "uid": "influxdb"
           },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"heating_optimizer\" and r._field == \"boiler_steps\")\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)",
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"electricity\" and r._field == \"price_with_tax\")\n  |> group()\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)",
           "refId": "E"
+        },
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"indoor_publisher\" and r._field == \"cheap_threshold\")\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)",
+          "refId": "F"
+        },
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"indoor_publisher\" and r._field == \"expensive_threshold\")\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)",
+          "refId": "G"
         }
       ],
-      "title": "Optimoinnin paatokset",
+      "title": "Lämmityksen ohjauspäätökset",
       "type": "timeseries"
     },
     {
@@ -1362,137 +1465,6 @@
       ],
       "title": "Laitetila",
       "type": "state-timeline"
-    },
-    {
-      "datasource": {
-        "type": "influxdb",
-        "uid": "influxdb"
-      },
-      "description": "What we publish to ThermIQ as INDR_T (yellow) vs the same-formula median of room sensors (blue). Gap = tier-aware bias applied by indoor_temp_publisher (positive during EXPENSIVE, negative during CHEAP/PRE_HEAT). Tier band overlaid on price.",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "drawStyle": "line",
-            "fillOpacity": 10,
-            "gradientMode": "none",
-            "lineInterpolation": "smooth",
-            "lineWidth": 2,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "never",
-            "spanNulls": 1800000,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            }
-          },
-          "decimals": 2,
-          "mappings": [],
-          "unit": "celsius"
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "INDR_T (Thermia)"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "yellow"
-                }
-              },
-              {
-                "id": "custom.lineWidth",
-                "value": 2
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Median (raw)"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "blue"
-                }
-              },
-              {
-                "id": "custom.lineStyle",
-                "value": {
-                  "dash": [
-                    4,
-                    4
-                  ],
-                  "fill": "dash"
-                }
-              },
-              {
-                "id": "custom.fillOpacity",
-                "value": 0
-              }
-            ]
-          }
-        ]
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 24,
-        "x": 0,
-        "y": 24
-      },
-      "id": 17,
-      "options": {
-        "legend": {
-          "calcs": [
-            "mean",
-            "min",
-            "max",
-            "last"
-          ],
-          "displayMode": "table",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "pluginVersion": "12.3.2",
-      "targets": [
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "influxdb"
-          },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"temperature\" and r._field == \"indoor_temp\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> map(fn: (r) => ({_time: r._time, _value: r._value, _field: \"INDR_T (Thermia)\"}))\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])\n  |> group(columns: [\"_field\"])",
-          "refId": "A"
-        },
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "influxdb"
-          },
-          "query": "import \"experimental\"\n\nruuvi = from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"ruuvi\" and r._field == \"temperature\"\n       and (r.sensor_name == \"Olohuone\" or r.sensor_name == \"Keittiö\" or r.sensor_name == \"Takka\"))\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> keep(columns: [\"_time\", \"_value\"])\n\nrooms = from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"rooms\"\n       and (r._field == \"MH_Seela\" or r._field == \"MH_Aarni\" or r._field == \"MH_aikuiset\"\n            or r._field == \"MH_alakerta\" or r._field == \"Ylakerran_aula\"\n            or r._field == \"Keittio\" or r._field == \"Eteinen\"))\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> keep(columns: [\"_time\", \"_value\"])\n\nunion(tables: [ruuvi, rooms])\n  |> group(columns: [\"_time\"])\n  |> median()\n  |> group()\n  |> map(fn: (r) => ({_time: r._time, _value: r._value, _field: \"Median (raw)\"}))\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])\n  |> group(columns: [\"_field\"])",
-          "refId": "B"
-        }
-      ],
-      "title": "INDR_T sent vs sensor median (bias visualisation)",
-      "type": "timeseries"
     }
   ],
   "preload": false,
@@ -1521,5 +1493,5 @@
   "timezone": "Europe/Helsinki",
   "title": "Lämmityksen ohjaus",
   "uid": "heating-control",
-  "version": 4
+  "version": 5
 }

@@ -90,10 +90,55 @@ AVERAGE_MINUTES = int(os.environ.get("AVERAGE_MINUTES", "15"))
 #   price ≤ PRICE_CHEAP        → bias = BIAS_AT_CHEAP    (negative, boost)
 #   price ≥ PRICE_EXPENSIVE    → bias = BIAS_AT_EXPENSIVE (positive, suppress)
 #   else                      → linear interpolation
-PRICE_BIAS_CHEAP_C_KWH     = float(os.environ.get("PRICE_BIAS_CHEAP_C_KWH",     "2.0"))
-PRICE_BIAS_EXPENSIVE_C_KWH = float(os.environ.get("PRICE_BIAS_EXPENSIVE_C_KWH", "8.0"))
-BIAS_AT_CHEAP_C            = float(os.environ.get("BIAS_AT_CHEAP_C",            "-0.5"))
-BIAS_AT_EXPENSIVE_C        = float(os.environ.get("BIAS_AT_EXPENSIVE_C",        "2.0"))
+# Price→bias mapping. The cheap/expensive endpoint prices are derived
+# DYNAMICALLY from the past 365 days of spot-price history, filtered
+# to the months of the *current Finnish season*. Spot prices vary
+# strongly by season (heating-load demand, hydro reserves, wind), so
+# what counts as "cheap" or "expensive" should be relative to the
+# same time of year — not a single year-round threshold.
+#
+# Climatological 4-season split (matches Finnish convention):
+#   Winter  (Dec, Jan, Feb): peak heating load — full bias range
+#   Spring  (Mar, Apr, May): heating tapering off
+#   Summer  (Jun, Jul, Aug): DHW only — minimal bias (less wasted on
+#                            compressor cycling for a curve the unit
+#                            barely follows in summer mode)
+#   Autumn  (Sep, Oct, Nov): heating ramping back up
+#
+# The bias *range* (BIAS_AT_CHEAP_C → BIAS_AT_EXPENSIVE_C) is winter
+# magnitude; other seasons multiply both endpoints AND
+# DEMAND_BIAS_MAX_C by their SEASON_BIAS_SCALE entry, so the
+# correction tracks how much heating actually matters that month.
+#
+# ThermIQ uses INDR_T as a room-factor input where ~1 °C of offset
+# translates to ~3 °C of supply temp via the heating curve, so a
+# winter range of −1.5 → +4 °C gives a meaningful ~16 °C supply-temp
+# swing between cheap and expensive prices — i.e. dropping heating
+# more radically when winter electricity is genuinely painful.
+BIAS_AT_CHEAP_C     = float(os.environ.get("BIAS_AT_CHEAP_C",     "-1.5"))
+BIAS_AT_EXPENSIVE_C = float(os.environ.get("BIAS_AT_EXPENSIVE_C", "4.0"))
+SEASONS = {
+    "winter": {12, 1, 2},
+    "spring": {3, 4, 5},
+    "summer": {6, 7, 8},
+    "autumn": {9, 10, 11},
+}
+SEASON_BIAS_SCALE = {
+    "winter": float(os.environ.get("WINTER_BIAS_SCALE", "1.0")),
+    "spring": float(os.environ.get("SPRING_BIAS_SCALE", "0.5")),
+    "summer": float(os.environ.get("SUMMER_BIAS_SCALE", "0.2")),
+    "autumn": float(os.environ.get("AUTUMN_BIAS_SCALE", "0.7")),
+}
+PRICE_CHEAP_QUANTILE     = float(os.environ.get("PRICE_CHEAP_QUANTILE",     "0.25"))
+PRICE_EXPENSIVE_QUANTILE = float(os.environ.get("PRICE_EXPENSIVE_QUANTILE", "0.85"))
+THRESHOLD_HISTORY_DAYS = int(os.environ.get("THRESHOLD_HISTORY_DAYS", "365"))
+THRESHOLD_CACHE_MIN    = int(os.environ.get("THRESHOLD_CACHE_MIN",    "60"))
+# Fallback endpoints used if the percentile query fails. Picked to be
+# safe-but-not-aggressive defaults (between summer and winter medians).
+PRICE_BIAS_CHEAP_FALLBACK_C_KWH     = float(os.environ.get(
+    "PRICE_BIAS_CHEAP_FALLBACK_C_KWH",     "2.0"))
+PRICE_BIAS_EXPENSIVE_FALLBACK_C_KWH = float(os.environ.get(
+    "PRICE_BIAS_EXPENSIVE_FALLBACK_C_KWH", "12.0"))
 
 # Demand-aware counter-bias: when the per-room PID controllers (WAGO) are
 # calling for max heat, the rooms genuinely need warming and price-based
@@ -107,7 +152,7 @@ BIAS_AT_EXPENSIVE_C        = float(os.environ.get("BIAS_AT_EXPENSIVE_C",        
 #                demand_bias = -(mean_pid / 100) * DEMAND_BIAS_MAX_C  ≤ 0
 #
 # Set DEMAND_BIAS_MAX_C=0 to disable demand counter-bias.
-DEMAND_BIAS_MAX_C = float(os.environ.get("DEMAND_BIAS_MAX_C", "2.0"))
+DEMAND_BIAS_MAX_C = float(os.environ.get("DEMAND_BIAS_MAX_C", "3.0"))
 # How often to check and potentially publish (seconds)
 CHECK_INTERVAL  = int(os.environ.get("CHECK_INTERVAL", "300"))
 # Minimum change (°C) required to trigger a new publish
@@ -231,6 +276,15 @@ from(bucket: "{INFLUXDB_BUCKET}")
     return None
 
 
+def current_season(now=None):
+    """Finnish climatological season for the given (or current) datetime."""
+    m = (now or datetime.now()).month
+    for name, months in SEASONS.items():
+        if m in months:
+            return name
+    return "winter"
+
+
 def fetch_current_price(query_api):
     """Latest electricity spot price (c/kWh, with tax). None on failure.
 
@@ -254,18 +308,81 @@ from(bucket: "{INFLUXDB_BUCKET}")
     return None
 
 
-def price_to_bias(price):
+# Cache: season → (cheap, expensive, computed_at_monotonic)
+_threshold_cache = {}
+
+
+def fetch_seasonal_thresholds(query_api, season):
+    """Return (cheap, expensive) price thresholds (c/kWh) computed as
+    PRICE_CHEAP_QUANTILE / PRICE_EXPENSIVE_QUANTILE percentiles of the
+    last THRESHOLD_HISTORY_DAYS, restricted to the season's months.
+
+    Cached per-season for THRESHOLD_CACHE_MIN minutes. Falls back to
+    the FALLBACK constants if the query yields nothing or returns
+    invalid endpoints."""
+    cached = _threshold_cache.get(season)
+    if cached is not None:
+        cheap, expensive, ts = cached
+        if time.monotonic() - ts < THRESHOLD_CACHE_MIN * 60:
+            return cheap, expensive
+
+    months = sorted(SEASONS[season])
+    months_str = ", ".join(str(m) for m in months)
+
+    def _quantile(q):
+        flux = f"""
+import "date"
+from(bucket: "{INFLUXDB_BUCKET}")
+  |> range(start: -{THRESHOLD_HISTORY_DAYS}d)
+  |> filter(fn: (r) => r._measurement == "electricity" and r._field == "price_with_tax")
+  |> filter(fn: (r) => contains(value: date.month(t: r._time), set: [{months_str}]))
+  |> group()
+  |> quantile(q: {q}, method: "exact_mean")
+"""
+        try:
+            for table in query_api.query(flux, org=INFLUXDB_ORG):
+                for record in table.records:
+                    v = record.get_value()
+                    if v is not None:
+                        return float(v)
+        except Exception as e:
+            log.warning(f"Threshold q={q} query failed: {e}")
+        return None
+
+    cheap     = _quantile(PRICE_CHEAP_QUANTILE)
+    expensive = _quantile(PRICE_EXPENSIVE_QUANTILE)
+
+    if cheap is None or expensive is None or expensive <= cheap:
+        log.warning(
+            f"Season {season}: percentile query returned invalid "
+            f"({cheap}, {expensive}) — falling back to defaults"
+        )
+        cheap     = PRICE_BIAS_CHEAP_FALLBACK_C_KWH
+        expensive = PRICE_BIAS_EXPENSIVE_FALLBACK_C_KWH
+
+    _threshold_cache[season] = (cheap, expensive, time.monotonic())
+    log.info(
+        f"Season {season}: thresholds refreshed — "
+        f"P{int(PRICE_CHEAP_QUANTILE*100)}={cheap:.2f}, "
+        f"P{int(PRICE_EXPENSIVE_QUANTILE*100)}={expensive:.2f} c/kWh "
+        f"(over {THRESHOLD_HISTORY_DAYS}d, months {months})"
+    )
+    return cheap, expensive
+
+
+def price_to_bias(price, cheap, expensive, scale):
     """Linear interpolation of price (c/kWh) → bias (°C), clamped at the
-    cheap and expensive endpoints. Returns 0 if price is unknown so we
-    fall back to a neutral bias rather than a step jump."""
+    season's cheap and expensive percentile thresholds, then scaled by
+    the season's bias-range multiplier. Returns 0 if price is unknown
+    so we fall back to neutral rather than a step jump."""
     if price is None:
         return 0.0
-    span = PRICE_BIAS_EXPENSIVE_C_KWH - PRICE_BIAS_CHEAP_C_KWH
+    span = expensive - cheap
     if span <= 0:
         return 0.0
-    n = (price - PRICE_BIAS_CHEAP_C_KWH) / span
+    n = (price - cheap) / span
     n = max(0.0, min(1.0, n))
-    return BIAS_AT_CHEAP_C + n * (BIAS_AT_EXPENSIVE_C - BIAS_AT_CHEAP_C)
+    return scale * (BIAS_AT_CHEAP_C + n * (BIAS_AT_EXPENSIVE_C - BIAS_AT_CHEAP_C))
 
 
 # ── MQTT ──────────────────────────────────────────────────────────────────────
@@ -294,17 +411,22 @@ def publish_indr_t(value):
 
 def write_telemetry(write_api, *, median_temp, price, price_bias,
                     demand_bias, total_bias, biased_temp, mean_pid,
-                    sensor_count, last_sent):
+                    sensor_count, last_sent, season, season_scale,
+                    cheap_threshold, expensive_threshold):
     """Persist publisher state so dashboards can chart the actual control
-    mechanism (bias, sensor median, sent INDR_T)."""
+    mechanism (bias, sensor median, sent INDR_T, seasonal thresholds)."""
     p = (
         Point("indoor_publisher")
+        .tag("season", season)
         .field("sensor_median", float(median_temp))
         .field("sent_indr_t", float(biased_temp))
         .field("price_bias", float(price_bias))
         .field("demand_bias", float(demand_bias))
         .field("total_bias", float(total_bias))
         .field("sensor_count", int(sensor_count))
+        .field("season_scale", float(season_scale))
+        .field("cheap_threshold", float(cheap_threshold))
+        .field("expensive_threshold", float(expensive_threshold))
     )
     if price is not None:
         p = p.field("spot_price", float(price))
@@ -326,12 +448,17 @@ def check_and_publish(query_api, write_api):
         log.warning(f"No indoor sensor data in the last {AVERAGE_MINUTES} min — skipping")
         return
 
+    season = current_season()
+    season_scale = SEASON_BIAS_SCALE.get(season, 1.0)
+    cheap_threshold, expensive_threshold = fetch_seasonal_thresholds(query_api, season)
+
     price = fetch_current_price(query_api)
-    price_bias = price_to_bias(price)
+    price_bias = price_to_bias(price, cheap_threshold, expensive_threshold, season_scale)
 
     mean_pid = fetch_mean_pid_demand(query_api)
-    if mean_pid is not None and DEMAND_BIAS_MAX_C > 0:
-        demand_bias = -(max(0.0, min(100.0, mean_pid)) / 100.0) * DEMAND_BIAS_MAX_C
+    demand_max = DEMAND_BIAS_MAX_C * season_scale
+    if mean_pid is not None and demand_max > 0:
+        demand_bias = -(max(0.0, min(100.0, mean_pid)) / 100.0) * demand_max
     else:
         demand_bias = 0.0
 
@@ -343,7 +470,9 @@ def check_and_publish(query_api, write_api):
     price_str = f"{price:.2f} c/kWh" if price is not None else "—"
     log.info(
         f"Indoor median ({AVERAGE_MINUTES} min, n={len(samples)}): "
-        f"{median_temp:.2f}°C  price={price_str}  PID={pid_str}  "
+        f"{median_temp:.2f}°C  season={season}(×{season_scale:.2f})  "
+        f"price={price_str} (cheap={cheap_threshold:.2f}, exp={expensive_threshold:.2f})  "
+        f"PID={pid_str}  "
         f"bias=price{price_bias:+.2f}+demand{demand_bias:+.2f}={bias:+.2f}°C  "
         f"→ INDR_T={biased_temp:.2f}°C  "
         f"(last sent: {f'{last_published:.1f}°C' if last_published is not None else 'none'})"
@@ -361,6 +490,10 @@ def check_and_publish(query_api, write_api):
         mean_pid=mean_pid,
         sensor_count=len(samples),
         last_sent=last_published,
+        season=season,
+        season_scale=season_scale,
+        cheap_threshold=cheap_threshold,
+        expensive_threshold=expensive_threshold,
     )
 
     if biased_temp < INDOOR_MIN or biased_temp > INDOOR_MAX:
@@ -391,12 +524,15 @@ def main():
     log.info(f"Rooms:     {INDOOR_ROOM_FIELDS or '(none)'}")
     log.info(f"Aggregate: median over {AVERAGE_MINUTES} min")
     log.info(
-        f"Price bias: linear "
-        f"{PRICE_BIAS_CHEAP_C_KWH}→{BIAS_AT_CHEAP_C:+.1f}°C, "
-        f"{PRICE_BIAS_EXPENSIVE_C_KWH}→{BIAS_AT_EXPENSIVE_C:+.1f}°C "
-        f"(c/kWh → °C, clamped)"
+        f"Price bias range (winter): {BIAS_AT_CHEAP_C:+.1f}°C → "
+        f"{BIAS_AT_EXPENSIVE_C:+.1f}°C, linearly mapped between season "
+        f"P{int(PRICE_CHEAP_QUANTILE*100)} and "
+        f"P{int(PRICE_EXPENSIVE_QUANTILE*100)} of last "
+        f"{THRESHOLD_HISTORY_DAYS}d (cached {THRESHOLD_CACHE_MIN}min)"
     )
-    log.info(f"Demand bias: max -{DEMAND_BIAS_MAX_C}°C at 100% PID demand")
+    log.info(f"Season scales: {SEASON_BIAS_SCALE}")
+    log.info(f"Current season: {current_season()} (×{SEASON_BIAS_SCALE.get(current_season(), 1.0)})")
+    log.info(f"Demand bias: max -{DEMAND_BIAS_MAX_C}°C at 100% PID demand (scaled per season)")
     log.info(f"MQTT:      {MQTT_BROKER}:{MQTT_PORT}  topic={MQTT_SET_TOPIC}")
     log.info(f"Interval:  {CHECK_INTERVAL}s  min_change={MIN_CHANGE}°C")
     log.info(f"Bounds:    {INDOOR_MIN}–{INDOOR_MAX}°C  (applied to biased value)")
