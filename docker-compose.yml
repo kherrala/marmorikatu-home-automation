@@ -337,7 +337,7 @@ services:
       # Median across many sensors (Sauna hard-blacklisted in code).
       # Keittiö is reportedly the most accurate Ruuvi unit; included.
       - INDOOR_RUUVI_SENSORS=Olohuone,Keittiö,Takka
-      - INDOOR_ROOM_FIELDS=MH_Seela,MH_Aarni,MH_aikuiset,MH_alakerta,Ylakerran_aula,Keittio,Eteinen
+      - INDOOR_ROOM_FIELDS=MH_Seela,MH_Aarni,MH_aikuiset,MH_alakerta,Ylakerran_aula,Keittio,Eteinen,Kellari,Kellari_eteinen
       - AVERAGE_MINUTES=15
       # INDR_T is a runtime sensor input (no flash wear). 60s = quick
       # response to tier and demand changes; MIN_CHANGE=0.1°C still
