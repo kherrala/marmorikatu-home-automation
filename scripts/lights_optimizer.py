@@ -63,7 +63,12 @@ LONG_ABSENCE_MIN = int(os.environ.get("LONG_ABSENCE_MIN", "120"))
 CO2_OCCUPANCY_DELTA_PPM = float(os.environ.get("CO2_OCCUPANCY_DELTA_PPM", "30"))
 MANUAL_HOLD_MIN = int(os.environ.get("MANUAL_HOLD_MIN", "15"))
 BEDROOM_HOLD_MIN = int(os.environ.get("BEDROOM_HOLD_MIN", "30"))
-PORCH_OFF_HOUR = int(os.environ.get("PORCH_OFF_HOUR", os.environ.get("TERRACE_OFF_HOUR", "22")))
+PORCH_OFF_HOUR = int(os.environ.get("PORCH_OFF_HOUR", os.environ.get("TERRACE_OFF_HOUR", "23")))
+# Even in midsummer when sunset is past PORCH_OFF_HOUR, keep the porch
+# on for at least this many minutes after sunset so the schedule is
+# always meaningful. Without this, the on-window would degenerate to
+# zero (or even negative) when sunset >= PORCH_OFF_HOUR.
+PORCH_MIN_DURATION_MIN = int(os.environ.get("PORCH_MIN_DURATION_MIN", "120"))
 # Sun elevation below this (°) → "dark enough indoors" for CO₂-driven auto-on.
 # 8° lands roughly 30–60 min either side of horizon depending on latitude/
 # season — covers the Finnish dim-evening / dim-morning the user notices.
@@ -580,11 +585,29 @@ def check_and_control():
         len(states),
     )
 
-    # --- Front-porch scheduler (idx 47): on sunset → PORCH_OFF_HOUR.
+    # --- Front-porch scheduler (idx 47): on at sunset, off at
+    #     PORCH_OFF_HOUR (or sunset + PORCH_MIN_DURATION_MIN, whichever
+    #     is later). Handles after-midnight off hours and midsummer
+    #     when sunset is past the off hour.
     porch_idx = 47
     porch_state = states.get(porch_idx)
     pol = POLICIES["porch_schedule"]
-    target_on = sunset <= now < now.replace(hour=PORCH_OFF_HOUR, minute=0, second=0, microsecond=0)
+
+    def _porch_window(s: datetime) -> tuple[datetime, datetime]:
+        """Return (on, off) for the porch window starting at sunset `s`."""
+        off_hour_today = s.replace(
+            hour=PORCH_OFF_HOUR % 24, minute=0, second=0, microsecond=0,
+        )
+        if PORCH_OFF_HOUR >= 24 or off_hour_today <= s:
+            off_hour_today = off_hour_today + timedelta(days=1)
+        min_off = s + timedelta(minutes=PORCH_MIN_DURATION_MIN)
+        return s, max(off_hour_today, min_off)
+
+    yest_sunrise, yest_sunset = todays_sun(now - timedelta(days=1))
+    today_on, today_off = _porch_window(sunset)
+    yest_on, yest_off = _porch_window(yest_sunset)
+    target_on = (today_on <= now < today_off) or (yest_on <= now < yest_off)
+
     if porch_state is None or porch_state[0] != target_on:
         publish_state(porch_idx, target_on, "porch_schedule")
         log_decision(porch_idx, "on" if target_on else "off",
