@@ -486,80 +486,6 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "thresholds"
-          },
-          "decimals": 1,
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "dark-blue",
-                "value": null
-              },
-              {
-                "color": "blue",
-                "value": -10
-              },
-              {
-                "color": "green",
-                "value": 0
-              },
-              {
-                "color": "orange",
-                "value": 20
-              }
-            ]
-          },
-          "unit": "celsius"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 3,
-        "w": 3,
-        "x": 21,
-        "y": 0
-      },
-      "id": 7,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "showPercentChange": false,
-        "textMode": "auto",
-        "wideLayout": true
-      },
-      "pluginVersion": "12.3.2",
-      "targets": [
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "influxdb"
-          },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: -5m)\n  |> filter(fn: (r) => r._measurement == \"ruuvi\" and r.sensor_name == \"Ulkolämpötila\" and r._field == \"temperature\")\n  |> last()",
-          "refId": "A"
-        }
-      ],
-      "title": "Ulkolämpötila",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "influxdb",
-        "uid": "influxdb"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
             "mode": "palette-classic"
           },
           "custom": {
@@ -1423,7 +1349,7 @@
         "type": "influxdb",
         "uid": "influxdb"
       },
-      "description": "Aktiivinen INDR_T-bias = price_bias + demand_bias. Negatiivinen = boostataan lämmitystä, positiivinen = vähennetään. Sama arvo kuin etusivun 'Lämmitysbias'-mittari.",
+      "description": "Hinnan ohjaama bias-osa: lineaarinen interpolointi kausikohtaisten P25/P85 -hinnan välillä, kerrottuna kausiskaalalla. Negatiivinen = boostataan lämmitystä halvalla hetkellä, positiivinen = vähennetään kalliilla. Yhdessä kysyntäbiasin kanssa muodostaa total_biasin.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1443,11 +1369,11 @@
               },
               {
                 "color": "yellow",
-                "value": 0.5
+                "value": 1.0
               },
               {
                 "color": "red",
-                "value": 1.5
+                "value": 2.5
               }
             ]
           },
@@ -1485,11 +1411,11 @@
             "type": "influxdb",
             "uid": "influxdb"
           },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: -15m)\n  |> filter(fn: (r) => r._measurement == \"indoor_publisher\" and r._field == \"total_bias\")\n  |> drop(columns: [\"season\"])\n  |> last()",
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: -15m)\n  |> filter(fn: (r) => r._measurement == \"indoor_publisher\" and r._field == \"price_bias\")\n  |> drop(columns: [\"season\"])\n  |> last()",
           "refId": "A"
         }
       ],
-      "title": "Lämmitysbias",
+      "title": "Hintabias",
       "type": "stat"
     },
     {
@@ -1565,6 +1491,80 @@
       ],
       "title": "Sähköteho yhteensä",
       "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb"
+      },
+      "description": "Kysynnän ohjaama vastapainobias: per-huone-PID-keskiarvo skaalattuna DEMAND_BIAS_MAX_C * kausiskaala. Aina ≤ 0 — kun huoneet huutavat lämpöä, kysyntäbias kumoaa hintabiasin osittain tai kokonaan.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": -2.0
+              },
+              {
+                "color": "yellow",
+                "value": -1.0
+              },
+              {
+                "color": "green",
+                "value": -0.1
+              }
+            ]
+          },
+          "unit": "celsius"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 3,
+        "x": 21,
+        "y": 0
+      },
+      "id": 102,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "12.3.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: -15m)\n  |> filter(fn: (r) => r._measurement == \"indoor_publisher\" and r._field == \"demand_bias\")\n  |> drop(columns: [\"season\"])\n  |> last()",
+          "refId": "A"
+        }
+      ],
+      "title": "Kysyntäbias",
+      "type": "stat"
     }
   ],
   "preload": false,
@@ -1593,5 +1593,5 @@
   "timezone": "Europe/Helsinki",
   "title": "Lämmityksen ohjaus",
   "uid": "heating-control",
-  "version": 12
+  "version": 13
 }
