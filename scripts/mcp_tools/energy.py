@@ -49,10 +49,12 @@ the cheapest and most expensive hours. Prices are in c/kWh including tax.""",
         name="get_heating_status",
         description="""Get the current heating optimizer status.
 
-Returns the current price tier (CHEAP/NORMAL/EXPENSIVE/PRE_HEAT), heat pump
-setpoint, EVU mode (energy utility lockout) status, auxiliary heater status,
-effective target temperature, and current electricity price. Shows how the
-optimizer is adjusting heating based on electricity prices.""",
+Returns the current price tier (CHEAP/NORMAL/EXPENSIVE/PRE_HEAT), the
+current spot price, and outdoor temperature. The optimizer no longer
+commands the heat pump directly — INDR_T bias in indoor_temp_publisher
+provides smooth, flash-free price-driven heat suppression. Pair this
+with `query_data` against measurement `indoor_publisher` (fields
+`total_bias`, `sent_indr_t`, `sensor_median`) to see the active bias.""",
         inputSchema={
             "type": "object",
             "properties": {
@@ -283,34 +285,27 @@ from(bucket: "{INFLUXDB_BUCKET}")
         latest = results[0]
 
         tier = latest.get("tier", "UNKNOWN")
-        setpoint = latest.get("setpoint")
-        evu_active = latest.get("evu_active")
-        boiler_steps = latest.get("boiler_steps")
-        effective_target = latest.get("effective_target")
         price = latest.get("price")
         outdoor_temp = latest.get("outdoor_temp")
 
-        boiler_label = {0: "OFF", 1: "3kW", 2: "3+6kW"}.get(
-            int(boiler_steps) if boiler_steps is not None else -1, str(boiler_steps)
-        )
-
         tier_descriptions = {
-            "CHEAP": "Halpa sähkö — normaali lämmitys",
-            "NORMAL": "Normaali hinta — normaali lämmitys",
-            "EXPENSIVE": "Kallis sähkö — EVU-tila päällä, lämmitystä rajoitettu",
-            "PRE_HEAT": "Esilämmitys — nostettu lämpötila ennen kallista jaksoa",
+            "CHEAP": "Halpa sähkö — voi lämmittää reilusti",
+            "NORMAL": "Normaali hinta — perustaso",
+            "EXPENSIVE": "Kallis sähkö — INDR_T-bias suosii lämmityksen vähentämistä",
+            "PRE_HEAT": "Esilämmitys — boostataan lämpövarausta ennen kallista jaksoa",
         }
 
         result = {
             "timestamp": latest.get("_time"),
             "tier": tier,
             "tier_description": tier_descriptions.get(tier, tier),
-            "setpoint_c": setpoint,
-            "effective_target_c": effective_target,
-            "evu_active": bool(int(evu_active)) if evu_active is not None else None,
-            "boiler_steps": boiler_label,
             "current_price_c_kwh": round(price, 2) if price is not None else None,
             "outdoor_temp_c": round(outdoor_temp, 1) if outdoor_temp is not None else None,
+            "control_mechanism": (
+                "INDR_T-bias indoor_temp_publisher-palvelussa — "
+                "lämpöpumpun rekistereitä ei kirjoiteta. Hae aktiivinen "
+                "bias mittauksesta indoor_publisher.total_bias."
+            ),
         }
 
         if len(results) > 1:
@@ -319,8 +314,6 @@ from(bucket: "{INFLUXDB_BUCKET}")
                 history.append({
                     "time": r.get("_time"),
                     "tier": r.get("tier"),
-                    "setpoint": r.get("setpoint"),
-                    "effective_target": r.get("effective_target"),
                     "price": round(r["price"], 2) if r.get("price") is not None else None,
                 })
             result["history"] = history

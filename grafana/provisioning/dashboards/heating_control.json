@@ -1188,41 +1188,6 @@
           {
             "matcher": {
               "id": "byFrameRefID",
-              "options": "C"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "purple",
-                  "mode": "fixed"
-                }
-              },
-              {
-                "id": "custom.axisPlacement",
-                "value": "right"
-              },
-              {
-                "id": "custom.fillOpacity",
-                "value": 0
-              },
-              {
-                "id": "custom.lineWidth",
-                "value": 1
-              },
-              {
-                "id": "unit",
-                "value": "none"
-              },
-              {
-                "id": "displayName",
-                "value": "COP (dyn)"
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byFrameRefID",
               "options": "D"
             },
             "properties": [
@@ -1306,18 +1271,10 @@
           },
           "query": "// Aux-heater electrical input (extra OR-WE-517 meter)\nfrom(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvac\" and r.meter == \"extra\" and r._field == \"Total_Active_Power\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)",
           "refId": "D"
-        },
-        {
-          "datasource": {
-            "type": "influxdb",
-            "uid": "influxdb"
-          },
-          "query": "// Dynamic COP from supply/return + compressor power model (right axis).\nfrom(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"temperature\")\n  |> filter(fn: (r) => r._field == \"supply_temp\" or r._field == \"return_temp\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> group()\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> filter(fn: (r) => exists r.supply_temp and exists r.return_temp)\n  |> map(fn: (r) => ({\n    _time: r._time,\n    _value: 1.965 * (r.supply_temp - r.return_temp) / (1.77 + (r.supply_temp - 35.0) * 0.5 / 15.0),\n    _field: \"COP\",\n  }))\n  |> filter(fn: (r) => r._value >= 0.0 and r._value <= 8.0)",
-          "refId": "C"
         }
       ],
-      "title": "Lämmitysteho (mittari × dyn COP)",
-      "description": "Lämpöteho = sähköteho (OR-WE-517 mittari) × COP_dyn, missä COP_dyn = 1.965·(supply−return) / (1.77 + (supply−35)·0.5/15) — Diplomat 8 -kompressorimalli rinnan mittarisignaalin kanssa. Sama COP-kaava kuin etusivun 'COP' KPI:llä — ei kiinteää arvoa.",
+      "title": "Lämmitysteho (mittari × dyn COP, lisävastus mukana)",
+      "description": "Lämpöteho = sähkö_kompressori × COP_dyn + sähkö_lisävastus. COP_dyn = 1.965·(supply−return) / (1.77 + (supply−35)·0.5/15) — Diplomat 8 -kompressorimalli. Lisävastus 1:1. COP-aikasarja löytyy etusivulta erillisenä KPI:nä.",
       "type": "timeseries"
     },
     {
@@ -1540,7 +1497,7 @@
         "type": "influxdb",
         "uid": "influxdb"
       },
-      "description": "Lämpöpumpun OR-WE-517-energiamittarin lukema. Sähköteho nyt — kerrottuna COP-arviolla 3.5 saadaan Lämmitysteho-aikasarjan päälinja.",
+      "description": "Lämpöpumpun + lisävastuksen yhteinen sähköteho (OR-WE-517 mittarit, meter=heatpump + meter=extra). Lisävastus näkyy täällä myös erikseen Lämmitysteho-aikasarjassa.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1602,11 +1559,11 @@
             "type": "influxdb",
             "uid": "influxdb"
           },
-          "query": "from(bucket: \"building_automation\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"hvac\" and r.meter == \"heatpump\" and r._field == \"Total_Active_Power\")\n  |> last()",
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"hvac\" and r._field == \"Total_Active_Power\")\n  |> filter(fn: (r) => r.meter == \"heatpump\" or r.meter == \"extra\")\n  |> last()\n  |> group()\n  |> sum()",
           "refId": "A"
         }
       ],
-      "title": "Sähköteho (MLP)",
+      "title": "Sähköteho yhteensä",
       "type": "stat"
     }
   ],
@@ -1636,5 +1593,5 @@
   "timezone": "Europe/Helsinki",
   "title": "Lämmityksen ohjaus",
   "uid": "heating-control",
-  "version": 11
+  "version": 12
 }

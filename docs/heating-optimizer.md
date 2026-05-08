@@ -1,52 +1,48 @@
-# Floor Heating Temperature Optimizer
+# Spot-Price Tier Classifier (analytics-only)
 
-Optimizes heating costs for a Thermia Diplomat 8 ground-source heat pump with floor heating (290 m², 3 floors) by classifying electricity spot prices into tiers and steering heating output without writing the heat pump's persistent registers (which would wear flash).
+Classifies upcoming electricity spot-price slots into CHEAP / NORMAL / EXPENSIVE / PRE_HEAT and writes the result to InfluxDB. The actual heat-pump steering for the Thermia Diplomat 8 (floor heating, 290 m², 3 floors) is done by `indoor_temp_publisher.py`, which biases the `INDR_T` sensor reading sent to the heat pump based on the live spot price (continuously, with seasonal percentile thresholds and a per-room PID demand counter-bias).
 
-The building's concrete floor heating system has significant thermal mass, allowing the optimizer to pre-load heat during cheap price periods and coast during expensive periods without impacting comfort.
+The concrete floor's thermal mass lets us pre-load heat during cheap periods and coast during expensive ones without impacting comfort.
 
 ## Architecture
 
 ```
                 ┌──────────────────────────────────┐
                 │  scripts/heating_optimizer.py    │
-                │  - classify electricity tier     │
-                │  - log decision to InfluxDB      │
-                │  - toggle EVU wire (only write)  │
+                │  - classify each 15-min slot     │
+                │  - write tier+price+outdoor      │
+                │    to InfluxDB (analytics only)  │
                 └────────────────┬─────────────────┘
-                                 │ tier (CHEAP/NORMAL/EXPENSIVE/PRE_HEAT)
+                                 │ tier (read by dashboards/MCP)
                                  ▼
                 ┌──────────────────────────────────┐
                 │  scripts/indoor_temp_publisher   │
-                │  - median over 10 indoor sensors │
-                │  - + tier-aware INDR_T bias      │
+                │  - median of 10 indoor sensors   │
+                │  - price→bias (seasonal P25/P85, │
+                │    4-season scale)               │
+                │  - per-room PID counter-bias     │
                 │  - publish INDR_T to ThermIQ     │
                 └────────────────┬─────────────────┘
-                                 │ INDR_T (median + bias)
+                                 │ INDR_T = median + bias
                                  ▼
                           [ Thermia heat pump ]
-                          (no flash writes)
+                          (no flash writes,
+                           no MQTT register cmds)
 ```
-
-The optimizer's role is **price-tier classification + EVU control + analytics logging**. The actual "heat more / heat less" command is delivered as a biased `INDR_T` sensor reading by `indoor_temp_publisher` — see [Tier-Aware INDR_T Bias](#tier-aware-indr_t-bias) below.
 
 ## Control Mechanisms
 
-Two write channels remain:
+The optimizer **does not command the heat pump**. It only writes analytics. All command paths were retired:
 
-| Control | Topic | Payload | Effect | Flash? |
-|---|---|---|---|---|
-| EVU input | `ThermIQ/marmorikatu/set` | `{"EVU": 1}` | Activates wired EVU input on the heat pump (hard kill-switch for compressor in unit configuration) | **No** — wired input |
-| INDR_T sensor reading | `ThermIQ/marmorikatu/set` | `{"INDR_T": 22.0}` | Indoor-air sensor input — heat pump uses it for room-factor compensation | **No** — runtime sensor input |
-
-Three persistent registers were retired in this codebase to avoid flash wear:
-
-| Register | What it was | Now |
+| Channel | Old role | Now |
 |---|---|---|
-| `r32` (d50, indoor_requested_t) | Setpoint (e.g. 22 °C) | Untouched. Whatever was last written manually persists. The publisher's INDR_T bias steers behaviour around it. |
-| `r3b` (d59, reduction_t) | EVU-mode target reduction | Untouched. Was set once at startup; no longer written. |
-| `r51` (d81, elect_boiler_steps_max) | Max electric boiler steps | Untouched. Default value persists. |
+| `ThermIQ/.../set {"EVU": 1}` | Hard tier-driven kill switch | Not written. EVU on this unit only triggers a `reduction_t`-based target shift, not a compressor block, so it added little value over the publisher's INDR_T bias. |
+| `r32` (d50, indoor_requested_t) | Setpoint | Not written — would wear flash. Whatever was last set manually persists. |
+| `r3b` (d59, reduction_t) | EVU-mode target reduction | Not written. |
+| `r51` (d81, elect_boiler_steps_max) | Max electric boiler steps | Not written. The Thermia firmware decides aux activation from its own integrator vs A1/A2 limits. |
+| `ThermIQ/.../set {"INDR_T": 22.0}` | Indoor-air sensor reading | **This is the active control mechanism**, owned by `indoor_temp_publisher`. Runtime sensor input — no flash wear. |
 
-**Aux heater control**: still computed (boiler_steps = 0/1/2 per tier) and **logged** for analytics, but no register write. The Thermia firmware decides aux activation based on its internal integrator vs A1/A2 limits independently. If we need to actually disable aux heaters in future, we can do so via the wired EVU signal which the compressor + integrator behaviour respects.
+Aux heaters were previously computed and toggled by tier; now they're left to the firmware's own logic since the publisher's INDR_T bias drives the same effective behaviour through room-factor compensation.
 
 ## Algorithm Overview
 
@@ -203,17 +199,15 @@ Every `CHECK_INTERVAL` (5 minutes):
 
 ## InfluxDB Measurement
 
-Measurement: `heating_optimizer`
+Measurement: `heating_optimizer` (analytics-only — three fields, no commanded values)
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `setpoint` | int | Logged "intended" setpoint (°C) — not commanded to heat pump |
-| `evu_active` | int | 0 or 1 — actually toggled on the heat pump's EVU wire |
-| `boiler_steps` | int | Logged "intended" 0/1/2 value — not commanded |
-| `effective_target` | int | setpoint − reduction_t if EVU on, else setpoint — analytic |
-| `tier` | string | CHEAP, NORMAL, EXPENSIVE, or PRE_HEAT — read by indoor_temp_publisher |
-| `price` | float | Current electricity price (c/kWh, with VAT) |
-| `outdoor_temp` | float | Outdoor temperature (°C) |
+| `tier` | string | `CHEAP`, `NORMAL`, `EXPENSIVE`, or `PRE_HEAT` — read by dashboards/MCP |
+| `price` | float | Current slot's electricity spot price (c/kWh, with tax) |
+| `outdoor_temp` | float | Outdoor temperature (°C) at classification time |
+
+The retired fields `setpoint`, `evu_active`, `boiler_steps`, and `effective_target` are no longer written. Historical points containing them remain in the bucket but get no new updates.
 
 ## Configuration
 
@@ -221,26 +215,18 @@ All via environment variables (with defaults):
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `MQTT_BROKER` | freenas.kherrala.fi | MQTT broker hostname |
-| `MQTT_PORT` | 1883 | MQTT broker port |
-| `MQTT_SET_TOPIC` | ThermIQ/marmorikatu/set | Topic for EVU control |
-| `COMFORT_MIN` | 20 | Hard floor temperature (°C) |
-| `COMFORT_DEFAULT` | 22 | Normal setpoint (°C) |
-| `COMFORT_MAX` | 23 | Pre-heat ceiling (°C) |
-| `REDUCTION_T` | 3 | EVU reduction degrees, written to d59 at startup |
-| `BOILER_STEPS_DEFAULT` | 2 | Normal aux heater steps (2 = 3+6 kW) |
-| `BOILER_COLD_LIMIT` | −15 | Below this outdoor temp (°C), never disable aux heaters |
 | `PRICE_PERCENTILE_CHEAP` | 25 | Historical percentile threshold for cheap tier |
 | `PRICE_PERCENTILE_EXPENSIVE` | 75 | Historical percentile threshold for expensive tier |
-| `HISTORY_DAYS` | 30 | Days of historical prices for percentile calculation |
-| `PRE_HEAT_HOURS` | 2 | Hours to pre-heat before expensive blocks |
-| `MAX_EVU_HOURS` | 3 | Max consecutive hours of EVU/aux heater restriction |
-| `MIN_RELATIVE_SPREAD` | 2.0 | Min price spread (c/kWh) to activate relative fallback |
+| `MIN_CHEAP_THRESHOLD` | 3.0 | Lower clamp on cheap threshold (c/kWh) |
+| `MAX_CHEAP_THRESHOLD` | 6.0 | Upper clamp on cheap threshold (c/kWh) |
+| `MIN_EXPENSIVE_THRESHOLD` | 5.0 | Lower clamp on expensive threshold (c/kWh) |
+| `MAX_EXPENSIVE_THRESHOLD` | 15.0 | Upper clamp on expensive threshold (c/kWh) |
+| `PRE_HEAT_HOURS` | 2 | Hours of PRE_HEAT lookahead before EXPENSIVE blocks |
+| `MAX_EXPENSIVE_HOURS` | 3 | Max consecutive EXPENSIVE slots — tail reclassified to NORMAL |
 | `MIN_EXPENSIVE_SLOTS` | 2 | Min contiguous EXPENSIVE slots to keep (shorter → NORMAL) |
-| `BOILER_DISABLE_MIN_HOURS` | 4 | Min EXPENSIVE block length (hours) to disable aux heaters |
-| `CHECK_INTERVAL` | 300 | Main loop interval (seconds) |
-| `MIN_HOLD_MINUTES` | 15 | Minimum time between MQTT changes |
-| `DRY_RUN` | 0 | Set to 1 to log decisions without publishing MQTT |
+| `MIN_RELATIVE_SPREAD` | 2.0 | Min price spread (c/kWh) to activate relative fallback |
+
+The classifier wakes on each 15-min price-slot boundary (no `CHECK_INTERVAL` env var anymore). The retired controls — MQTT topics, COMFORT_*, REDUCTION_T, BOILER_*, MIN_HOLD_MINUTES, DRY_RUN — are gone since nothing is being commanded.
 
 ## Interaction with Thermia Heat Pump Settings
 

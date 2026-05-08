@@ -1,23 +1,38 @@
 #!/usr/bin/env python3
 """
-Floor heating temperature optimizer.
+Spot-price tier classifier (analytics-only).
 
-Optimizes heating costs by adjusting the Thermia heat pump setpoint based on
-electricity spot prices. Pre-heats during cheap hours (raising d50) and reduces
-demand during expensive hours (via EVU mode which lowers target by reduction_t).
-During expensive hours, aux heaters are also disabled to avoid costly resistance
-heating, with cold-weather safety protection.
+Classifies upcoming 15-minute electricity price slots into
+CHEAP / NORMAL / EXPENSIVE / PRE_HEAT using historical seasonal
+percentiles + a relative-spread fallback + a pre-heat lookahead, then
+writes the classification to InfluxDB measurement `heating_optimizer`
+for dashboards and the MCP server.
 
-Price data is read from InfluxDB (written by the electricity price poller).
-Outdoor temperature is read from InfluxDB (Ruuvi sensor).
+This service used to also command the Thermia heat pump (setpoint d50,
+EVU, reduction_t d59, elect_boiler_steps_max d81 via MQTT register
+writes). Those writes are retired:
 
-Controls:
-  - d50 (indoor_requested_t, hex r32): setpoint via MQTT write topic
-  - EVU on/off: via MQTT set topic
-  - d59 (reduction_t, hex r3b): configured at startup via MQTT write topic
-  - d81 (elect_boiler_steps_max, hex r51): aux heater limit via MQTT write topic
+  - The persistent registers (d50/d59/d81) wear the unit's flash on
+    every cycle. Frequent writes degrade the controller hardware.
+  - EVU only triggers a reduction_t-based target shift on this unit;
+    it does not block the compressor.
+  - The publisher's INDR_T bias (`indoor_temp_publisher.py`) drives
+    price-aware heat suppression as a runtime sensor input — no flash
+    write, smoother (continuous interpolation across season-aware
+    cheap/expensive percentiles), and demand-aware (per-room PID
+    counter-bias).
 
-Replaces the simpler evu_controller.py service.
+This service is now read-only. It produces:
+
+Inputs (read from InfluxDB):
+  - electricity.price_with_tax  — 15-min spot price forecast + history
+  - ruuvi outdoor temperature   — for cold-weather pre-heat clamps
+
+Outputs (written to InfluxDB measurement `heating_optimizer`):
+  - tier         — current slot classification (CHEAP/NORMAL/
+                   EXPENSIVE/PRE_HEAT)
+  - price        — current slot's spot price (c/kWh, with tax)
+  - outdoor_temp — outdoor temperature at classification time
 """
 
 import logging
@@ -30,31 +45,17 @@ from influxdb_client import InfluxDBClient, Point, WritePrecision
 from influxdb_client.client.write_api import SYNCHRONOUS
 
 # ── Configuration ─────────────────────────────────────────────────────────────
-MQTT_BROKER = os.environ.get("MQTT_BROKER", "freenas.kherrala.fi")
-MQTT_PORT = int(os.environ.get("MQTT_PORT", "1883"))
-MQTT_SET_TOPIC = os.environ.get("MQTT_SET_TOPIC", "ThermIQ/marmorikatu/set")
-
 INFLUXDB_URL = os.environ.get("INFLUXDB_URL", "http://localhost:8086")
 INFLUXDB_TOKEN = os.environ.get("INFLUXDB_TOKEN", "wago-secret-token")
 INFLUXDB_ORG = os.environ.get("INFLUXDB_ORG", "wago")
 INFLUXDB_BUCKET = os.environ.get("INFLUXDB_BUCKET", "building_automation")
 
-COMFORT_MIN = int(os.environ.get("COMFORT_MIN", "20"))
-COMFORT_DEFAULT = int(os.environ.get("COMFORT_DEFAULT", "22"))
-COMFORT_MAX = int(os.environ.get("COMFORT_MAX", "23"))
-REDUCTION_T = int(os.environ.get("REDUCTION_T", "3"))
-
-# Aux heater (electric boiler) control
-BOILER_STEPS_DEFAULT = int(os.environ.get("BOILER_STEPS_DEFAULT", "2"))  # normal: both 3+6 kW
-# Below this outdoor temp, aux heaters are never disabled (compressor may need help)
-BOILER_COLD_LIMIT = float(os.environ.get("BOILER_COLD_LIMIT", "-15"))
-
 PRICE_PERCENTILE_CHEAP = float(os.environ.get("PRICE_PERCENTILE_CHEAP", "25"))
 PRICE_PERCENTILE_EXPENSIVE = float(os.environ.get("PRICE_PERCENTILE_EXPENSIVE", "75"))
 
 # Seasonal price comparison: thresholds are computed from the same season's
-# historical data. Heating season has higher prices (~8 c/kWh avg), non-heating
-# season lower (~4 c/kWh avg). Transition around mid-March and mid-October.
+# historical data. Heating season has higher prices, non-heating lower.
+# Transition around mid-March and mid-October.
 HEATING_SEASON_START_MONTH = 10   # October
 HEATING_SEASON_START_DAY = 15
 HEATING_SEASON_END_MONTH = 3      # mid-March
@@ -62,7 +63,6 @@ HEATING_SEASON_END_DAY = 15
 
 # Safety clamps for computed percentile thresholds (c/kWh).
 # Prevents nonsensical classification when history is skewed.
-# Typical prices: ~4 c/kWh summer, ~8 c/kWh winter, peaks up to 90 c/kWh.
 MIN_CHEAP_THRESHOLD = float(os.environ.get("MIN_CHEAP_THRESHOLD", "3.0"))
 MAX_CHEAP_THRESHOLD = float(os.environ.get("MAX_CHEAP_THRESHOLD", "6.0"))
 MIN_EXPENSIVE_THRESHOLD = float(os.environ.get("MIN_EXPENSIVE_THRESHOLD", "5.0"))
@@ -71,23 +71,24 @@ MAX_EXPENSIVE_THRESHOLD = float(os.environ.get("MAX_EXPENSIVE_THRESHOLD", "15.0"
 PRE_HEAT_HOURS = int(os.environ.get("PRE_HEAT_HOURS", "2"))
 PRE_HEAT_SLOTS = PRE_HEAT_HOURS * 4  # quarter-hour slots
 
-MAX_EVU_HOURS = int(os.environ.get("MAX_EVU_HOURS", "3"))
-MAX_EVU_SLOTS = MAX_EVU_HOURS * 4  # quarter-hour slots
+# Maximum consecutive EXPENSIVE slots — longer runs reclassify back to
+# NORMAL so we don't flag the entire afternoon as "do nothing", which
+# would be unhelpful when the price profile is uniformly elevated.
+# (Historically named MAX_EVU_HOURS because this cap controlled the EVU
+# duty cycle. EVU is no longer commanded; the cap still shapes the tier
+# string written for dashboards/MCP.)
+MAX_EXPENSIVE_HOURS = int(os.environ.get(
+    "MAX_EXPENSIVE_HOURS", os.environ.get("MAX_EVU_HOURS", "3")))
+MAX_EXPENSIVE_SLOTS = MAX_EXPENSIVE_HOURS * 4
 
-# Minimum price spread (max - min in forecast window) required to activate the
-# relative pre-heat fallback when no historically-expensive slots exist.
+# Minimum price spread (max - min in forecast window) required to activate
+# the relative pre-heat fallback when no historically-expensive slots exist.
 MIN_RELATIVE_SPREAD = float(os.environ.get("MIN_RELATIVE_SPREAD", "2.0"))
 
-# Flicker reduction: minimum contiguous EXPENSIVE slots to keep (shorter → NORMAL)
+# Flicker reduction: minimum contiguous EXPENSIVE slots to keep (shorter →
+# NORMAL). Avoids reclassifying tier on isolated 15-min price spikes that
+# wouldn't justify a behavioural change anyway.
 MIN_EXPENSIVE_SLOTS = int(os.environ.get("MIN_EXPENSIVE_SLOTS", "2"))
-# Minimum EXPENSIVE block length (hours) before disabling aux heaters
-BOILER_DISABLE_MIN_HOURS = int(os.environ.get("BOILER_DISABLE_MIN_HOURS", "4"))
-BOILER_DISABLE_MIN_SLOTS = BOILER_DISABLE_MIN_HOURS * 4  # quarter-hour slots
-
-CHECK_INTERVAL = int(os.environ.get("CHECK_INTERVAL", "300"))
-MIN_HOLD_MINUTES = int(os.environ.get("MIN_HOLD_MINUTES", "15"))
-
-DRY_RUN = os.environ.get("DRY_RUN", "0") in ("1", "true", "yes")
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -99,10 +100,6 @@ log = logging.getLogger(__name__)
 
 # ── State ─────────────────────────────────────────────────────────────────────
 running = True
-current_setpoint = None       # last published setpoint
-current_evu = None            # last published EVU state (True/False)
-current_boiler_steps = None   # last published elect_boiler_steps_max
-last_change_time = 0.0        # monotonic time of last MQTT change
 
 
 def signal_handler(sig, frame):
@@ -111,58 +108,11 @@ def signal_handler(sig, frame):
     running = False
 
 
-# Note: the optimizer no longer writes the heat pump's setpoint,
-# reduction_t, or boiler-steps PERSISTENT registers — tier-aware
-# behaviour is driven by the indoor_temp_publisher biasing the published
-# INDR_T (a runtime sensor input — no flash wear). The values computed
-# below for those quantities are still surfaced via log_decision for
-# dashboard analytics, just not commanded to the unit.
-#
-# EVU IS still written: it's a wired-input signal on the heat pump, not
-# a flash register, so toggling it is free. Useful as a hard kill-switch
-# during very expensive slots.
-
-
-def mqtt_publish(topic, payload_dict):
-    """Publish a JSON payload to an MQTT topic. Returns True on success."""
-    import json
-    message = json.dumps(payload_dict)
-    if DRY_RUN:
-        log.info(f"[DRY RUN] Would publish to {topic}: {message}")
-        return True
-    try:
-        import paho.mqtt.client as mqtt
-        client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
-        client.connect(MQTT_BROKER, MQTT_PORT, keepalive=10)
-        result = client.publish(topic, message)
-        result.wait_for_publish(timeout=5)
-        client.disconnect()
-        log.info(f"Published to {topic}: {message}")
-        return True
-    except Exception as e:
-        log.error(f"MQTT publish failed: {e}")
-        return False
-
-
-def set_evu(enabled):
-    """Toggle EVU input on the heat pump (wired signal, NOT a register
-    write — safe to publish as often as needed)."""
-    global current_evu, last_change_time
-    if current_evu == enabled:
-        return
-    if mqtt_publish(MQTT_SET_TOPIC, {"EVU": 1 if enabled else 0}):
-        current_evu = enabled
-        last_change_time = time.monotonic()
-        log.info(f"EVU → {'ON' if enabled else 'OFF'}")
-
-
 # ── InfluxDB queries ─────────────────────────────────────────────────────────
 
 def fetch_price_forecast(query_api):
-    """
-    Fetch electricity prices from now to +36h.
-    Returns list of (datetime_utc, price_c_per_kwh) sorted by time.
-    """
+    """Fetch electricity prices from now to +36h.
+    Returns list of (datetime_utc, price_c_per_kwh) sorted by time."""
     flux = f"""
 from(bucket: "{INFLUXDB_BUCKET}")
   |> range(start: -1h, stop: 36h)
@@ -195,21 +145,16 @@ def is_heating_season(dt=None):
 
 
 def fetch_historical_prices(query_api):
-    """
-    Fetch electricity prices from the same season across available history.
-    Compares winter prices to winter, summer to summer, so thresholds
-    reflect seasonal norms rather than annual averages.
-    Returns sorted list of price values (c/kWh) for percentile calculation.
-    """
+    """Fetch electricity prices from the same season across available history.
+    Compares winter prices to winter, summer to summer, so thresholds reflect
+    seasonal norms rather than annual averages.
+    Returns sorted list of price values (c/kWh) for percentile calculation."""
     heating = is_heating_season()
     season_name = "heating" if heating else "non-heating"
 
-    # Build month filter for the season
     if heating:
-        # Oct 15 – Mar 15: months 10, 11, 12, 1, 2, 3
         months = [10, 11, 12, 1, 2, 3]
     else:
-        # Mar 15 – Oct 15: months 3, 4, 5, 6, 7, 8, 9, 10
         months = [3, 4, 5, 6, 7, 8, 9, 10]
 
     month_filter = " or ".join(f'm == {m}' for m in months)
@@ -263,10 +208,11 @@ from(bucket: "{INFLUXDB_BUCKET}")
 CHEAP = "CHEAP"
 NORMAL = "NORMAL"
 EXPENSIVE = "EXPENSIVE"
+PRE_HEAT = "PRE_HEAT"
 
 
 def percentile(values, pct):
-    """Calculate percentile of a sorted list."""
+    """Linear-interpolation percentile of a pre-sorted list."""
     if not values:
         return 0
     k = (len(values) - 1) * pct / 100.0
@@ -278,10 +224,8 @@ def percentile(values, pct):
 
 
 def classify_prices(prices, p_cheap, p_expensive):
-    """
-    Classify price entries into quarter-hour slots using the given thresholds.
-    Returns list of (slot_start_utc, tier, price) tuples.
-    """
+    """Classify price entries into quarter-hour slots using the given thresholds.
+    Returns list of (slot_start_utc, tier, price) tuples."""
     if not prices:
         return []
 
@@ -298,54 +242,20 @@ def classify_prices(prices, p_cheap, p_expensive):
     return classified
 
 
-def apply_pre_heat_and_evu_cap(classified):
-    """
-    Apply two schedule adjustments:
-    1. Pre-heat look-ahead: boost slots before EXPENSIVE blocks to PRE_HEAT
-    2. EVU cap: limit consecutive EXPENSIVE slots to MAX_EVU_SLOTS,
-       then force NORMAL for a recovery period before the next EXPENSIVE run
-    """
-    result = list(classified)
-
-    # 1. Cap consecutive EXPENSIVE runs
-    if MAX_EVU_SLOTS > 0:
-        consecutive = 0
-        for i, (ts, tier, price) in enumerate(result):
-            if tier == EXPENSIVE:
-                consecutive += 1
-                if consecutive > MAX_EVU_SLOTS:
-                    result[i] = (ts, NORMAL, price)
-            else:
-                consecutive = 0
-
-    # 2. Pre-heat look-ahead: promote CHEAP and NORMAL slots before EXPENSIVE blocks.
-    #    Pre-heating is about the price differential — even NORMAL-priced slots
-    #    (e.g., 7 c/kWh) are worth pre-heating before expensive peaks (e.g., 12 c/kWh).
-    for i, (ts, tier, price) in enumerate(result):
-        if tier == EXPENSIVE:
-            for j in range(max(0, i - PRE_HEAT_SLOTS), i):
-                if result[j][1] in (CHEAP, NORMAL):
-                    result[j] = (result[j][0], "PRE_HEAT", result[j][2])
-
-    return result
-
-
 def apply_relative_fallback(classified, p_cheap):
-    """
-    Fallback for low-price periods: when the forecast has no historically-
-    expensive slots but prices still vary meaningfully, mark the relatively
-    most expensive slots (within-window P75) as EXPENSIVE so the optimizer
-    activates EVU + boiler reduction during those periods. Normal pre-heat
-    look-ahead then applies before those relatively-expensive blocks.
+    """When the forecast has no historically-expensive slots but prices
+    still vary meaningfully, mark the relatively most expensive slots
+    (within-window P75) as EXPENSIVE so the publisher's price-bias still
+    sees a meaningful gradient. Pre-heat lookahead then applies before
+    those relatively-expensive blocks.
 
     Only activates when:
       - No EXPENSIVE slots in the forecast (absolute approach is dormant)
       - Max-min price spread >= MIN_RELATIVE_SPREAD c/kWh
       - Within-window P75 is above the absolute CHEAP threshold (no point
-        in load-shifting when all prices are objectively cheap)
-    """
+        load-shifting when all prices are objectively cheap)"""
     if any(tier == EXPENSIVE for _, tier, _ in classified):
-        return classified  # Absolute classification is already active
+        return classified
 
     prices_only = sorted(price for _, _, price in classified)
     spread = prices_only[-1] - prices_only[0]
@@ -374,22 +284,16 @@ def apply_relative_fallback(classified, p_cheap):
 
 
 def filter_short_expensive_blocks(classified):
-    """
-    Remove EXPENSIVE blocks shorter than MIN_EXPENSIVE_SLOTS by downgrading
-    them to NORMAL. Prevents EVU/boiler flicker from isolated 15-min spikes.
-    """
+    """Downgrade EXPENSIVE blocks shorter than MIN_EXPENSIVE_SLOTS to NORMAL."""
     if MIN_EXPENSIVE_SLOTS <= 1:
         return classified
 
     result = list(classified)
-
-    # Find contiguous EXPENSIVE blocks and measure their length
     i = 0
     while i < len(result):
         if result[i][1] != EXPENSIVE:
             i += 1
             continue
-        # Found start of an EXPENSIVE block — find its end
         block_start = i
         while i < len(result) and result[i][1] == EXPENSIVE:
             i += 1
@@ -404,124 +308,63 @@ def filter_short_expensive_blocks(classified):
     return result
 
 
-def get_current_action(schedule, outdoor_temp):
-    """
-    Look up the current quarter-hour slot and return (setpoint, evu_enabled, boiler_steps).
-    Applies cold-weather constraints and aux heater safety logic.
-    """
-    now_utc = datetime.now(timezone.utc)
+def apply_pre_heat_and_long_block_cap(classified):
+    """Apply two schedule adjustments:
+      1. Long-block cap: if a contiguous EXPENSIVE run exceeds
+         MAX_EXPENSIVE_SLOTS, the tail is reclassified to NORMAL — long
+         expensive runs reflect a uniformly-elevated price floor where
+         tier-driven suppression is no longer meaningful.
+      2. Pre-heat lookahead: the PRE_HEAT_SLOTS leading up to each
+         EXPENSIVE block are promoted from CHEAP/NORMAL to PRE_HEAT, so
+         the publisher (or anyone reading the tier) can boost heat
+         banking before the run begins."""
+    result = list(classified)
 
-    # Find the slot that contains now (price timestamp is the slot start)
-    current_tier = NORMAL
-    current_price = None
-    for i, (ts, tier, price) in enumerate(schedule):
-        # Make ts offset-aware UTC if naive
+    if MAX_EXPENSIVE_SLOTS > 0:
+        consecutive = 0
+        for i, (ts, tier, price) in enumerate(result):
+            if tier == EXPENSIVE:
+                consecutive += 1
+                if consecutive > MAX_EXPENSIVE_SLOTS:
+                    result[i] = (ts, NORMAL, price)
+            else:
+                consecutive = 0
+
+    for i, (ts, tier, price) in enumerate(result):
+        if tier == EXPENSIVE:
+            for j in range(max(0, i - PRE_HEAT_SLOTS), i):
+                if result[j][1] in (CHEAP, NORMAL):
+                    result[j] = (result[j][0], PRE_HEAT, result[j][2])
+
+    return result
+
+
+def current_slot(schedule):
+    """Return (tier, price) for the slot containing now, or
+    (NORMAL, None) if the schedule is empty."""
+    now_utc = datetime.now(timezone.utc)
+    tier = NORMAL
+    price = None
+    for ts, t, p in schedule:
         slot_time = ts.replace(tzinfo=timezone.utc) if ts.tzinfo is None else ts
-        # Check if this is the current or most recent past slot
         if slot_time <= now_utc:
-            current_tier = tier
-            current_price = price
+            tier = t
+            price = p
         else:
             break
-
-    log.info(f"Current slot: tier={current_tier}, price={current_price:.2f} c/kWh" if current_price else f"Current slot: tier={current_tier}")
-
-    # Compute contiguous EXPENSIVE block length around current slot
-    expensive_block_len = 0
-    if current_tier == EXPENSIVE:
-        # Find the index of the current slot
-        current_idx = 0
-        for idx, (ts, tier, price) in enumerate(schedule):
-            slot_time = ts.replace(tzinfo=timezone.utc) if ts.tzinfo is None else ts
-            if slot_time <= now_utc:
-                current_idx = idx
-            else:
-                break
-        # Count backwards to block start
-        start = current_idx
-        while start > 0 and schedule[start - 1][1] == EXPENSIVE:
-            start -= 1
-        # Count forwards to block end
-        end = current_idx
-        while end < len(schedule) - 1 and schedule[end + 1][1] == EXPENSIVE:
-            end += 1
-        expensive_block_len = end - start + 1
-        block_hours = expensive_block_len * 15 / 60
-        log.info(f"EXPENSIVE block: {expensive_block_len} slots ({block_hours:.1f}h)")
-
-    # Base action from tier
-    if current_tier == "PRE_HEAT":
-        setpoint = COMFORT_MAX
-        evu = False
-        boiler_steps = BOILER_STEPS_DEFAULT
-    elif current_tier == EXPENSIVE:
-        setpoint = COMFORT_DEFAULT
-        evu = True
-        # Only disable aux heaters for long blocks or very cold weather
-        if expensive_block_len >= BOILER_DISABLE_MIN_SLOTS:
-            boiler_steps = 0
-        elif outdoor_temp is not None and outdoor_temp < -10:
-            # Between BOILER_COLD_LIMIT and -10°C: short blocks still disable
-            # (the cold-weather safety below will override if < BOILER_COLD_LIMIT)
-            boiler_steps = 0
-        else:
-            boiler_steps = BOILER_STEPS_DEFAULT
-            log.info(f"Short EXPENSIVE block ({expensive_block_len} slots < "
-                     f"{BOILER_DISABLE_MIN_SLOTS}) and outdoor > -10°C — "
-                     f"keeping aux heaters enabled")
-    else:  # CHEAP or NORMAL
-        setpoint = COMFORT_DEFAULT
-        evu = False
-        boiler_steps = BOILER_STEPS_DEFAULT
-
-    # Cold-weather constraints on pre-heating
-    if outdoor_temp is not None and setpoint > COMFORT_DEFAULT:
-        if outdoor_temp < -20:
-            log.info(f"Outdoor {outdoor_temp:.1f}°C < -20°C: no pre-heat")
-            setpoint = COMFORT_DEFAULT
-        elif outdoor_temp < -10:
-            cap = COMFORT_DEFAULT + 1
-            if setpoint > cap:
-                log.info(f"Outdoor {outdoor_temp:.1f}°C < -10°C: cap pre-heat to {cap}°C")
-                setpoint = cap
-
-    # Aux heater safety: never disable when cold or when outdoor temp unknown
-    if boiler_steps < BOILER_STEPS_DEFAULT:
-        if outdoor_temp is None:
-            log.info("Outdoor temp unavailable — keeping aux heaters enabled (fail-safe)")
-            boiler_steps = BOILER_STEPS_DEFAULT
-        elif outdoor_temp < BOILER_COLD_LIMIT:
-            log.info(f"Outdoor {outdoor_temp:.1f}°C < {BOILER_COLD_LIMIT}°C — keeping aux heaters enabled")
-            boiler_steps = BOILER_STEPS_DEFAULT
-
-    # Enforce hard floor
-    setpoint = max(setpoint, COMFORT_MIN)
-
-    return setpoint, evu, boiler_steps
+    return tier, price
 
 
 # ── Decision logging ─────────────────────────────────────────────────────────
 
-def log_decision(write_api, setpoint, evu, boiler_steps, tier, price, outdoor_temp):
-    """Write optimizer decision to InfluxDB for dashboard visualization."""
-    # effective_target was `setpoint - REDUCTION_T if evu else setpoint` back
-    # when we wrote EVU + reduction_t. Those writes are retired so the
-    # firmware applies no reduction; effective_target is simply the setpoint.
-    # Field kept for backwards-compat with existing dashboards.
-    point = Point("heating_optimizer") \
-        .field("setpoint", setpoint) \
-        .field("evu_active", 1 if evu else 0) \
-        .field("boiler_steps", boiler_steps) \
-        .field("tier", tier) \
-        .field("effective_target", setpoint)
-
+def log_decision(write_api, tier, price, outdoor_temp):
+    """Write classification result to InfluxDB."""
+    point = Point("heating_optimizer").field("tier", tier)
     if price is not None:
         point = point.field("price", price)
     if outdoor_temp is not None:
         point = point.field("outdoor_temp", outdoor_temp)
-
     point = point.time(datetime.now(timezone.utc), WritePrecision.S)
-
     try:
         write_api.write(bucket=INFLUXDB_BUCKET, org=INFLUXDB_ORG, record=point)
     except Exception as e:
@@ -530,20 +373,17 @@ def log_decision(write_api, setpoint, evu, boiler_steps, tier, price, outdoor_te
 
 # ── Control loop ─────────────────────────────────────────────────────────────
 
-def check_and_control(query_api, write_api):
-    """Main control cycle: fetch data, classify, apply actions."""
-    global current_setpoint, current_evu, current_boiler_steps, last_change_time
-    # 1. Fetch price forecast
+def check_and_classify(query_api, write_api):
+    """Fetch prices, classify, write current tier."""
     prices = fetch_price_forecast(query_api)
-    if len(prices) < 12:  # less than 3 hours of data
+    if len(prices) < 12:
         log.warning(f"Insufficient price data ({len(prices)} points, need ≥12) — assuming NORMAL")
         return
 
     log.info(f"Fetched {len(prices)} forecast price points")
 
-    # 2. Fetch historical prices for threshold calculation
     historical = fetch_historical_prices(query_api)
-    if len(historical) < 96:  # less than 1 day of history
+    if len(historical) < 96:
         log.warning(f"Insufficient historical data ({len(historical)} points) — using forecast percentiles as fallback")
         historical = sorted(p for _, p in prices)
 
@@ -551,84 +391,36 @@ def check_and_control(query_api, write_api):
     p_expensive_raw = percentile(historical, PRICE_PERCENTILE_EXPENSIVE)
     p_cheap = max(MIN_CHEAP_THRESHOLD, min(MAX_CHEAP_THRESHOLD, p_cheap_raw))
     p_expensive = max(MIN_EXPENSIVE_THRESHOLD, min(MAX_EXPENSIVE_THRESHOLD, p_expensive_raw))
-    # Ensure cheap < expensive (could overlap if history is very narrow)
     if p_cheap >= p_expensive:
         p_cheap = p_expensive * 0.6
     log.info(f"Price thresholds (from {len(historical)} historical points): "
              f"cheap ≤ {p_cheap:.2f} (raw P{PRICE_PERCENTILE_CHEAP:.0f}={p_cheap_raw:.2f}), "
              f"expensive ≥ {p_expensive:.2f} (raw P{PRICE_PERCENTILE_EXPENSIVE:.0f}={p_expensive_raw:.2f}) c/kWh")
 
-    # 3. Fetch outdoor temperature
     outdoor_temp = fetch_outdoor_temperature(query_api)
     if outdoor_temp is not None:
         log.info(f"Outdoor temperature: {outdoor_temp:.1f}°C")
     else:
         log.warning("Outdoor temperature unavailable")
 
-    # 4. Classify prices using historical thresholds
     classified = classify_prices(prices, p_cheap, p_expensive)
-
-    # 5. Apply relative fallback (may add EXPENSIVE slots), filter short blocks, then pre-heat + EVU cap
     schedule = apply_relative_fallback(classified, p_cheap)
     schedule = filter_short_expensive_blocks(schedule)
-    schedule = apply_pre_heat_and_evu_cap(schedule)
+    schedule = apply_pre_heat_and_long_block_cap(schedule)
 
-    # Count tiers for logging
-    tier_counts = {CHEAP: 0, NORMAL: 0, EXPENSIVE: 0, "PRE_HEAT": 0}
+    tier_counts = {CHEAP: 0, NORMAL: 0, EXPENSIVE: 0, PRE_HEAT: 0}
     for _, tier, _ in schedule:
         tier_counts[tier] = tier_counts.get(tier, 0) + 1
     log.info(f"Schedule: {tier_counts[CHEAP]} cheap, {tier_counts[NORMAL]} normal, "
-             f"{tier_counts[EXPENSIVE]} expensive, {tier_counts['PRE_HEAT']} pre-heat slots")
+             f"{tier_counts[EXPENSIVE]} expensive, {tier_counts[PRE_HEAT]} pre-heat slots")
 
-    # 6. Get current action
-    setpoint, evu, boiler_steps = get_current_action(schedule, outdoor_temp)
+    tier, price = current_slot(schedule)
+    if price is not None:
+        log.info(f"Current slot: tier={tier}, price={price:.2f} c/kWh")
+    else:
+        log.info(f"Current slot: tier={tier}")
 
-    # 7. Rate limit
-    elapsed = time.monotonic() - last_change_time
-    if elapsed < MIN_HOLD_MINUTES * 60 and (current_setpoint is not None or current_evu is not None):
-        remaining = MIN_HOLD_MINUTES * 60 - elapsed
-        if setpoint != current_setpoint or evu != current_evu or boiler_steps != current_boiler_steps:
-            log.info(f"Rate limited: {remaining:.0f}s remaining before next change")
-            now_utc = datetime.now(timezone.utc)
-            current_price = None
-            current_tier = NORMAL
-            for ts, tier, price in schedule:
-                slot_time = ts.replace(tzinfo=timezone.utc) if ts.tzinfo is None else ts
-                if slot_time <= now_utc:
-                    current_price = price
-                    current_tier = tier
-            log_decision(write_api, current_setpoint or COMFORT_DEFAULT,
-                         current_evu or False,
-                         current_boiler_steps if current_boiler_steps is not None else BOILER_STEPS_DEFAULT,
-                         current_tier, current_price, outdoor_temp)
-            return
-
-    # 8. All Thermia commands retired. EVU on this unit only reduces the
-    #    target by reduction_t (does NOT block the compressor), and we
-    #    want the publisher's INDR_T bias to be the single tier-driven
-    #    mechanism instead. Setpoint / EVU / boiler_steps are tracked
-    #    here for analytics (log_decision below) but no MQTT is sent.
-    if (setpoint != current_setpoint or evu != current_evu
-            or boiler_steps != current_boiler_steps):
-        last_change_time = time.monotonic()
-    current_setpoint = setpoint
-    current_evu = evu
-    current_boiler_steps = boiler_steps
-
-    boiler_label = {0: "OFF", 1: "3kW", 2: "3+6kW"}.get(boiler_steps, str(boiler_steps))
-    log.info(f"Decision (logged only): setpoint={setpoint}°C, EVU(intended)={'ON' if evu else 'OFF'}, "
-             f"boiler={boiler_label} — INDR_T bias is the only real mechanism")
-
-    # 9. Log decision
-    now_utc = datetime.now(timezone.utc)
-    current_price = None
-    current_tier = NORMAL
-    for ts, tier, price in schedule:
-        slot_time = ts.replace(tzinfo=timezone.utc) if ts.tzinfo is None else ts
-        if slot_time <= now_utc:
-            current_price = price
-            current_tier = tier
-    log_decision(write_api, setpoint, evu, boiler_steps, current_tier, current_price, outdoor_temp)
+    log_decision(write_api, tier, price, outdoor_temp)
 
 
 # ── Main ─────────────────────────────────────────────────────────────────────
@@ -649,23 +441,19 @@ def seconds_until_next_price_boundary(buffer_secs=5):
 
 def main():
     log.info("=" * 60)
-    log.info("Floor Heating Temperature Optimizer")
+    log.info("Spot-price tier classifier (analytics-only)")
     log.info("=" * 60)
-    log.info("Mode:       analytics-only — INDR_T bias from indoor_temp_publisher")
-    log.info("            steers the heat pump; no Thermia register writes.")
-    log.info(f"Setpoints:  min={COMFORT_MIN}, default={COMFORT_DEFAULT}, max={COMFORT_MAX}")
-    log.info(f"Reduction:  {REDUCTION_T}°C (effective min = {COMFORT_DEFAULT - REDUCTION_T}°C)")
-    log.info(f"Boiler:     default={BOILER_STEPS_DEFAULT} steps, disabled during expensive (outdoor > {BOILER_COLD_LIMIT}°C)")
+    log.info("Mode:        read-only — writes only `heating_optimizer.tier|price|outdoor_temp`")
+    log.info("             Heat-pump control is via INDR_T bias in indoor_temp_publisher.")
     season = "heating" if is_heating_season() else "non-heating"
     log.info(f"Percentiles: cheap ≤ P{PRICE_PERCENTILE_CHEAP:.0f}, expensive ≥ P{PRICE_PERCENTILE_EXPENSIVE:.0f} (seasonal, currently {season})")
-    log.info(f"Seasons:    heating Oct {HEATING_SEASON_START_DAY}–Mar {HEATING_SEASON_END_DAY}, non-heating Mar {HEATING_SEASON_END_DAY}–Oct {HEATING_SEASON_START_DAY}")
-    log.info(f"Safety clamps: cheap [{MIN_CHEAP_THRESHOLD}–{MAX_CHEAP_THRESHOLD}], expensive [{MIN_EXPENSIVE_THRESHOLD}–{MAX_EXPENSIVE_THRESHOLD}] c/kWh")
-    log.info(f"Pre-heat:   {PRE_HEAT_HOURS}h ({PRE_HEAT_SLOTS} slots)")
-    log.info(f"Max EVU:    {MAX_EVU_HOURS}h ({MAX_EVU_SLOTS} slots) consecutive")
-    log.info(f"Rel spread: {MIN_RELATIVE_SPREAD} c/kWh min for relative fallback")
-    log.info(f"Min block:  {MIN_EXPENSIVE_SLOTS} slots ({MIN_EXPENSIVE_SLOTS * 15}min) — shorter EXPENSIVE blocks filtered")
-    log.info(f"Boiler gate: {BOILER_DISABLE_MIN_HOURS}h ({BOILER_DISABLE_MIN_SLOTS} slots) — shorter blocks keep aux heaters")
-    log.info(f"Interval:   15-min price boundaries (+5s buffer), hold: {MIN_HOLD_MINUTES}min")
+    log.info(f"Seasons:     heating Oct {HEATING_SEASON_START_DAY}–Mar {HEATING_SEASON_END_DAY}, non-heating Mar {HEATING_SEASON_END_DAY}–Oct {HEATING_SEASON_START_DAY}")
+    log.info(f"Clamps:      cheap [{MIN_CHEAP_THRESHOLD}–{MAX_CHEAP_THRESHOLD}], expensive [{MIN_EXPENSIVE_THRESHOLD}–{MAX_EXPENSIVE_THRESHOLD}] c/kWh")
+    log.info(f"Pre-heat:    {PRE_HEAT_HOURS}h ({PRE_HEAT_SLOTS} slots) before EXPENSIVE")
+    log.info(f"Long block:  cap at {MAX_EXPENSIVE_HOURS}h ({MAX_EXPENSIVE_SLOTS} slots) — tail reclassified to NORMAL")
+    log.info(f"Min block:   {MIN_EXPENSIVE_SLOTS} slots ({MIN_EXPENSIVE_SLOTS * 15}min) — shorter EXPENSIVE blocks downgraded")
+    log.info(f"Rel spread:  {MIN_RELATIVE_SPREAD} c/kWh min for relative fallback")
+    log.info(f"Interval:    aligned to 15-min price slot boundaries (+5s buffer)")
     log.info("-" * 60)
 
     signal.signal(signal.SIGINT, signal_handler)
@@ -682,15 +470,14 @@ def main():
     query_api = influx_client.query_api()
     write_api = influx_client.write_api(write_options=SYNCHRONOUS)
 
-    # Run immediately, then at each 15-minute price slot boundary
-    check_and_control(query_api, write_api)
+    check_and_classify(query_api, write_api)
 
     while running:
         secs = seconds_until_next_price_boundary()
         log.info(f"Sleeping {secs:.0f}s until next price slot boundary")
         sleep_interruptible(secs)
         if running:
-            check_and_control(query_api, write_api)
+            check_and_classify(query_api, write_api)
 
     influx_client.close()
     log.info("Shutdown complete")

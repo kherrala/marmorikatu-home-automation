@@ -351,31 +351,23 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # Spot-price tier classifier (analytics-only). Writes
+  # heating_optimizer.{tier,price,outdoor_temp} to InfluxDB. Heat pump is
+  # actually steered by indoor_temp_publisher's INDR_T bias — this service
+  # no longer commands the unit.
   heating:
     build:
       context: .
       dockerfile: Dockerfile.heating
     container_name: marmorikatu-heating
     environment:
-      - MQTT_BROKER=freenas.kherrala.fi
-      - MQTT_PORT=1883
-      - MQTT_WRITE_TOPIC=ThermIQ/marmorikatu/write
-      - MQTT_SET_TOPIC=ThermIQ/marmorikatu/set
       - INFLUXDB_URL=http://influxdb:8086
       - INFLUXDB_TOKEN=wago-secret-token
       - INFLUXDB_ORG=wago
       - INFLUXDB_BUCKET=building_automation
-      - COMFORT_MIN=20
-      - COMFORT_DEFAULT=22
-      - COMFORT_MAX=23
-      - REDUCTION_T=3
       - PRICE_PERCENTILE_CHEAP=25
       - PRICE_PERCENTILE_EXPENSIVE=75
       - PRE_HEAT_HOURS=2
-      - BOILER_STEPS_DEFAULT=2
-      - BOILER_COLD_LIMIT=-15
-      - CHECK_INTERVAL=300
-      - MIN_HOLD_MINUTES=15
     depends_on:
       influxdb:
         condition: service_healthy
