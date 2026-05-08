@@ -1143,8 +1143,12 @@
                 }
               },
               {
+                "id": "custom.fillOpacity",
+                "value": 20
+              },
+              {
                 "id": "displayName",
-                "value": "Lämpöteho (sähkö × COP 3.5)"
+                "value": "Lämpöteho yhteensä (kompr × COP + lisävastus)"
               }
             ]
           },
@@ -1177,7 +1181,79 @@
               },
               {
                 "id": "displayName",
-                "value": "Sähköteho (mittari)"
+                "value": "Sähköteho — kompressori"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "C"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "purple",
+                  "mode": "fixed"
+                }
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 1
+              },
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "displayName",
+                "value": "COP (dyn)"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "D"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "red",
+                  "mode": "fixed"
+                }
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 15
+              },
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "dash": [
+                    2,
+                    4
+                  ],
+                  "fill": "dash"
+                }
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 1
+              },
+              {
+                "id": "displayName",
+                "value": "Sähköteho — lisävastus"
               }
             ]
           }
@@ -1212,7 +1288,7 @@
             "type": "influxdb",
             "uid": "influxdb"
           },
-          "query": "// Thermal output estimate: electrical input × COP_ESTIMATE (3.5)\nfrom(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvac\" and r.meter == \"heatpump\" and r._field == \"Total_Active_Power\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> map(fn: (r) => ({r with _value: r._value * 3.5, _field: \"thermal_power\"}))",
+          "query": "import \"join\"\n\n// Total thermal output:\n//   compressor electrical × dynamic COP   (heat pump duty)\n// + aux electrical × 1.0                  (resistance heaters convert 1:1)\n// COP_dyn = 1.965 * (supply - return) / (1.77 + (supply - 35) * 0.5/15)\ntemps = from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"temperature\")\n  |> filter(fn: (r) => r._field == \"supply_temp\" or r._field == \"return_temp\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> group()\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> filter(fn: (r) => exists r.supply_temp and exists r.return_temp)\n\nelec_hp = from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvac\" and r.meter == \"heatpump\" and r._field == \"Total_Active_Power\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> keep(columns: [\"_time\", \"_value\"])\n\nelec_aux = from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvac\" and r.meter == \"extra\" and r._field == \"Total_Active_Power\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> keep(columns: [\"_time\", \"_value\"])\n\nhp_part = join.inner(\n  left: temps,\n  right: elec_hp,\n  on: (l, r) => l._time == r._time,\n  as: (l, r) => ({\n    _time: l._time,\n    supply: l.supply_temp,\n    ret: l.return_temp,\n    elec_hp: r._value,\n  }),\n)\n  |> map(fn: (r) => ({\n    _time: r._time,\n    _value: r.elec_hp * (1.965 * (r.supply - r.ret) / (1.77 + (r.supply - 35.0) * 0.5 / 15.0)),\n  }))\n  |> keep(columns: [\"_time\", \"_value\"])\n\njoin.inner(\n  left: hp_part,\n  right: elec_aux,\n  on: (l, r) => l._time == r._time,\n  as: (l, r) => ({_time: l._time, _value: l._value + r._value, _field: \"thermal_power\"}),\n)\n  |> filter(fn: (r) => r._value >= 0.0 and r._value <= 25.0)",
           "refId": "A"
         },
         {
@@ -1220,12 +1296,28 @@
             "type": "influxdb",
             "uid": "influxdb"
           },
-          "query": "// Raw electrical input from the heat-pump OR-WE-517 meter\nfrom(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvac\" and r.meter == \"heatpump\" and r._field == \"Total_Active_Power\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)",
+          "query": "// Compressor electrical input (heat-pump OR-WE-517 meter)\nfrom(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvac\" and r.meter == \"heatpump\" and r._field == \"Total_Active_Power\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)",
           "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
+          "query": "// Aux-heater electrical input (extra OR-WE-517 meter)\nfrom(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvac\" and r.meter == \"extra\" and r._field == \"Total_Active_Power\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)",
+          "refId": "D"
+        },
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
+          "query": "// Dynamic COP from supply/return + compressor power model (right axis).\nfrom(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"thermia\" and r.data_type == \"temperature\")\n  |> filter(fn: (r) => r._field == \"supply_temp\" or r._field == \"return_temp\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> group()\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> filter(fn: (r) => exists r.supply_temp and exists r.return_temp)\n  |> map(fn: (r) => ({\n    _time: r._time,\n    _value: 1.965 * (r.supply_temp - r.return_temp) / (1.77 + (r.supply_temp - 35.0) * 0.5 / 15.0),\n    _field: \"COP\",\n  }))\n  |> filter(fn: (r) => r._value >= 0.0 and r._value <= 8.0)",
+          "refId": "C"
         }
       ],
-      "title": "Lämmitysteho (mittari × COP)",
-      "description": "Lämpöpumpun lämpöteho arvioituna OR-WE-517-energiamittarista (sähköteho × COP-arvio 3.5). Aiempi versio käytti meno- ja paluuveden ΔT-laskentaa, jossa virtausoletus aiheutti virhettä.",
+      "title": "Lämmitysteho (mittari × dyn COP)",
+      "description": "Lämpöteho = sähköteho (OR-WE-517 mittari) × COP_dyn, missä COP_dyn = 1.965·(supply−return) / (1.77 + (supply−35)·0.5/15) — Diplomat 8 -kompressorimalli rinnan mittarisignaalin kanssa. Sama COP-kaava kuin etusivun 'COP' KPI:llä — ei kiinteää arvoa.",
       "type": "timeseries"
     },
     {
@@ -1544,5 +1636,5 @@
   "timezone": "Europe/Helsinki",
   "title": "Lämmityksen ohjaus",
   "uid": "heating-control",
-  "version": 10
+  "version": 11
 }
