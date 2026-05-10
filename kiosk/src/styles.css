@@ -8,6 +8,19 @@ html, body {
   font-family: sans-serif;
 }
 
+/* PWA standalone mode: paint the safe-area inset (status bar, home
+   indicator) in the same #111 background so the OS overlays sit on top
+   of seamless darkness, not a contrasting strip. The status bar text
+   stays white via apple-mobile-web-app-status-bar-style=black-translucent.
+   In a regular browser tab these env() values resolve to 0 and nothing
+   changes. */
+@media all {
+  body {
+    padding-top: env(safe-area-inset-top, 0);
+    padding-bottom: env(safe-area-inset-bottom, 0);
+  }
+}
+
 /* -- Slides ----------------------------------------------------------- */
 #slides { position: fixed; inset: 0; }
 

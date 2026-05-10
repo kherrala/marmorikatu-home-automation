@@ -343,22 +343,50 @@ TIER_TEXT_FI = {
     "NORMAL":    ("Sähkön hinta on normaalitasolla.",          2, "tier"),
 }
 
-CO2_TEXT_FI = {
-    "elevated":  "{room} on hieman tunkkainen, hiilidioksidipitoisuus on noussut.",
-    "high":      "{room} on tunkkainen, hiilidioksidipitoisuus on korkealla.",
-    "very_high": "{room} on hyvin tunkkainen, hiilidioksidipitoisuus on erittäin korkea.",
-    "good":      "{room} on raikastunut.",
-}
+CO2_RANK = {"good": 0, "elevated": 1, "high": 2, "very_high": 3}
 
+# Texts are direction-aware: "{room} {trend}, hiilidioksidipitoisuus {level}."
+# trend is filled in based on whether the new class is worse or better than
+# the previous one ("ilma tunkkanee" vs "ilma raikastuu"). Keeping a single
+# template per (level, direction) cell avoids combinatorial bloat.
+CO2_LEVEL_FI = {
+    "good":      "raikas",
+    "elevated":  "hieman koholla",
+    "high":      "korkealla",
+    "very_high": "erittäin korkea",
+}
 CO2_PRIORITY = {"elevated": 2, "high": 1, "very_high": 1, "good": 2}
 
-PM25_TEXT_FI = {
-    "elevated":  "{room} pienhiukkaspitoisuus on noussut.",
-    "high":      "{room} pienhiukkaspitoisuus on korkealla.",
-    "good":      "{room} pienhiukkaspitoisuus on jälleen normaali.",
+PM25_RANK = {"good": 0, "elevated": 1, "high": 2}
+PM25_LEVEL_FI = {
+    "good":      "normaali",
+    "elevated":  "koholla",
+    "high":      "korkealla",
 }
-
 PM25_PRIORITY = {"elevated": 2, "high": 1, "good": 2}
+
+
+def _co2_message(sensor: str, prev: str, cls: str) -> str:
+    """Direction-aware CO2 announcement."""
+    level = CO2_LEVEL_FI[cls]
+    if CO2_RANK[cls] > CO2_RANK[prev]:
+        if cls == "good":
+            return f"{sensor} on raikastunut."  # unreachable but defensive
+        trend = "tunkkanee"
+    else:
+        if cls == "good":
+            return f"{sensor} on raikastunut."
+        trend = "raikastuu, mutta on edelleen tunkkainen"
+    return f"{sensor} {trend}, hiilidioksidipitoisuus on {level}."
+
+
+def _pm25_message(sensor: str, prev: str, cls: str) -> str:
+    level = PM25_LEVEL_FI[cls]
+    if PM25_RANK[cls] > PM25_RANK[prev]:
+        return f"{sensor} pienhiukkaspitoisuus nousee, on {level}."
+    if cls == "good":
+        return f"{sensor} pienhiukkaspitoisuus on palannut normaaliksi."
+    return f"{sensor} pienhiukkaspitoisuus laskee, on edelleen {level}."
 
 SAUNA_TEXT_FI = {
     "heating":  ("Sauna on lämpiämässä.",                  1),
@@ -556,7 +584,9 @@ def tick(infl: Influx, st: TickState, *, bootstrap: bool = False) -> None:
                            tier_ts.timestamp()), min_gap_s=600)
         st.tier = tier
 
-    # --- Air quality (CO2 + PM2.5 per Ruuvi sensor).
+    # --- Air quality (CO2 + PM2.5 per Ruuvi sensor). Emit on every class
+    # transition — both worsening AND improving — so the user knows when the
+    # air has cleared, not just when it got bad.
     aq = infl.latest_air_quality()
     for sensor, slot in aq.items():
         ts = slot["ts"].timestamp()
@@ -564,26 +594,19 @@ def tick(infl: Influx, st: TickState, *, bootstrap: bool = False) -> None:
             cls = _co2_class(slot["co2"])
             prev = st.co2_class.get(sensor, "")
             if not bootstrap and cls != prev and prev:
-                tmpl = CO2_TEXT_FI.get(cls)
                 prio = CO2_PRIORITY.get(cls, 2)
-                # Only announce when crossing INTO a worse class, OR back to good.
-                worsened = {"elevated": 1, "high": 2, "very_high": 3, "good": 0}
-                if worsened.get(cls, 0) > worsened.get(prev, 0) or cls == "good":
-                    text = tmpl.format(room=sensor)
-                    emit(Event(text, f"co2_{cls}", prio, f"co2:{sensor}", ts),
-                         min_gap_s=900)
+                text = _co2_message(sensor, prev, cls)
+                emit(Event(text, f"co2_{cls}", prio, f"co2:{sensor}", ts),
+                     min_gap_s=900)
             st.co2_class[sensor] = cls
         if "pm25" in slot:
             cls = _pm25_class(slot["pm25"])
             prev = st.pm25_class.get(sensor, "")
             if not bootstrap and cls != prev and prev:
-                tmpl = PM25_TEXT_FI.get(cls)
                 prio = PM25_PRIORITY.get(cls, 2)
-                worsened = {"elevated": 1, "high": 2, "good": 0}
-                if worsened.get(cls, 0) > worsened.get(prev, 0) or cls == "good":
-                    text = tmpl.format(room=sensor)
-                    emit(Event(text, f"pm25_{cls}", prio, f"pm25:{sensor}", ts),
-                         min_gap_s=900)
+                text = _pm25_message(sensor, prev, cls)
+                emit(Event(text, f"pm25_{cls}", prio, f"pm25:{sensor}", ts),
+                     min_gap_s=900)
             st.pm25_class[sensor] = cls
 
     # --- Light raw on/off (verbose / debug).

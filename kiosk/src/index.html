@@ -2,7 +2,14 @@
 <html lang="fi">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <!--
+    viewport-fit=cover lets the page content extend under the iPad's safe
+    areas (notch, home-indicator, status bar). Combined with the dark
+    background and apple-mobile-web-app-status-bar-style=black-translucent,
+    the system status bar's clock/battery glyphs sit directly on top of the
+    kiosk's own #111 background — no separate-coloured strip at the top.
+  -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>Marmorikatu</title>
 
   <!--
