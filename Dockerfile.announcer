@@ -1,0 +1,10 @@
+FROM python:3.12-slim
+
+WORKDIR /app
+
+RUN pip install --no-cache-dir influxdb-client
+
+COPY scripts/announcer.py /app/
+COPY scripts/light_labels.py /app/
+
+CMD ["python", "-u", "announcer.py"]

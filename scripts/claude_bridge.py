@@ -1259,6 +1259,122 @@ async def cached_report_endpoint(request: Request) -> JSONResponse:
     return JSONResponse({"text": "", "audio": []})
 
 
+# -- Announcement broker --------------------------------------------------------
+# Push-channel from backend (announcer.py) to all connected kiosks. Single
+# in-memory broker — kiosks subscribe via SSE, the announcer service POSTs new
+# events. A small ring buffer lets a kiosk that reconnects within REPLAY_WINDOW
+# pick up events it missed (Last-Event-ID header).
+
+_ANNOUNCE_PUSH_TOKEN = os.environ.get("ANNOUNCE_PUSH_TOKEN", "")
+_ANNOUNCE_RING_SIZE = int(os.environ.get("ANNOUNCE_RING_SIZE", "32"))
+_ANNOUNCE_KEEPALIVE_SEC = float(os.environ.get("ANNOUNCE_KEEPALIVE_SEC", "20"))
+
+_announce_subscribers: set[asyncio.Queue] = set()
+_announce_ring: deque = deque(maxlen=_ANNOUNCE_RING_SIZE)
+_announce_seq: int = 0
+_announce_lock = asyncio.Lock()
+
+
+async def _broadcast_announcement(event: dict) -> None:
+    """Append to ring buffer and fan out to every connected SSE subscriber."""
+    global _announce_seq
+    async with _announce_lock:
+        _announce_seq += 1
+        event = {**event, "id": _announce_seq}
+        _announce_ring.append(event)
+        targets = list(_announce_subscribers)
+    for q in targets:
+        try:
+            q.put_nowait(event)
+        except asyncio.QueueFull:
+            log.warning("Announcement subscriber queue full; dropping event id=%d", event["id"])
+
+
+async def announce_push_endpoint(request: Request) -> JSONResponse:
+    """POST /announcements/push — internal endpoint for announcer.py.
+
+    Body: {"text": "...", "kind": "...", "priority": 0..3, "key": "...", "ts": <epoch>}
+      - text: Finnish sentence to speak
+      - kind: short event class (hvac_freezing, sauna_on, light_on, ...)
+      - priority: 0=critical, 1=normal, 2=verbose, 3=debug (advisory)
+      - key: dedup key — kiosk replaces older queued items with same key
+      - ts:  source-side epoch seconds (optional)
+
+    Auth: if ANNOUNCE_PUSH_TOKEN env is set, the request must carry
+    X-Announce-Token matching it. Defaults to open inside the docker network.
+    """
+    if _ANNOUNCE_PUSH_TOKEN:
+        if request.headers.get("x-announce-token", "") != _ANNOUNCE_PUSH_TOKEN:
+            return JSONResponse({"error": "forbidden"}, status_code=403)
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "invalid json"}, status_code=400)
+
+    text = (body.get("text") or "").strip()
+    if not text:
+        return JSONResponse({"error": "text required"}, status_code=400)
+
+    event = {
+        "text": text,
+        "kind": str(body.get("kind") or "info"),
+        "priority": int(body.get("priority") or 1),
+        "key": str(body.get("key") or ""),
+        "ts": float(body.get("ts") or 0) or None,
+    }
+    await _broadcast_announcement(event)
+    return JSONResponse({"ok": True, "id": _announce_seq, "subscribers": len(_announce_subscribers)})
+
+
+async def announce_stream_endpoint(request: Request) -> Response:
+    """GET /announcements/stream — SSE feed of announcement events.
+
+    Standard EventSource semantics: each line `data: <json>\\n\\n` is one
+    announcement. A `:keepalive` comment goes out every ANNOUNCE_KEEPALIVE_SEC
+    so nginx (default 60s read timeout, 120s here) doesn't drop the connection.
+
+    Replay: if the client sends `Last-Event-ID: <n>`, we replay any ring-buffer
+    events with id > n before streaming live ones.
+    """
+    queue: asyncio.Queue = asyncio.Queue(maxsize=64)
+
+    last_id = 0
+    raw_last = request.headers.get("last-event-id", "")
+    if raw_last.isdigit():
+        last_id = int(raw_last)
+
+    # Snapshot ring + register subscriber atomically so we don't miss an event
+    # that lands between the replay snapshot and the subscription.
+    async with _announce_lock:
+        replay = [e for e in _announce_ring if e["id"] > last_id]
+        _announce_subscribers.add(queue)
+
+    async def gen():
+        try:
+            for ev in replay:
+                yield f"id: {ev['id']}\ndata: {json.dumps(ev, ensure_ascii=False)}\n\n"
+            while True:
+                try:
+                    ev = await asyncio.wait_for(queue.get(), timeout=_ANNOUNCE_KEEPALIVE_SEC)
+                except asyncio.TimeoutError:
+                    yield ": keepalive\n\n"
+                    continue
+                yield f"id: {ev['id']}\ndata: {json.dumps(ev, ensure_ascii=False)}\n\n"
+        finally:
+            async with _announce_lock:
+                _announce_subscribers.discard(queue)
+
+    return StreamingResponse(
+        gen(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
+
+
 @asynccontextmanager
 async def lifespan(app):
     """Start background MCP connections, LLM clients, and precache loop."""
@@ -1292,6 +1408,8 @@ app = Starlette(
         Route("/cached/greeting", cached_greeting_endpoint),
         Route("/cached/quote", cached_quote_endpoint),
         Route("/cached/report", cached_report_endpoint),
+        Route("/announcements/stream", announce_stream_endpoint),
+        Route("/announcements/push", announce_push_endpoint, methods=["POST"]),
         Route("/debug", debug_endpoint, methods=["GET", "POST"]),
         Route("/health", health_endpoint),
     ],

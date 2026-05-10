@@ -407,6 +407,35 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # Kiosk announcer: polls InfluxDB for state changes (HVAC alarms, sauna,
+  # spot-price tier transitions, lights_optimizer decisions, air quality)
+  # and pushes Finnish-language announcements to claude-bridge's SSE channel
+  # so the kiosk speaks them even outside the camera/face greeting flow.
+  # Quiet hours and the morning digest are enforced on the kiosk side.
+  announcer:
+    build:
+      context: .
+      dockerfile: Dockerfile.announcer
+    container_name: marmorikatu-announcer
+    environment:
+      - INFLUXDB_URL=http://influxdb:8086
+      - INFLUXDB_TOKEN=wago-secret-token
+      - INFLUXDB_ORG=wago
+      - INFLUXDB_BUCKET=building_automation
+      - BRIDGE_PUSH_URL=http://claude-bridge:3002/announcements/push
+      # 0=critical only, 1=normal, 2=verbose, 3=debug-every-light.
+      # Initial rollout: max verbosity to surface every event we know how to
+      # detect. Drop to 2 (or 1) once the user has tuned out the noise.
+      - ANNOUNCE_VERBOSITY=3
+      - ANNOUNCE_POLL_INTERVAL=30
+      - ANNOUNCE_MAX_PER_TICK=5
+    depends_on:
+      influxdb:
+        condition: service_healthy
+      claude-bridge:
+        condition: service_started
+    restart: unless-stopped
+
   backup:
     build:
       context: .

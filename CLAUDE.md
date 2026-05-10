@@ -87,3 +87,9 @@ See [docs/heating-optimizer.md](docs/heating-optimizer.md) for the tier algorith
 The `lights-optimizer` service applies per-light auto-off rules and a few special-case auto-on/off blocks: front-porch sunset schedule (idx 47), sauna laude LED temperature hysteresis (idx 4), and CO₂-driven kitchen + living-room ceiling lights (idx 40, 54) gated on a sun-elevation darkness threshold with user-dismissal-until-tomorrow logic. Decisions log to InfluxDB measurement `lights_optimizer`.
 
 See [docs/lights-optimizer.md](docs/lights-optimizer.md) for full policy table, special-case block details, CO₂ classification thresholds, and tunable env vars.
+
+## Kiosk Announcer
+
+The `announcer` service polls InfluxDB for state changes (HVAC freezing alarms, sauna on/off, spot-price tier transitions, lights_optimizer decisions, CO₂/PM2.5 air-quality class transitions, raw light on/off) and pushes Finnish-language announcements to `claude-bridge` over a `/announcements/push` ingress. Connected kiosks subscribe via `/announcements/stream` (SSE) and speak the events through the existing Piper TTS path **without** requiring a face-detection greeting. Verbosity is controlled by `ANNOUNCE_VERBOSITY` (0=critical only, 1=normal, 2=verbose, 3=every individual light) — defaults to 3 for the initial rollout. The kiosk enforces quiet hours (default 22:00–07:00 local) and replays the top 3 events from an overnight digest after the next idle window in the morning.
+
+See [docs/announcer.md](docs/announcer.md) for event classes, priority tiers, env vars, tuning guidance, and operational commands.

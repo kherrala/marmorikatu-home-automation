@@ -35,6 +35,7 @@ import {
 } from './greeting/greeting.js';
 import { setConversationHandlers } from './greeting/conversation.js';
 import { initVersionCheck } from './version/auto-reload.js';
+import { initAnnouncer } from './announcements/announcer.js';
 import {
   startOverlay, startLabel, startSublabel, initSpinner, initError, cameraDot,
   greetingCard,
@@ -179,3 +180,12 @@ document.getElementById('skip-btn')?.addEventListener('click', (e) => {
 //  VERSION AUTO-RELOAD
 // =========================================================================
 initVersionCheck();
+
+// =========================================================================
+//  ANNOUNCEMENTS (state-change events pushed from backend via SSE)
+// =========================================================================
+// Subscribes to /api/chat/announcements/stream so the kiosk speaks events
+// (HVAC alarms, sauna state, expensive electricity, lights_optimizer
+// decisions, …) without requiring a face-detection greeting. Quiet hours
+// and morning digest replay are enforced inside this module.
+initAnnouncer();
