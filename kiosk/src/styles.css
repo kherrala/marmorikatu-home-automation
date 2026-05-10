@@ -90,6 +90,13 @@ html, body {
   font-size: 22px;
   font-style: italic;
 }
+/* Override the .ann-empty / .ann-list display: flex rules so the HTML
+   `hidden` attribute actually hides the element. Without these the empty-
+   state pane stays visible alongside the populated list. */
+#announcements-slide .ann-empty[hidden],
+#announcements-slide .ann-list[hidden] {
+  display: none;
+}
 #announcements-slide .ann-item {
   display: grid;
   grid-template-columns: 14px 84px 1fr;
