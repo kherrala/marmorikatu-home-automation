@@ -88,6 +88,26 @@ SAUNA_OFF_C     = float(os.environ.get("ANNOUNCE_SAUNA_OFF_C",     "40"))
 SAUNA_WASTE_AFTER_MIN  = int(os.environ.get("ANNOUNCE_SAUNA_WASTE_AFTER_MIN",  "120"))
 SAUNA_WASTE_REPEAT_MIN = int(os.environ.get("ANNOUNCE_SAUNA_WASTE_REPEAT_MIN", "15"))
 
+# Indoor temperature thresholds (°C). Hysteresis prevents flapping.
+INDOOR_TEMP_LOW_C  = float(os.environ.get("ANNOUNCE_INDOOR_LOW_C",  "18.0"))
+INDOOR_TEMP_HIGH_C = float(os.environ.get("ANNOUNCE_INDOOR_HIGH_C", "26.0"))
+INDOOR_TEMP_HYST_C = float(os.environ.get("ANNOUNCE_INDOOR_HYST_C", "0.5"))
+
+# Outdoor temperature class boundaries (°C). Crossings fire announcements.
+OUTDOOR_FREEZE_C = float(os.environ.get("ANNOUNCE_OUTDOOR_FREEZE_C", "-5"))
+OUTDOOR_DEEP_C   = float(os.environ.get("ANNOUNCE_OUTDOOR_DEEP_C",   "-15"))
+OUTDOOR_THAW_C   = float(os.environ.get("ANNOUNCE_OUTDOOR_THAW_C",   "5"))
+
+# PLC heartbeat: alarm if no plc_publisher write seen in N seconds.
+PLC_HEARTBEAT_LOSS_S = int(os.environ.get("ANNOUNCE_PLC_HEARTBEAT_LOSS_S", "180"))
+
+# LTO heat-recovery efficiency: warn when sustained below LOW_RATIO for
+# LOW_DURATION_MIN. The sensible-LTO formula needs a meaningful
+# (Poistoilma − Ulkolampotila) gap; we skip when |gap| < MIN_DELTA_C.
+LTO_LOW_RATIO        = float(os.environ.get("ANNOUNCE_LTO_LOW_RATIO",        "0.60"))
+LTO_LOW_DURATION_MIN = int(os.environ.get("ANNOUNCE_LTO_LOW_DURATION_MIN", "15"))
+LTO_MIN_DELTA_C      = float(os.environ.get("ANNOUNCE_LTO_MIN_DELTA_C",     "5"))
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("announcer")
 
@@ -292,6 +312,107 @@ class Influx:
                         pass
         return tier, price, ts
 
+    def latest_thermia_aux(self) -> dict[str, tuple[float, datetime]]:
+        """Latest aux-heater states from Thermia. Boolean fields (1/0)."""
+        flux = (
+            f'from(bucket: "{INFLUXDB_BUCKET}")\n'
+            f'  |> range(start: -10m)\n'
+            f'  |> filter(fn: (r) => r._measurement == "thermia" '
+            f'and (r._field == "aux_heater_3kw" or r._field == "aux_heater_6kw"))\n'
+            f'  |> last()\n'
+        )
+        out: dict[str, tuple[float, datetime]] = {}
+        for table in self._query(flux):
+            for rec in table.records:
+                f, v, t = rec.get_field(), rec.get_value(), rec.get_time()
+                if f and v is not None and t is not None:
+                    try:
+                        out[f] = (float(v), t)
+                    except (TypeError, ValueError):
+                        pass
+        return out
+
+    def latest_outdoor_temp(self) -> tuple[float | None, datetime | None]:
+        flux = (
+            f'from(bucket: "{INFLUXDB_BUCKET}")\n'
+            f'  |> range(start: -15m)\n'
+            f'  |> filter(fn: (r) => r._measurement == "hvac" and r._field == "Ulkolampotila")\n'
+            f'  |> last()\n'
+        )
+        for table in self._query(flux):
+            for rec in table.records:
+                try:
+                    return float(rec.get_value()), rec.get_time()
+                except (TypeError, ValueError):
+                    pass
+        return None, None
+
+    def latest_room_temps(self) -> dict[str, tuple[float, datetime]]:
+        """Selected indoor room temperatures from the rooms measurement."""
+        keys = list(ROOM_LABELS_FI.keys())
+        pred = " or ".join([f'r._field == "{k}"' for k in keys])
+        flux = (
+            f'from(bucket: "{INFLUXDB_BUCKET}")\n'
+            f'  |> range(start: -10m)\n'
+            f'  |> filter(fn: (r) => r._measurement == "rooms" and ({pred}))\n'
+            f'  |> last()\n'
+        )
+        out: dict[str, tuple[float, datetime]] = {}
+        for table in self._query(flux):
+            for rec in table.records:
+                f, v, t = rec.get_field(), rec.get_value(), rec.get_time()
+                if f and v is not None and t is not None:
+                    try:
+                        out[f] = (float(v), t)
+                    except (TypeError, ValueError):
+                        pass
+        return out
+
+    def latest_plc_heartbeat(self) -> datetime | None:
+        """Latest write time of any plc_publisher field — liveness signal."""
+        flux = (
+            f'from(bucket: "{INFLUXDB_BUCKET}")\n'
+            f'  |> range(start: -1h)\n'
+            f'  |> filter(fn: (r) => r._measurement == "plc_publisher")\n'
+            f'  |> last()\n'
+        )
+        latest: datetime | None = None
+        for table in self._query(flux):
+            for rec in table.records:
+                t = rec.get_time()
+                if t is not None and (latest is None or t > latest):
+                    latest = t
+        return latest
+
+    def latest_lto_efficiency(self) -> float | None:
+        """Sensible LTO efficiency = (Tuloilma_ennen − Ulko) / (Poisto − Ulko)."""
+        flux = (
+            f'from(bucket: "{INFLUXDB_BUCKET}")\n'
+            f'  |> range(start: -10m)\n'
+            f'  |> filter(fn: (r) => r._measurement == "hvac" '
+            f'and (r._field == "Tuloilma_ennen_lammitysta" '
+            f'or r._field == "Poistoilma" or r._field == "Ulkolampotila"))\n'
+            f'  |> last()\n'
+        )
+        vals: dict[str, float] = {}
+        for table in self._query(flux):
+            for rec in table.records:
+                f, v = rec.get_field(), rec.get_value()
+                if f and v is not None:
+                    try:
+                        vals[f] = float(v)
+                    except (TypeError, ValueError):
+                        pass
+        tu = vals.get("Tuloilma_ennen_lammitysta")
+        po = vals.get("Poistoilma")
+        ul = vals.get("Ulkolampotila")
+        if tu is None or po is None or ul is None:
+            return None
+        denom = po - ul
+        if abs(denom) < LTO_MIN_DELTA_C:
+            return None  # gap too small for the formula to be meaningful
+        return (tu - ul) / denom
+
     def lights_optimizer_decisions_since(self, since: datetime) -> list[dict]:
         """Return all lights_optimizer rows after `since`, deduplicated per
         (light_id, decision) keeping the most recent."""
@@ -395,6 +516,22 @@ SAUNA_TEXT_FI = {
     "off":      ("Sauna on jäähtynyt.",                    2),
 }
 
+# Spoken-form labels for the indoor temperature sensors we monitor.
+# Skips Kellari + Kellari_eteinen — basement runs intentionally cooler.
+ROOM_LABELS_FI = {
+    "MH_Aarni":     "Aarnin huone",
+    "MH_Seela":     "Seelan huone",
+    "MH_aikuiset":  "Aikuisten makuuhuone",
+    "MH_alakerta":  "Alakerran makuuhuone",
+    "Aatu":         "Aadun huone",
+    "Onni":         "Onnin huone",
+    "Essi":         "Essin huone",
+    "Eteinen":      "Eteinen",
+    "Olohuone":     "Olohuone",
+    "Keittio":      "Keittiö",
+    "Ylakerran_aula": "Yläkerran aula",
+}
+
 # Map raw lights_optimizer reason strings → spoken description + priority.
 # Many reasons are diagnostic-only ("hold", "manual_only") — only call out the
 # user-relevant transitions (auto-off fired, sauna laude on/off, CO2 auto-on/off,
@@ -482,6 +619,18 @@ class TickState:
         # recently left {off, cooling}. Cleared once the heater goes off.
         self.sauna_session_start: datetime | None = None
         self.sauna_warning_last:  datetime | None = None
+        # Thermia auxiliary-heater state (aux_heater_3kw / aux_heater_6kw).
+        self.aux_heater_state: dict[str, float] = {}
+        # Outdoor temperature class (warm / cold / freeze / deep).
+        self.outdoor_class: str = ""
+        # Indoor room temperature class per sensor (low / normal / high).
+        self.room_temp_class: dict[str, str] = {}
+        # PLC liveness — true when we've already announced a heartbeat loss.
+        self.plc_lost: bool = False
+        # LTO efficiency: tracks how long we've been below the threshold and
+        # whether the announcement has already been emitted for this dip.
+        self.lto_low_since: datetime | None = None
+        self.lto_low_announced: bool = False
         # Push-log cache: kind+key → last push epoch — soft rate-limit so a
         # flapping signal can't blast the kiosk every tick.
         self.last_push_at: "OrderedDict[str, float]" = OrderedDict()
@@ -608,6 +757,150 @@ def tick(infl: Influx, st: TickState, *, bootstrap: bool = False) -> None:
                 emit(Event(text, f"pm25_{cls}", prio, f"pm25:{sensor}", ts),
                      min_gap_s=900)
             st.pm25_class[sensor] = cls
+
+    # --- Thermia auxiliary heater (aux_heater_3kw / aux_heater_6kw).
+    # Aux heaters are the most expensive way to make heat. Announce every
+    # rising/falling edge with a 15 min cooldown so cycling during a single
+    # cold spell doesn't spam.
+    aux = infl.latest_thermia_aux()
+    for field, (val, ts) in aux.items():
+        prev = st.aux_heater_state.get(field)
+        st.aux_heater_state[field] = val
+        if bootstrap or prev is None:
+            continue
+        prev_on = prev > 0.5
+        cur_on  = val  > 0.5
+        if cur_on == prev_on:
+            continue
+        size = "kolmen kilowatin" if "3kw" in field else "kuuden kilowatin"
+        if cur_on:
+            text = f"Lämpöpumpun {size} sähkövastus käynnistyi."
+        else:
+            text = f"Lämpöpumpun {size} sähkövastus sammui."
+        emit(Event(text, "aux_heater_on" if cur_on else "aux_heater_off",
+                   1, f"aux:{field}", ts.timestamp()), min_gap_s=900)
+
+    # --- Outdoor temperature crossings.
+    ot, ot_ts = infl.latest_outdoor_temp()
+    if ot is not None and ot_ts is not None:
+        if ot < OUTDOOR_DEEP_C:
+            cls = "deep"
+        elif ot < OUTDOOR_FREEZE_C:
+            cls = "freeze"
+        elif ot < OUTDOOR_THAW_C:
+            cls = "cold"
+        else:
+            cls = "warm"
+        prev = st.outdoor_class
+        st.outdoor_class = cls
+        if not bootstrap and prev and prev != cls:
+            text_map = {
+                ("warm", "cold"):    f"Ulkolämpötila on laskenut, ulkona {ot:.1f} astetta.",
+                ("cold", "warm"):    f"Ulkona on lämmennyt, lämpötila {ot:.1f} astetta.",
+                ("cold", "freeze"):  f"Pakkasta on tullut, ulkona {ot:.1f} astetta.",
+                ("freeze", "cold"):  f"Pakkanen on hellittänyt, ulkona {ot:.1f} astetta.",
+                ("freeze", "deep"):  f"Kova pakkanen, ulkona {ot:.1f} astetta.",
+                ("deep", "freeze"):  f"Kovat pakkaset hellittävät, ulkona {ot:.1f} astetta.",
+                ("warm", "freeze"):  f"Pakkasta on tullut, ulkona {ot:.1f} astetta.",
+                ("freeze", "warm"):  f"Suoja-aikaa, ulkona {ot:.1f} astetta.",
+                ("cold", "deep"):    f"Kovat pakkaset, ulkona {ot:.1f} astetta.",
+                ("deep", "cold"):    f"Pakkanen on hellittänyt, ulkona {ot:.1f} astetta.",
+                ("deep", "warm"):    f"Suoja-aikaa, ulkona {ot:.1f} astetta.",
+                ("warm", "deep"):    f"Kovat pakkaset, ulkona {ot:.1f} astetta.",
+            }
+            text = text_map.get((prev, cls), f"Ulkolämpötila on nyt {ot:.1f} astetta.")
+            prio = 0 if cls == "deep" else (1 if cls == "freeze" else 2)
+            emit(Event(text, f"outdoor_{cls}", prio, "outdoor_temp",
+                       ot_ts.timestamp()), min_gap_s=1800)
+
+    # --- Indoor room temperatures out of range (with hysteresis).
+    rooms_temps = infl.latest_room_temps()
+    for room, (temp, ts) in rooms_temps.items():
+        prev = st.room_temp_class.get(room, "")
+        # Hysteresis: while flagged "low", require temp > LOW + HYST to clear.
+        # While flagged "high", require temp < HIGH − HYST to clear.
+        if prev == "low":
+            if temp < INDOOR_TEMP_LOW_C + INDOOR_TEMP_HYST_C:
+                cls = "low"
+            elif temp > INDOOR_TEMP_HIGH_C:
+                cls = "high"
+            else:
+                cls = "normal"
+        elif prev == "high":
+            if temp > INDOOR_TEMP_HIGH_C - INDOOR_TEMP_HYST_C:
+                cls = "high"
+            elif temp < INDOOR_TEMP_LOW_C:
+                cls = "low"
+            else:
+                cls = "normal"
+        else:
+            if temp < INDOOR_TEMP_LOW_C:
+                cls = "low"
+            elif temp > INDOOR_TEMP_HIGH_C:
+                cls = "high"
+            else:
+                cls = "normal"
+        st.room_temp_class[room] = cls
+        if bootstrap or cls == prev or not prev:
+            continue
+        label = ROOM_LABELS_FI.get(room, room)
+        if cls == "low":
+            text = (f"{label} on viilentynyt alle {INDOOR_TEMP_LOW_C:.0f} asteen, "
+                    f"nyt {temp:.1f} astetta.")
+        elif cls == "high":
+            text = (f"{label} on lämmennyt yli {INDOOR_TEMP_HIGH_C:.0f} asteen, "
+                    f"nyt {temp:.1f} astetta.")
+        else:
+            if prev == "low":
+                text = f"{label} on lämmennyt taas, nyt {temp:.1f} astetta."
+            else:
+                text = f"{label} on viilentynyt taas, nyt {temp:.1f} astetta."
+        emit(Event(text, f"room_temp_{cls}", 1, f"room_temp:{room}",
+                   ts.timestamp()), min_gap_s=1800)
+
+    # --- PLC heartbeat — alarm if no fresh plc_publisher write.
+    hb_ts = infl.latest_plc_heartbeat()
+    now_utc = datetime.now(timezone.utc)
+    if hb_ts is not None:
+        age_s = (now_utc - hb_ts).total_seconds()
+        lost  = age_s > PLC_HEARTBEAT_LOSS_S
+        if not bootstrap and lost != st.plc_lost:
+            if lost:
+                mins = int(age_s / 60)
+                text = (f"PLC-yhteys on katkennut, viimeinen mittaus "
+                        f"{mins} minuuttia sitten.")
+                emit(Event(text, "plc_heartbeat_lost", 0, "plc_heartbeat",
+                           now_utc.timestamp()), min_gap_s=600)
+            else:
+                text = "PLC-yhteys on palautunut, mittaukset jatkuvat."
+                emit(Event(text, "plc_heartbeat_recovered", 1, "plc_heartbeat",
+                           now_utc.timestamp()), min_gap_s=600)
+        st.plc_lost = lost
+
+    # --- Heat-recovery (LTO) efficiency degradation.
+    eta = infl.latest_lto_efficiency()
+    if eta is not None:
+        if eta < LTO_LOW_RATIO:
+            if st.lto_low_since is None:
+                st.lto_low_since = now_utc
+            elapsed_min = (now_utc - st.lto_low_since).total_seconds() / 60.0
+            if (not bootstrap
+                    and elapsed_min >= LTO_LOW_DURATION_MIN
+                    and not st.lto_low_announced):
+                text = (f"Ilmanvaihdon lämmöntalteenoton hyötysuhde on heikentynyt "
+                        f"{int(eta * 100)} prosenttiin. "
+                        f"Suodattimet voivat kaivata huoltoa.")
+                emit(Event(text, "lto_low", 1, "lto_efficiency",
+                           now_utc.timestamp()), min_gap_s=3600)
+                st.lto_low_announced = True
+        else:
+            if st.lto_low_announced and not bootstrap:
+                text = (f"Ilmanvaihdon hyötysuhde on palautunut, "
+                        f"nyt {int(eta * 100)} prosenttia.")
+                emit(Event(text, "lto_recovered", 2, "lto_efficiency",
+                           now_utc.timestamp()), min_gap_s=600)
+            st.lto_low_since = None
+            st.lto_low_announced = False
 
     # --- Light raw on/off (verbose / debug).
     lights = infl.latest_lights()

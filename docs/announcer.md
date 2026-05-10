@@ -30,14 +30,19 @@ no new instrumentation required.
 
 | Event class                | Source                                                              | Default priority |
 |----------------------------|---------------------------------------------------------------------|------------------|
-| HVAC freezing alarm        | `alarm.Alarm_freezing_danger` rising edge                           | 0 (critical)     |
-| Other HVAC alarm flags     | `alarm.Alarm_filter_guard`, `Alarm_efficiency`, fan failures, …    | 0–1              |
+| HVAC freezing alarm        | `hvac` measurement, `sensor_group=alarm`, `Alarm_freezing_danger` rising edge | 0 (critical) |
+| Other HVAC alarm flags     | `Alarm_filter_guard`, `Alarm_efficiency`, fan failures, …          | 0–1              |
 | Sauna state                | `ruuvi.temperature` for sensor `Sauna` — heating / hot / cooling / off | 1–2          |
 | Sauna left on (waste)      | Heater continuously in heating/hot ≥ 2 h — repeats every 15 min until off | 0 (critical) |
 | Spot-price tier transition | `heating_optimizer.tier` (CHEAP / NORMAL / EXPENSIVE / PRE_HEAT)    | 1–2              |
 | Lights-optimizer decisions | `lights_optimizer` (auto-off, sauna-laude, CO₂ auto, post-sauna, porch) | 1–2          |
-| CO₂ class transition       | `ruuvi.co2` per sensor → good / elevated / high / very_high         | 1–2              |
-| PM2.5 class transition     | `ruuvi.pm2_5` per sensor → good / elevated / high                   | 1–2              |
+| CO₂ class transition       | `ruuvi.co2` per sensor → good / elevated / high / very_high (both directions) | 1–2      |
+| PM2.5 class transition     | `ruuvi.pm2_5` per sensor → good / elevated / high (both directions) | 1–2              |
+| Aux-heater activation      | `thermia.aux_heater_3kw` / `aux_heater_6kw` rising / falling edge   | 1                |
+| Outdoor temperature class  | `hvac.Ulkolampotila` — warm / cold / freeze / deep transitions      | 0–2              |
+| Indoor temperature out of range | `rooms.<sensor>` < 18 °C or > 26 °C with hysteresis            | 1                |
+| PLC heartbeat              | `plc_publisher` no fresh write in 180 s → lost / recovered          | 0–1              |
+| Heat-recovery (LTO) drop   | `(Tuloilma_ennen − Ulko) / (Poisto − Ulko)` < 60 % sustained ≥ 15 min | 1              |
 | Raw light on/off           | `lights.is_on` rising/falling edge                                  | 3 (debug)        |
 
 ### Priority tiers
@@ -96,6 +101,12 @@ the purpose. Every other priority tier follows the digest rule.
 | `ANNOUNCE_SAUNA_OFF_C`          | `40`                                               | Sauna temp → state=off                         |
 | `ANNOUNCE_SAUNA_WASTE_AFTER_MIN`  | `120`                                            | Continuous-on duration before warning fires    |
 | `ANNOUNCE_SAUNA_WASTE_REPEAT_MIN` | `15`                                             | Repeat interval until heater goes off          |
+| `ANNOUNCE_INDOOR_LOW_C / HIGH_C / HYST_C` | `18 / 26 / 0.5`                          | Indoor room temperature alarm thresholds       |
+| `ANNOUNCE_OUTDOOR_FREEZE_C / DEEP_C / THAW_C` | `-5 / -15 / 5`                       | Outdoor temperature class boundaries           |
+| `ANNOUNCE_PLC_HEARTBEAT_LOSS_S`   | `180`                                            | Seconds without `plc_publisher` write → "lost" |
+| `ANNOUNCE_LTO_LOW_RATIO`          | `0.60`                                           | LTO efficiency below this triggers warning     |
+| `ANNOUNCE_LTO_LOW_DURATION_MIN`   | `15`                                             | Sustained duration before LTO warning fires    |
+| `ANNOUNCE_LTO_MIN_DELTA_C`        | `5`                                              | Skip LTO calc when (Poisto − Ulko) gap smaller |
 
 ### Bridge-side env
 
