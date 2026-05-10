@@ -17,7 +17,7 @@
 import { speakAndWait } from '../audio/tts.js';
 import { getState, select } from '../state/store.js';
 import { KioskPhase } from '../types/state.js';
-import { ttsAudio } from '../dom/elements.js';
+import { ttsAudio, greetingOverlay, reportText } from '../dom/elements.js';
 import { debugLog } from '../debug.js';
 
 interface AnnouncementEvent {
@@ -82,6 +82,32 @@ function digestAlreadyPlayedToday(): boolean {
 
 function markDigestPlayed(): void {
   try { localStorage.setItem(DIGEST_DATE_KEY, todayKey()); } catch {}
+}
+
+/**
+ * Speak an announcement with a brief visible avatar so the user can look up
+ * and see what's being said. Reuses the greeting overlay in `minimized` mode
+ * (188px avatar in bottom-right + report text) for the duration of the TTS,
+ * then hides it again. If the overlay is already visible (greeting in
+ * progress, conversation interlude), leaves the existing UI untouched —
+ * the caller has already arranged the right visual context.
+ */
+async function speakWithOverlay(text: string): Promise<void> {
+  const ownsOverlay = !greetingOverlay.classList.contains('visible');
+  let prevReport: string | null = null;
+  if (ownsOverlay) {
+    prevReport = reportText.textContent;
+    reportText.textContent = text;
+    greetingOverlay.classList.add('visible', 'minimized', 'announcement');
+  }
+  try {
+    await speakAndWait(text);
+  } finally {
+    if (ownsOverlay) {
+      greetingOverlay.classList.remove('visible', 'minimized', 'announcement');
+      reportText.textContent = prevReport ?? '';
+    }
+  }
 }
 
 function canSpeakNow(): boolean {
@@ -161,7 +187,7 @@ async function drain(): Promise<void> {
 
   debugLog(`announce: speaking [${ev.kind}/p${ev.priority}] ${ev.text.slice(0, 60)}`);
   try {
-    await speakAndWait(ev.text);
+    await speakWithOverlay(ev.text);
   } catch (err) {
     debugLog(`announce: speak failed: ${err}`);
   }
@@ -188,7 +214,7 @@ export async function speakPendingInInterlude(): Promise<void> {
     if (!isCritical) normalSpoken++;
     debugLog(`announce: interlude speaking [${next.kind}/p${next.priority}] ${next.text.slice(0, 60)}`);
     try {
-      await speakAndWait(next.text);
+      await speakWithOverlay(next.text);
     } catch (err) {
       debugLog(`announce: interlude speak failed: ${err}`);
     }

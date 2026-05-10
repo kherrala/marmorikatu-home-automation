@@ -893,8 +893,8 @@
           "mappings": [
             {
               "options": {
-                "from": -0.05,
-                "to": 0.05,
+                "from": -0.2,
+                "to": 0.2,
                 "result": {
                   "color": "dark-orange",
                   "index": 0,
@@ -905,8 +905,8 @@
             },
             {
               "options": {
-                "from": -0.2,
-                "to": -0.05,
+                "from": -0.5,
+                "to": -0.2,
                 "result": {
                   "color": "dark-green",
                   "index": 1,
@@ -918,7 +918,7 @@
             {
               "options": {
                 "from": -999,
-                "to": -0.2,
+                "to": -0.5,
                 "result": {
                   "color": "dark-yellow",
                   "index": 2,
@@ -929,8 +929,8 @@
             },
             {
               "options": {
-                "from": 0.05,
-                "to": 0.2,
+                "from": 0.2,
+                "to": 0.5,
                 "result": {
                   "color": "orange",
                   "index": 3,
@@ -941,7 +941,7 @@
             },
             {
               "options": {
-                "from": 0.2,
+                "from": 0.5,
                 "to": 999,
                 "result": {
                   "color": "dark-red",
@@ -961,19 +961,19 @@
               },
               {
                 "color": "green",
-                "value": -0.2
+                "value": -0.5
               },
               {
                 "color": "dark-green",
-                "value": -0.05
+                "value": -0.2
               },
               {
                 "color": "orange",
-                "value": 0.05
+                "value": 0.2
               },
               {
                 "color": "red",
-                "value": 0.2
+                "value": 0.5
               }
             ]
           }
@@ -1011,7 +1011,7 @@
             "type": "influxdb",
             "uid": "influxdb"
           },
-          "query": "import \"array\"\n\nkeittio = from(bucket: \"building_automation\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"ruuvi\" and r.sensor_name == \"Keittiö\")\n  |> filter(fn: (r) => r._field == \"pressure\")\n  |> last()\n  |> findRecord(fn: (key) => true, idx: 0)\n\nulko = from(bucket: \"building_automation\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"ruuvi\" and r.sensor_name == \"Ulkolämpötila\")\n  |> filter(fn: (r) => r._field == \"pressure\")\n  |> last()\n  |> findRecord(fn: (key) => true, idx: 0)\n\nval = if exists keittio._value and exists ulko._value then keittio._value - ulko._value else 0.0\n\narray.from(rows: [{_time: now(), _value: val, _field: \"IVK tila\"}])",
+          "query": "import \"array\"\n\n// Indoor pressure: mean of living-area Ruuvis (Olohuone, Takka, Keittiö).\n// Excludes Pakastin/Jääkaappi — barometers inside cold appliances have\n// thermal-compensation bias that drifts the reading by 0.2-0.5 hPa, well\n// over the actual MVHR-scale differential we want to detect.\nindoor = from(bucket: \"building_automation\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"ruuvi\" and r._field == \"pressure\")\n  |> filter(fn: (r) => r.sensor_name == \"Olohuone\" or r.sensor_name == \"Takka\" or r.sensor_name == \"Keittiö\")\n  |> last()\n  |> group()\n  |> mean(column: \"_value\")\n  |> findRecord(fn: (key) => true, idx: 0)\n\nulko = from(bucket: \"building_automation\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"ruuvi\" and r.sensor_name == \"Ulkolämpötila\")\n  |> filter(fn: (r) => r._field == \"pressure\")\n  |> last()\n  |> findRecord(fn: (key) => true, idx: 0)\n\nval = if exists indoor._value and exists ulko._value then indoor._value - ulko._value else 0.0\n\narray.from(rows: [{_time: now(), _value: val, _field: \"IVK tila\"}])",
           "refId": "A"
         }
       ],
