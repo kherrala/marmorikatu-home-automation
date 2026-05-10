@@ -341,8 +341,12 @@ function appendHistoryItem(ev: AnnouncementEvent): void {
     return;
   }
 
+  // Demote the previously-latest item — only one row carries the .ann-latest
+  // highlight so the user's eye lands on the new one.
+  dom.list.querySelector('.ann-item.ann-latest')?.classList.remove('ann-latest');
+
   const item = document.createElement('div');
-  item.className = `ann-item ann-prio-${Math.max(0, Math.min(3, ev.priority))}`;
+  item.className = `ann-item ann-latest ann-prio-${Math.max(0, Math.min(3, ev.priority))}`;
   item.dataset.id = String(ev.id);
   item.innerHTML = `
     <span class="ann-dot"></span>
@@ -352,14 +356,16 @@ function appendHistoryItem(ev: AnnouncementEvent): void {
   (item.querySelector('.ann-time') as HTMLElement).textContent = formatTime(ev.ts);
   (item.querySelector('.ann-text') as HTMLElement).textContent = ev.text;
 
-  // Newest at the top.
-  dom.list.prepend(item);
+  // Newest at the BOTTOM — list reads top-to-bottom chronologically.
+  dom.list.appendChild(item);
   while (dom.list.childElementCount > HISTORY_MAX) {
-    dom.list.lastElementChild?.remove();
+    dom.list.firstElementChild?.remove();
   }
   dom.count.textContent = String(dom.list.childElementCount);
   dom.empty.hidden = true;
   dom.list.hidden = false;
+  // Keep the latest visible — scroll to the bottom whenever a new item lands.
+  dom.list.scrollTop = dom.list.scrollHeight;
 }
 
 async function loadInitialHistory(): Promise<void> {
@@ -369,8 +375,9 @@ async function loadInitialHistory(): Promise<void> {
     if (!res.ok) return;
     const data = await res.json() as { events?: AnnouncementEvent[] };
     if (!data.events || data.events.length === 0) return;
-    // Server returns oldest-first. handleEvent prepends, so iterate oldest→
-    // newest and the newest ends up at the top.
+    // Server returns oldest-first; appendHistoryItem appends to the bottom.
+    // Iterate as-is and the newest ends up at the bottom (latest-highlight
+    // chasing each successive item until the final one keeps the badge).
     for (const ev of data.events) {
       if (typeof ev.id === 'number' && ev.id > lastSeenId) lastSeenId = ev.id;
       appendHistoryItem(ev);

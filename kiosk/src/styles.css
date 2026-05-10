@@ -108,6 +108,22 @@ html, body {
 #announcements-slide .ann-item .ann-text {
   color: #eee;
 }
+#announcements-slide .ann-item.ann-latest {
+  outline: 2px solid rgba(99,179,237,0.55);
+  outline-offset: -2px;
+  box-shadow: 0 0 22px rgba(99,179,237,0.18);
+  background: rgba(99,179,237,0.10);
+  animation: ann-pulse 2.6s ease-out 0s 2 alternate;
+}
+#announcements-slide .ann-item.ann-latest.ann-prio-0 {
+  outline-color: rgba(229,57,53,0.85);
+  box-shadow: 0 0 28px rgba(229,57,53,0.35);
+  background: rgba(229,57,53,0.22);
+}
+@keyframes ann-pulse {
+  0%   { box-shadow: 0 0 22px rgba(99,179,237,0.18); }
+  100% { box-shadow: 0 0 36px rgba(99,179,237,0.45); }
+}
 
 /* -- Swipe / click edge strips ---------------------------------------- */
 /* Narrow strip + touch-pass-through on touch devices: the document-level
