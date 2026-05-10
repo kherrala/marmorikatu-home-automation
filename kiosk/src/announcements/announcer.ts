@@ -54,11 +54,18 @@ const PER_INTERLUDE_MAX = 2;
 const HISTORY_MAX = 200;
 
 // Replayed events older than this (server `ts` field) are kept in the slide
-// for context but NOT enqueued for playback. Without this, a kiosk reload
-// would cause the bridge's SSE replay to suddenly speak hours of backlog at
-// the user. Kept generous enough that an event pushed seconds before a
-// reload still gets spoken once the kiosk recovers.
+// for context but NOT enqueued for playback. Acts as a backstop on top of
+// the boot-cutoff dedup below — if both a brand-new event and an old one
+// somehow arrived with id > bootSeq, we still won't speak something hours
+// stale.
 const PLAYBACK_FRESHNESS_S = 120;
+
+// The highest event id we observed before opening SSE. Events with id <=
+// this value are part of the bridge's replay (they already happened before
+// the kiosk could speak them) — they go into the slide for context but never
+// into the playback queue. Anything with a higher id is a genuinely new
+// event that arrived after we connected, and that's what the avatar speaks.
+let bootSeqCutoff = 0;
 
 // localStorage key — record the date we last spoke the morning digest, so a
 // page reload doesn't replay it.
@@ -283,8 +290,18 @@ function handleEvent(ev: AnnouncementEvent): void {
 
   appendHistoryItem(ev);
 
-  // Replayed old events stay in the slide but don't get spoken — see
-  // PLAYBACK_FRESHNESS_S for the rationale. Test pushes without a ts have
+  // Backlog suppression #1: anything with id <= bootSeqCutoff is part of
+  // the bridge's SSE replay — those events already happened before the
+  // kiosk connected. Render them on the slide for context but DON'T speak
+  // them. Otherwise a fresh kiosk boot would dump a backlog of "X syttyi"
+  // / "Y sammui" speech at whoever happens to be standing in front of it.
+  if (typeof ev.id === 'number' && ev.id <= bootSeqCutoff) {
+    return;
+  }
+
+  // Backlog suppression #2: a freshness backstop on top of the cutoff —
+  // catches the case where bootSeqCutoff somehow advanced past a stale
+  // event (e.g. a slow history fetch). Test pushes without a ts have
   // ts === null and are treated as fresh.
   if (typeof ev.ts === 'number') {
     const ageS = Date.now() / 1000 - ev.ts;
@@ -374,15 +391,33 @@ async function loadInitialHistory(): Promise<void> {
     const res = await fetch('/api/chat/announcements/history?limit=200');
     if (!res.ok) return;
     const data = await res.json() as { events?: AnnouncementEvent[] };
-    if (!data.events || data.events.length === 0) return;
-    // Server returns oldest-first; appendHistoryItem appends to the bottom.
-    // Iterate as-is and the newest ends up at the bottom (latest-highlight
-    // chasing each successive item until the final one keeps the badge).
-    for (const ev of data.events) {
-      if (typeof ev.id === 'number' && ev.id > lastSeenId) lastSeenId = ev.id;
-      appendHistoryItem(ev);
+    // Snapshot the highest-known id BEFORE any events arrive via SSE. Even
+    // an empty-history response sets the cutoff (= 0), which is fine — it
+    // just means "everything you replay was already pre-cutoff". The bridge
+    // restart resets its seq counter to 0, so on a fresh ring we still want
+    // to suppress its replay window even if no history items came back.
+    if (data.events && data.events.length > 0) {
+      // Server returns oldest-first; appendHistoryItem appends to the bottom.
+      for (const ev of data.events) {
+        if (typeof ev.id === 'number' && ev.id > lastSeenId) lastSeenId = ev.id;
+        appendHistoryItem(ev);
+      }
+      debugLog(`announce: loaded ${data.events.length} history items`);
     }
-    debugLog(`announce: loaded ${data.events.length} history items`);
+    // Pin the cutoff to whatever the bridge currently considers "newest". On
+    // SSE open the bridge replays its full ring; events <= this id are the
+    // replay (slide-only), events > this id are genuinely new and get spoken.
+    // We poll /history once more right before connect so the cutoff reflects
+    // any event that landed between fetch start and now.
+    try {
+      const tip = await fetch('/api/chat/announcements/history?limit=1');
+      if (tip.ok) {
+        const tipData = await tip.json() as { events?: AnnouncementEvent[] };
+        const tipId = tipData.events?.[tipData.events.length - 1]?.id ?? 0;
+        bootSeqCutoff = Math.max(bootSeqCutoff, tipId, lastSeenId);
+      }
+    } catch { /* fall through with whatever cutoff we already have */ }
+    debugLog(`announce: bootSeqCutoff=${bootSeqCutoff}`);
   } catch (err) {
     debugLog(`announce: history load failed: ${err}`);
   }
@@ -449,10 +484,23 @@ export function initAnnouncer(): void {
   // the history endpoint and the SSE replay share the same ring + ids.
   loadInitialHistory().finally(connect);
 
-  // Kick the drain on every phase change — that's when canSpeakNow() can
-  // flip true (e.g., GREETING → COOLDOWN) and we want to start speaking
-  // immediately rather than wait for the 1.5s fallback poll.
-  select(s => s.phase).subscribe(() => {
+  // Phase-change reactions:
+  //   - on entry to GREETING, abort any in-flight announcement so the
+  //     greeting doesn't clobber a half-spoken sentence on the shared
+  //     ttsAudio element. Pending queued events stay queued and replay
+  //     after dismiss → COOLDOWN, via speakPendingInInterlude.
+  //   - on every transition, kick the drain in case canSpeakNow flipped
+  //     true (e.g. COOLDOWN → READY).
+  select(s => s.phase).subscribe((phase) => {
+    if (phase === KioskPhase.GREETING) {
+      try { ttsAudio.pause(); } catch {}
+      try {
+        if (typeof speechSynthesis !== 'undefined') speechSynthesis.cancel();
+      } catch {}
+      // Hide the announcement overlay if speakWithOverlay had brought it up;
+      // greeting.ts will re-show greeting overlay with its own state.
+      try { greetingOverlay.classList.remove('announcement'); } catch {}
+    }
     flushDigestIfDue();
     if (liveQueue.length > 0) scheduleDrain();
   });
