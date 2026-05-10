@@ -1279,18 +1279,33 @@ _announce_lock = asyncio.Lock()
 
 
 async def _broadcast_announcement(event: dict) -> None:
-    """Append to ring buffer and fan out to every connected SSE subscriber."""
+    """Append to ring buffer and fan out to every connected SSE subscriber.
+
+    Subscribers whose queue is full are presumed dead (real SSE clients
+    drain almost instantly) and get evicted from the set. Without this
+    cleanup, a kiosk whose TCP connection broke without the bridge's
+    StreamingResponse generator noticing (e.g. an abrupt iPad Wi-Fi flap)
+    would leave a zombie queue here forever — every subsequent event would
+    be silently dropped to that dead queue and the live count would
+    misleadingly show `subscribers > 0`.
+    """
     global _announce_seq
     async with _announce_lock:
         _announce_seq += 1
         event = {**event, "id": _announce_seq}
         _announce_ring.append(event)
         targets = list(_announce_subscribers)
+    dead: list[asyncio.Queue] = []
     for q in targets:
         try:
             q.put_nowait(event)
         except asyncio.QueueFull:
-            log.warning("Announcement subscriber queue full; dropping event id=%d", event["id"])
+            log.warning("Evicting unresponsive announcement subscriber (queue full)")
+            dead.append(q)
+    if dead:
+        async with _announce_lock:
+            for q in dead:
+                _announce_subscribers.discard(q)
 
 
 async def announce_push_endpoint(request: Request) -> JSONResponse:
@@ -1377,7 +1392,11 @@ async def announce_stream_endpoint(request: Request) -> Response:
                 try:
                     ev = await asyncio.wait_for(queue.get(), timeout=_ANNOUNCE_KEEPALIVE_SEC)
                 except asyncio.TimeoutError:
-                    yield ": keepalive\n\n"
+                    # Send the keepalive as a named event (not a comment) so
+                    # the client can listen for it via addEventListener and
+                    # detect a silent connection. EventSource never fires any
+                    # callback for `:` comment lines.
+                    yield f"event: keepalive\ndata: {{}}\n\n"
                     continue
                 yield f"id: {ev['id']}\ndata: {json.dumps(ev, ensure_ascii=False)}\n\n"
         finally:

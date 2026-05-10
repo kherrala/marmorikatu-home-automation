@@ -356,17 +356,38 @@ async function loadInitialHistory(): Promise<void> {
   }
 }
 
+// Last time we received ANY traffic on the SSE stream — message OR keepalive.
+// Used by the watchdog below to force reconnect when iPad Safari quietly
+// loses the connection without firing the EventSource error callback.
+let lastSseActivity = 0;
+
+// Bridge sends a `keepalive` event every 20s. Allow ~3 missed keepalives
+// before declaring the stream dead and forcing a reconnect.
+const SSE_SILENCE_TIMEOUT_MS = 70_000;
+
 function connect(): void {
   if (eventSource) try { eventSource.close(); } catch {}
   const url = '/api/chat/announcements/stream';
   const es = new EventSource(url);
   eventSource = es;
+  lastSseActivity = Date.now();
 
-  es.addEventListener('open', () => debugLog('announce: SSE open'));
+  es.addEventListener('open', () => {
+    lastSseActivity = Date.now();
+    debugLog('announce: SSE open');
+  });
   es.addEventListener('error', () => {
-    debugLog('announce: SSE error — browser will auto-reconnect');
+    debugLog(`announce: SSE error (state=${es.readyState}) — will reconnect`);
+    // Browser may auto-reconnect, but on iPad Safari the auto path can
+    // stall silently. Close and let the watchdog reopen on its next tick.
+    try { es.close(); } catch {}
+    if (eventSource === es) eventSource = null;
+  });
+  es.addEventListener('keepalive', () => {
+    lastSseActivity = Date.now();
   });
   es.addEventListener('message', (msg) => {
+    lastSseActivity = Date.now();
     try {
       const data = JSON.parse(msg.data) as AnnouncementEvent;
       if (typeof data.id === 'number') lastSeenId = Math.max(lastSeenId, data.id);
@@ -375,6 +396,15 @@ function connect(): void {
       debugLog(`announce: parse error: ${err}`);
     }
   });
+}
+
+function watchdog(): void {
+  const idleMs = Date.now() - lastSseActivity;
+  const noConn  = !eventSource || eventSource.readyState === 2 /* CLOSED */;
+  if (noConn || idleMs > SSE_SILENCE_TIMEOUT_MS) {
+    debugLog(`announce: watchdog reconnect (idle=${Math.round(idleMs/1000)}s state=${eventSource?.readyState ?? 'null'})`);
+    connect();
+  }
 }
 
 export function initAnnouncer(): void {
@@ -402,4 +432,10 @@ export function initAnnouncer(): void {
   // Periodic digest check — when the local clock crosses out of quiet hours
   // mid-session (e.g., 06:59 → 07:00) without any phase change.
   setInterval(flushDigestIfDue, 60_000);
+
+  // Watchdog: iPad Safari can hold an EventSource open in a state where it
+  // looks live (readyState=OPEN) but no traffic actually flows. The bridge
+  // emits a `keepalive` event every 20s; if we go > 70s without ANY data,
+  // tear down and reconnect.
+  setInterval(watchdog, 25_000);
 }
