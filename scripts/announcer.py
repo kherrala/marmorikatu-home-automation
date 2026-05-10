@@ -167,11 +167,16 @@ class Influx:
             return []
 
     def latest_alarm_flags(self) -> dict[str, tuple[float, datetime]]:
-        """Return {field_name: (value, time)} for every alarm.* boolean."""
+        """Return {field_name: (value, time)} for every Casa MVHR alarm flag.
+
+        The plc subscriber writes alarm flags into the `hvac` measurement
+        with `sensor_group="alarm"` (alongside the other ventilation sensor
+        groups), not into a standalone `alarm` measurement.
+        """
         flux = (
             f'from(bucket: "{INFLUXDB_BUCKET}")\n'
             f'  |> range(start: -10m)\n'
-            f'  |> filter(fn: (r) => r._measurement == "alarm")\n'
+            f'  |> filter(fn: (r) => r._measurement == "hvac" and r.sensor_group == "alarm")\n'
             f'  |> last()\n'
         )
         out: dict[str, tuple[float, datetime]] = {}
@@ -189,7 +194,11 @@ class Influx:
         return out
 
     def latest_lights(self) -> dict[int, tuple[int, datetime]]:
-        """Return {light_id_int: (is_on, time)} for every light."""
+        """Return {light_id_int: (is_on, time)} for every light.
+
+        The lights measurement uses the `light_id` tag (set by the plc
+        subscriber); there is no `id` tag.
+        """
         flux = (
             f'from(bucket: "{INFLUXDB_BUCKET}")\n'
             f'  |> range(start: -10m)\n'
@@ -199,7 +208,7 @@ class Influx:
         out: dict[int, tuple[int, datetime]] = {}
         for table in self._query(flux):
             for rec in table.records:
-                tag = rec.values.get("id")
+                tag = rec.values.get("light_id")
                 ts  = rec.get_time()
                 if tag is None or ts is None:
                     continue
