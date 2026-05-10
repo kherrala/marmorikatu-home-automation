@@ -518,14 +518,22 @@ SAUNA_TEXT_FI = {
 
 # Spoken-form labels for the indoor temperature sensors we monitor.
 # Skips Kellari + Kellari_eteinen — basement runs intentionally cooler.
+#
+# The PLC schema still exposes legacy field names from the previous owners'
+# children (Aatu, Onni, Essi). The actual rooms now belong to other people
+# — keep the legacy keys mapped to today's labels so if the PLC ever
+# publishes them again the announcer says the right thing:
+#   MH2 = Aatu (old) → Aarni's room  (new MH_Aarni field)
+#   MH3 = Onni (old) → Seela's room  (new MH_Seela field)
+#   MH1 = Essi (old) → master bedroom (new MH_aikuiset field)
 ROOM_LABELS_FI = {
     "MH_Aarni":     "Aarnin huone",
     "MH_Seela":     "Seelan huone",
     "MH_aikuiset":  "Aikuisten makuuhuone",
     "MH_alakerta":  "Alakerran makuuhuone",
-    "Aatu":         "Aadun huone",
-    "Onni":         "Onnin huone",
-    "Essi":         "Essin huone",
+    "Aatu":         "Aarnin huone",
+    "Onni":         "Seelan huone",
+    "Essi":         "Aikuisten makuuhuone",
     "Eteinen":      "Eteinen",
     "Olohuone":     "Olohuone",
     "Keittio":      "Keittiö",
