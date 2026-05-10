@@ -129,12 +129,36 @@
         },
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "Jäätymisvaroitus (Casa)" },
+            "matcher": {
+              "id": "byName",
+              "options": "Jäätymisvaroitus (Casa)"
+            },
             "properties": [
-              { "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } },
-              { "id": "custom.lineStyle", "value": { "dash": [6, 4], "fill": "dash" } },
-              { "id": "custom.lineWidth", "value": 3 },
-              { "id": "custom.fillOpacity", "value": 0 }
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              },
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "dash": [
+                    6,
+                    4
+                  ],
+                  "fill": "dash"
+                }
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 3
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              }
             ]
           }
         ]
@@ -173,7 +197,10 @@
           "refId": "A"
         },
         {
-          "datasource": { "type": "influxdb", "uid": "influxdb" },
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
           "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvac\" and r.sensor_group == \"alarm\" and r._field == \"Alarm_freezing_danger\")\n  |> aggregateWindow(every: v.windowPeriod, fn: max, createEmpty: false)\n  |> map(fn: (r) => ({_time: r._time, _value: r._value * 100.0, _field: \"Jäätymisvaroitus (Casa)\"}))\n  |> group(columns: [\"_field\"])",
           "refId": "B"
         }
@@ -247,7 +274,81 @@
           },
           "unit": "percent"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "D"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "purple",
+                  "mode": "fixed"
+                }
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              },
+              {
+                "id": "custom.axisLabel",
+                "value": "Talteenottopotentiaali (kJ/kg)"
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 5
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 1
+              },
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "dash": [
+                    4,
+                    4
+                  ],
+                  "fill": "dash"
+                }
+              },
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              },
+              {
+                "id": "displayName",
+                "value": "Talteenottopotentiaali (kJ/kg)"
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "red",
+                      "value": null
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 5
+                    },
+                    {
+                      "color": "green",
+                      "value": 15
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
         "h": 8,
@@ -293,13 +394,25 @@
           "refId": "B"
         },
         {
-          "datasource": { "type": "influxdb", "uid": "influxdb" },
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
           "query": "import \"math\"\nimport \"join\"\n\ntemps = from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvac\")\n  |> filter(fn: (r) => r._field == \"Ulkolampotila\" or r._field == \"Tuloilma_ennen_lammitysta\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> group()\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> filter(fn: (r) => exists r.Ulkolampotila and exists r.Tuloilma_ennen_lammitysta)\n\nh_ext_direct = from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvac\" and r._field == \"Entalpia\")\n  |> timedMovingAverage(every: v.windowPeriod, period: 10m)\n  |> group()\n  |> keep(columns: [\"_time\", \"_value\"])\n\nruuvi = from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"ruuvi\" and r.sensor_name == \"Ulkolämpötila\")\n  |> filter(fn: (r) => r._field == \"humidity\")\n  |> timedMovingAverage(every: v.windowPeriod, period: 10m)\n  |> group()\n  |> keep(columns: [\"_time\", \"_value\"])\n\nstep1 = join.inner(left: temps, right: h_ext_direct, on: (l, r) => l._time == r._time, as: (l, r) => ({l with h_ext: r._value}))\n\njoin.left(left: step1, right: ruuvi, on: (l, r) => l._time == r._time, as: (l, r) => ({\n    _time: l._time,\n    Ulkolampotila: l.Ulkolampotila,\n    Tuloilma_ennen_lammitysta: l.Tuloilma_ennen_lammitysta,\n    h_ext: l.h_ext,\n    RH_outdoor: if exists r._value then r._value else 85.0\n  }))\n  |> map(fn: (r) => {\n    psat_out = 610.78 * math.pow(x: 10.0, y: 7.5 * r.Ulkolampotila / (237.3 + r.Ulkolampotila))\n    w_out = 0.622 * (r.RH_outdoor / 100.0) * psat_out / (101325.0 - (r.RH_outdoor / 100.0) * psat_out)\n    h_out = 1.006 * r.Ulkolampotila + w_out * (2501.0 + 1.86 * r.Ulkolampotila)\n    h_sup = 1.006 * r.Tuloilma_ennen_lammitysta + w_out * (2501.0 + 1.86 * r.Tuloilma_ennen_lammitysta)\n    eta = if r.h_ext != h_out then (h_sup - h_out) / (r.h_ext - h_out) * 100.0 else 0.0\n    return {_time: r._time, _value: eta, _field: \"Entalpia (Casa)\"}\n  })\n  |> filter(fn: (r) => r._value > 0.0 and r._value <= 100.0)\n  |> group(columns: [\"_field\"])",
           "refId": "C"
+        },
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
+          "query": "import \"math\"\nimport \"join\"\n\n// Recovery potential = |h_exhaust - h_outdoor| in kJ/kg dry air.\n// When this drops near zero (mild outdoor weather close to indoor),\n// the percentage-based enthalpy efficiency formulas above lose\n// numerical meaning — both numerator and denominator collapse, and\n// any small enthalpy transfer or sensor noise is amplified into\n// near-100%. Use this trace to know when the percentages are real.\ntemps = from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvac\")\n  |> filter(fn: (r) => r._field == \"Ulkolampotila\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> group()\n  |> keep(columns: [\"_time\", \"_value\"])\n  |> rename(columns: {_value: \"Ulkolampotila\"})\n\nh_ext_direct = from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvac\" and r._field == \"Entalpia\")\n  |> timedMovingAverage(every: v.windowPeriod, period: 10m)\n  |> group()\n  |> keep(columns: [\"_time\", \"_value\"])\n\nruuvi = from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"ruuvi\" and r.sensor_name == \"Ulkolämpötila\")\n  |> filter(fn: (r) => r._field == \"humidity\")\n  |> timedMovingAverage(every: v.windowPeriod, period: 10m)\n  |> group()\n  |> keep(columns: [\"_time\", \"_value\"])\n\nstep1 = join.inner(left: temps, right: h_ext_direct, on: (l, r) => l._time == r._time, as: (l, r) => ({l with h_ext: r._value}))\n\njoin.left(left: step1, right: ruuvi, on: (l, r) => l._time == r._time, as: (l, r) => ({\n    _time: l._time,\n    Ulkolampotila: l.Ulkolampotila,\n    h_ext: l.h_ext,\n    RH_outdoor: if exists r._value then r._value else 85.0\n  }))\n  |> map(fn: (r) => {\n    psat_out = 610.78 * math.pow(x: 10.0, y: 7.5 * r.Ulkolampotila / (237.3 + r.Ulkolampotila))\n    w_out = 0.622 * (r.RH_outdoor / 100.0) * psat_out / (101325.0 - (r.RH_outdoor / 100.0) * psat_out)\n    h_out = 1.006 * r.Ulkolampotila + w_out * (2501.0 + 1.86 * r.Ulkolampotila)\n    return {_time: r._time, _value: math.abs(x: r.h_ext - h_out), _field: \"Talteenottopotentiaali\"}\n  })\n  |> filter(fn: (r) => r._value >= 0.0)\n  |> group(columns: [\"_field\"])",
+          "refId": "D"
         }
       ],
       "title": "LTO hyötysuhde",
-      "type": "timeseries"
+      "type": "timeseries",
+      "description": "Sensible (Tuntuva lämpö) on temperature deltas — meaningful year-round. Enthalpy traces ((Entalpia, Entalpia (Casa)) use absolute humidity; their denominator (h_exhaust − h_outdoor) collapses in mild weather, so percentages near 100% in spring/summer or near 0% during indoor humidity spikes (sauna, baths) are numerical artifacts, not real recovery. The Talteenottopotentiaali trace (right axis, kJ/kg dry air) shows the absolute available gradient: trust enthalpy percentages only when this is comfortably above ~10 kJ/kg."
     },
     {
       "datasource": {
@@ -1280,11 +1393,16 @@
       ]
     },
     {
-      "datasource": { "type": "influxdb", "uid": "influxdb" },
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb"
+      },
       "description": "Belimo 22DTH absolute humidity (g per kg dry air, temp-independent water content) and moist-air specific enthalpy (kJ per kg dry air, total sensible+latent heat). More useful for HVAC analysis than RH alone.",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "palette-classic" },
+          "color": {
+            "mode": "palette-classic"
+          },
           "custom": {
             "axisLabel": "",
             "axisPlacement": "auto",
@@ -1294,50 +1412,110 @@
             "lineInterpolation": "smooth",
             "lineWidth": 2,
             "pointSize": 5,
-            "scaleDistribution": { "type": "linear" },
+            "scaleDistribution": {
+              "type": "linear"
+            },
             "showPoints": "never",
             "spanNulls": 3600000,
-            "stacking": { "group": "A", "mode": "none" }
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            }
           },
           "mappings": []
         },
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "Absoluuttinen_kosteus" },
+            "matcher": {
+              "id": "byName",
+              "options": "Absoluuttinen_kosteus"
+            },
             "properties": [
-              { "id": "displayName", "value": "Absoluuttinen kosteus" },
-              { "id": "unit", "value": "massConcg/kg" },
-              { "id": "custom.axisPlacement", "value": "left" },
-              { "id": "custom.axisLabel", "value": "g/kg dry air" },
-              { "id": "color", "value": { "mode": "fixed", "fixedColor": "blue" } }
+              {
+                "id": "displayName",
+                "value": "Absoluuttinen kosteus"
+              },
+              {
+                "id": "unit",
+                "value": "massConcg/kg"
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "left"
+              },
+              {
+                "id": "custom.axisLabel",
+                "value": "g/kg dry air"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "Entalpia" },
+            "matcher": {
+              "id": "byName",
+              "options": "Entalpia"
+            },
             "properties": [
-              { "id": "unit", "value": "kjkg" },
-              { "id": "custom.axisPlacement", "value": "right" },
-              { "id": "custom.axisLabel", "value": "kJ/kg dry air" },
-              { "id": "color", "value": { "mode": "fixed", "fixedColor": "orange" } }
+              {
+                "id": "unit",
+                "value": "kjkg"
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              },
+              {
+                "id": "custom.axisLabel",
+                "value": "kJ/kg dry air"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
             ]
           }
         ]
       },
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 58 },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 58
+      },
       "id": 102,
       "options": {
         "legend": {
-          "calcs": ["mean", "min", "max", "last"],
+          "calcs": [
+            "mean",
+            "min",
+            "max",
+            "last"
+          ],
           "displayMode": "table",
           "placement": "bottom",
           "showLegend": true
         },
-        "tooltip": { "mode": "multi", "sort": "desc" }
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
       },
       "pluginVersion": "12.3.2",
       "targets": [
         {
-          "datasource": { "type": "influxdb", "uid": "influxdb" },
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
           "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"hvac\" and r.sensor_group == \"humidity\")\n  |> filter(fn: (r) => r._field == \"Absoluuttinen_kosteus\" or r._field == \"Entalpia\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])",
           "refId": "A"
         }
@@ -1375,5 +1553,5 @@
   "timezone": "Europe/Helsinki",
   "title": "HVAC",
   "uid": "wago-hvac",
-  "version": 19
+  "version": 20
 }
