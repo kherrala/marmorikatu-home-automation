@@ -7,8 +7,18 @@ home and turns off those that are demonstrably forgotten on. Rules are
 per-category (toilet, bedroom, kitchen, …) — see LIGHT_POLICY / POLICIES
 below.
 
-Also runs a couple of simple ON-schedules:
-  - Front terrace (Ulkovalo terassi, idx 48): force ON sunset → 22:00.
+Also runs a few sensor- or schedule-driven ON/OFF blocks:
+  - Front porch (Sisäänkäynti, idx 47): ON sunset → PORCH_OFF_HOUR
+    (default 23), with a PORCH_MIN_DURATION_MIN floor so midsummer
+    still has a meaningful window.
+  - Sauna laude LED (idx 4): hysteresis on Ruuvi Sauna temperature
+    (50–55 °C dead-band).
+  - Post-sauna cooldown auto-off (idx 1, 38, 39): once the sauna has
+    been below SAUNA_AFTER_OFF_C for SAUNA_AFTER_DELAY_MIN minutes
+    after a session, turn these `manual_only` lights off.
+  - CO₂-driven kitchen + livingroom ceiling lights (idx 40, 54):
+    auto-on when dark and CO₂ rising, auto-off when CO₂ drops or
+    after midnight; user dismissal blocks re-enable until next day.
 
 Occupancy is detected from three signals over rolling windows:
   - Wall switches pressed (`switches` measurement)
@@ -122,12 +132,6 @@ CO2_AUTO_MIN_ON_SECONDS = float(os.environ.get("CO2_AUTO_MIN_ON_SECONDS", "1200"
 
 DRY_RUN = os.environ.get("DRY_RUN", "0") in ("1", "true", "yes")
 
-# Long-absence-rule exemptions for lights still in policies that respect
-# occupancy. Most of the originally-exempted indices are now in the
-# "windowless" policy which never auto-offs anyway — but if any future
-# light moves back to bedroom/general, this set is the toggle.
-ABSENCE_EXEMPT_INDICES: set[int] = set()
-
 # ── Light category map ────────────────────────────────────────────────────────
 # Names in comments are from light_labels.LIGHT_LABELS (buttontxt source).
 LIGHT_POLICY: dict[int, str] = {
@@ -196,7 +200,6 @@ class Policy:
     auto_off_after_on_duration_min: int | None
     auto_off_after_midnight: bool
     min_hold_after_manual_min: int
-    terrace_schedule: bool = False
 
 
 POLICIES: dict[str, Policy] = {
@@ -207,7 +210,7 @@ POLICIES: dict[str, Policy] = {
     "livingroom":       Policy(SUNRISE_GRACE_MIN, True, None,      True,  MANUAL_HOLD_MIN),
     "general":          Policy(SUNRISE_GRACE_MIN, True, None,      True,  MANUAL_HOLD_MIN),
     "manual_only":      Policy(None, False, None,                  False, 60),
-    "porch_schedule":   Policy(None, False, None,                  False, 5, terrace_schedule=True),
+    "porch_schedule":   Policy(None, False, None,                  False, 5),
 }
 
 
@@ -308,14 +311,6 @@ from(bucket: "{INFLUXDB_BUCKET}")
 '''
     rows = _query(flux)
     return rows[0].get_time() if rows else None
-
-
-def on_duration_min(idx: int, fallback: datetime | None = None) -> float | None:
-    """Minutes since the last 0→1 transition, or None if unknown."""
-    t = fetch_last_zero_to_one(idx)
-    if t is None:
-        return None
-    return (datetime.now(timezone.utc) - t).total_seconds() / 60.0
 
 
 # ── Occupancy ─────────────────────────────────────────────────────────────────
@@ -757,13 +752,15 @@ def check_and_control():
             log_decision(idx_after, "off", reason, category="sauna_post_session")
 
     # --- Per-light evaluation
+    #     Skip lights that already have a dedicated block above. The
+    #     sauna-cooldown lights are also skipped here so a future edit
+    #     to LIGHT_POLICY can't accidentally subject them to the
+    #     general auto-off rules — their only auto-off path is the
+    #     post-sauna block.
+    skip_idx = {porch_idx, SAUNA_LAUDE_IDX, *CO2_AUTO_MANAGED, *SAUNA_AFTER_LIGHTS}
     for idx, (is_on, _) in states.items():
-        if idx == porch_idx:
-            continue  # handled above
-        if idx == SAUNA_LAUDE_IDX:
-            continue  # handled above
-        if idx in CO2_AUTO_MANAGED:
-            continue  # handled above
+        if idx in skip_idx:
+            continue
         if not is_on:
             continue
 
@@ -790,7 +787,7 @@ def check_and_control():
             reason = "during_daylight"
         elif pol.auto_off_when_unoccupied and (
                 (weekday and WORKDAY_START_HOUR <= now.hour < WORKDAY_END_HOUR and not occupied)
-                or (idx not in ABSENCE_EXEMPT_INDICES and long_absent)
+                or long_absent
         ):
             reason = "house_unoccupied"
         elif pol.auto_off_after_on_duration_min is not None and on_dur is not None \
