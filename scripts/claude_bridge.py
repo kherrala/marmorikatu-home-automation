@@ -1333,12 +1333,15 @@ async def announce_push_endpoint(request: Request) -> JSONResponse:
     if not text:
         return JSONResponse({"error": "text required"}, status_code=400)
 
+    import time as _time
     event = {
         "text": text,
         "kind": str(body.get("kind") or "info"),
         "priority": int(body.get("priority") or 1),
         "key": str(body.get("key") or ""),
-        "ts": float(body.get("ts") or 0) or None,
+        # Default to ingress time so the kiosk can decide freshness of replayed
+        # events (e.g. don't speak an hour-old event after a kiosk reload).
+        "ts": float(body.get("ts") or 0) or _time.time(),
     }
     await _broadcast_announcement(event)
     return JSONResponse({"ok": True, "id": _announce_seq, "subscribers": len(_announce_subscribers)})

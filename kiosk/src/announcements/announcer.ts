@@ -53,6 +53,13 @@ const PER_INTERLUDE_MAX = 2;
 // events at verbosity 3.
 const HISTORY_MAX = 200;
 
+// Replayed events older than this (server `ts` field) are kept in the slide
+// for context but NOT enqueued for playback. Without this, a kiosk reload
+// would cause the bridge's SSE replay to suddenly speak hours of backlog at
+// the user. Kept generous enough that an event pushed seconds before a
+// reload still gets spoken once the kiosk recovers.
+const PLAYBACK_FRESHNESS_S = 120;
+
 // localStorage key — record the date we last spoke the morning digest, so a
 // page reload doesn't replay it.
 const DIGEST_DATE_KEY = 'announcer.digestDate';
@@ -267,12 +274,25 @@ function flushDigestIfDue(): void {
 }
 
 function handleEvent(ev: AnnouncementEvent): void {
-  if (ev.id <= lastSeenId) return;
-  lastSeenId = ev.id;
+  // Slide dedup is driven by the `data-id` attribute inside appendHistoryItem
+  // — the same event arriving via history-fetch + SSE replay only renders
+  // once. We deliberately do NOT short-circuit on lastSeenId here, because
+  // the SSE replay still contains items the kiosk may need to speak (e.g.
+  // events generated in the last few seconds before the kiosk reconnected).
+  if (typeof ev.id === 'number' && ev.id > lastSeenId) lastSeenId = ev.id;
 
-  // History list always reflects every event we receive, regardless of
-  // whether quiet hours suppress immediate playback or not.
   appendHistoryItem(ev);
+
+  // Replayed old events stay in the slide but don't get spoken — see
+  // PLAYBACK_FRESHNESS_S for the rationale. Test pushes without a ts have
+  // ts === null and are treated as fresh.
+  if (typeof ev.ts === 'number') {
+    const ageS = Date.now() / 1000 - ev.ts;
+    if (ageS > PLAYBACK_FRESHNESS_S) {
+      debugLog(`announce: skipping playback [${ev.kind}] — ${Math.round(ageS)}s old (replay)`);
+      return;
+    }
+  }
 
   // Critical events (priority 0) bypass quiet hours — these are the
   // "wake the house" cases: HVAC freezing, sauna left on overnight,
@@ -315,6 +335,11 @@ function ensureHistoryDom(): { list: HTMLElement; count: HTMLElement; empty: HTM
 function appendHistoryItem(ev: AnnouncementEvent): void {
   const dom = ensureHistoryDom();
   if (!dom) return;
+  // Dedup the slide: same event from history-fetch + SSE replay must only
+  // render once. id is monotonic on the bridge so it's a stable key.
+  if (ev.id && dom.list.querySelector(`[data-id="${CSS.escape(String(ev.id))}"]`)) {
+    return;
+  }
 
   const item = document.createElement('div');
   item.className = `ann-item ann-prio-${Math.max(0, Math.min(3, ev.priority))}`;
