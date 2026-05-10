@@ -141,8 +141,14 @@ LIGHT_POLICY: dict[int, str] = {
     # rule was turning lights off mid-Zoom-call).
     # NOTE: light idx 4 (Saunan laude ledi) is NOT here — it has its own
     # temperature-driven block in check_and_control(), see SAUNA_LAUDE_IDX.
-    17: "manual_only",  # MH alakerta kattovalo (downstairs bedroom / workspace)
-    18: "manual_only",  # MH alakerta ikkuna    (downstairs bedroom / workspace)
+    17: "manual_only",  # MH alakerta kattovalo — downstairs bedroom doubles
+                        # as a daytime workspace; the ceiling light needs
+                        # to stay on during Zoom calls regardless of the
+                        # kitchen-Ruuvi-CO₂ occupancy proxy missing her.
+    18: "bedroom",      # MH alakerta ikkuna — only the kattovalo needs the
+                        # workspace exemption; the window light is fine
+                        # under the normal bedroom rules (auto-off when
+                        # unoccupied / after midnight).
     1:  "manual_only",  # Kylpyhuone alakerta — bathroom needs to stay on for
                         # showers/baths; no Ruuvi sensor here so we can't
                         # drive it from humidity like the sauna laude LED
