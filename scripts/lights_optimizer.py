@@ -615,11 +615,10 @@ def check_and_control():
     #     "Dark indoors" is defined as sun elevation < SUN_DARK_ELEVATION_DEG
     #     (default 8°), which kicks in well before astronomical sunset/after
     #     sunrise — matching the user's "getting pretty dark" experience.
-    #     Eligible-to-turn-on windows:
-    #       - morning (dark + before solar noon): idx 40 only
-    #       - evening (dark + after solar noon):  idx 40 + 54
-    #     Auto-off any time CO₂ drops or after midnight. Manual dismissal
-    #     (light off without us asking) suppresses re-enable until next day.
+    #     Eligible-to-turn-on: any time it's dark, both kitchen and
+    #     livingroom ceiling lights. Auto-off any time CO₂ drops or after
+    #     midnight. Manual dismissal (light off without us asking)
+    #     suppresses re-enable until next day.
     co2 = co2_signal_class()
     today = now.date()
     try:
@@ -627,12 +626,7 @@ def check_and_control():
     except Exception:
         sun_elev = 0.0  # conservative: treat as borderline
     is_dark_now = sun_elev < SUN_DARK_ELEVATION_DEG
-    is_morning = now.hour < 12
-    eligible_for_on: set[int] = set()
-    if is_dark_now:
-        eligible_for_on.add(CO2_AUTO_KITCHEN_IDX)
-        if not is_morning:
-            eligible_for_on.add(CO2_AUTO_LIVINGROOM_IDX)
+    eligible_for_on: set[int] = set(CO2_AUTO_MANAGED) if is_dark_now else set()
 
     # Drop stale dismissal entries from previous days
     for idx_d, date_d in list(_co2_dismissed_date.items()):
@@ -697,11 +691,10 @@ def check_and_control():
             elif idx_co2 not in eligible_for_on:
                 log_decision(idx_co2, "hold", "outside_dark_window", category="co2_auto")
             elif co2 == "ELEVATED":
-                window = "morning" if is_morning else "evening"
-                publish_state(idx_co2, True, f"co2_occupancy_{window}")
+                publish_state(idx_co2, True, "co2_occupancy")
                 _co2_auto_on_at[idx_co2] = now
                 _co2_auto_on_confirmed.pop(idx_co2, None)
-                log_decision(idx_co2, "on", f"co2_occupancy_{window}", category="co2_auto")
+                log_decision(idx_co2, "on", "co2_occupancy", category="co2_auto")
                 # Brief pause so a second publish in the same tick (the
                 # other CO₂-managed light) doesn't pile onto the PLC's
                 # MQTT command handler before it has finished the first.
