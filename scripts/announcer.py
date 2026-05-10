@@ -79,6 +79,15 @@ SAUNA_HEATING_C = float(os.environ.get("ANNOUNCE_SAUNA_HEATING_C", "45"))
 SAUNA_HOT_C     = float(os.environ.get("ANNOUNCE_SAUNA_HOT_C",     "70"))
 SAUNA_OFF_C     = float(os.environ.get("ANNOUNCE_SAUNA_OFF_C",     "40"))
 
+# Wasted-electricity warning: once the sauna has been continuously in
+# heating/hot state for SAUNA_WASTE_AFTER_MIN minutes (default 2 h), nag
+# every SAUNA_WASTE_REPEAT_MIN minutes (default 15 min) until the heater
+# is turned off (state leaves heating/hot). Marked priority 0 so the
+# kiosk plays it through quiet hours — leaving the kiuas on overnight is
+# exactly the case this warning exists for.
+SAUNA_WASTE_AFTER_MIN  = int(os.environ.get("ANNOUNCE_SAUNA_WASTE_AFTER_MIN",  "120"))
+SAUNA_WASTE_REPEAT_MIN = int(os.environ.get("ANNOUNCE_SAUNA_WASTE_REPEAT_MIN", "15"))
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("announcer")
 
@@ -431,6 +440,11 @@ class TickState:
         self.co2_class: dict[str, str] = {}
         self.pm25_class: dict[str, str] = {}
         self.last_lights_opt_seen: datetime = datetime.now(timezone.utc)
+        # Sauna-left-on tracking: when the heater is currently active
+        # (state in {heating, hot}), session_start is the moment it most
+        # recently left {off, cooling}. Cleared once the heater goes off.
+        self.sauna_session_start: datetime | None = None
+        self.sauna_warning_last:  datetime | None = None
         # Push-log cache: kind+key → last push epoch — soft rate-limit so a
         # flapping signal can't blast the kiosk every tick.
         self.last_push_at: "OrderedDict[str, float]" = OrderedDict()
@@ -484,6 +498,41 @@ def tick(infl: Influx, st: TickState, *, bootstrap: bool = False) -> None:
                 emit(Event(text, f"sauna_{new_state}", prio, "sauna_state",
                            sauna_ts.timestamp()), min_gap_s=300)
         st.sauna_state = new_state or st.sauna_state
+
+        # Sauna-left-on warning: heater is "on" while state is heating or hot.
+        # On entry to that range, start the session clock; on exit, clear it
+        # (and the per-warning rate-limit so the next session starts fresh).
+        # Bootstrap uses the current sample's timestamp as a conservative
+        # session start — if the heater was on before the announcer started,
+        # we under-count by however long it had already been on. The warning
+        # will still fire 2 h after restart at worst, and the next state
+        # transition resyncs cleanly.
+        now_utc = datetime.now(timezone.utc)
+        if st.sauna_state in ("heating", "hot"):
+            if st.sauna_session_start is None:
+                st.sauna_session_start = sauna_ts
+            elapsed_min = (now_utc - st.sauna_session_start).total_seconds() / 60.0
+            if elapsed_min >= SAUNA_WASTE_AFTER_MIN:
+                last = st.sauna_warning_last
+                due = (last is None) or \
+                      ((now_utc - last).total_seconds() / 60.0 >= SAUNA_WASTE_REPEAT_MIN)
+                if not bootstrap and due:
+                    h, m = divmod(int(elapsed_min), 60)
+                    if h > 0 and m > 0:
+                        dur = f"{h} tuntia {m} minuuttia"
+                    elif h > 0:
+                        dur = f"{h} tuntia"
+                    else:
+                        dur = f"{m} minuuttia"
+                    text = (f"Sauna on ollut päällä jo {dur}. "
+                            f"Käytkö löylyissä, vai voisiko kiukaan sammuttaa?")
+                    # min_gap_s=0 — we already gated on SAUNA_WASTE_REPEAT_MIN.
+                    emit(Event(text, "sauna_left_on", 0, "sauna_left_on",
+                               sauna_ts.timestamp()), min_gap_s=0)
+                    st.sauna_warning_last = now_utc
+        else:
+            st.sauna_session_start = None
+            st.sauna_warning_last  = None
 
     # --- Heating-tier transitions.
     tier, price, tier_ts = infl.latest_heating_tier()

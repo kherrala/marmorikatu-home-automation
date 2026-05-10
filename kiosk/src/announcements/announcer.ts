@@ -205,7 +205,10 @@ function handleEvent(ev: AnnouncementEvent): void {
   if (ev.id <= lastSeenId) return;
   lastSeenId = ev.id;
 
-  if (isQuietHours()) {
+  // Critical events (priority 0) bypass quiet hours — these are the
+  // "wake the house" cases: HVAC freezing, sauna left on overnight,
+  // overheated heater. Anything else gets deferred to the morning digest.
+  if (isQuietHours() && ev.priority > 0) {
     enqueueDigest(ev);
     debugLog(`announce: queued for digest [${ev.kind}/p${ev.priority}] (quiet hours)`);
     return;

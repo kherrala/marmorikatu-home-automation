@@ -33,6 +33,7 @@ no new instrumentation required.
 | HVAC freezing alarm        | `alarm.Alarm_freezing_danger` rising edge                           | 0 (critical)     |
 | Other HVAC alarm flags     | `alarm.Alarm_filter_guard`, `Alarm_efficiency`, fan failures, …    | 0–1              |
 | Sauna state                | `ruuvi.temperature` for sensor `Sauna` — heating / hot / cooling / off | 1–2          |
+| Sauna left on (waste)      | Heater continuously in heating/hot ≥ 2 h — repeats every 15 min until off | 0 (critical) |
 | Spot-price tier transition | `heating_optimizer.tier` (CHEAP / NORMAL / EXPENSIVE / PRE_HEAT)    | 1–2              |
 | Lights-optimizer decisions | `lights_optimizer` (auto-off, sauna-laude, CO₂ auto, post-sauna, porch) | 1–2          |
 | CO₂ class transition       | `ruuvi.co2` per sensor → good / elevated / high / very_high         | 1–2              |
@@ -72,6 +73,11 @@ tapahtumaa, joista tärkeimmät:"* if the digest had more than 3 entries).
 The "played for date" flag persists in `localStorage` (`announcer.digestDate`)
 so a page reload doesn't replay the morning digest.
 
+**Critical bypass:** events with `priority == 0` (HVAC freezing alarm, sauna
+left on, overheated heater) bypass quiet hours and play live. The whole point
+of those classes is to wake the house — deferring them to 07:00 would defeat
+the purpose. Every other priority tier follows the digest rule.
+
 ## Configuration (announcer service)
 
 | Env var                         | Default                                            | Notes                                          |
@@ -88,6 +94,8 @@ so a page reload doesn't replay the morning digest.
 | `ANNOUNCE_SAUNA_HEATING_C`      | `45`                                               | Sauna temp → state=heating                     |
 | `ANNOUNCE_SAUNA_HOT_C`          | `70`                                               | Sauna temp → state=hot                         |
 | `ANNOUNCE_SAUNA_OFF_C`          | `40`                                               | Sauna temp → state=off                         |
+| `ANNOUNCE_SAUNA_WASTE_AFTER_MIN`  | `120`                                            | Continuous-on duration before warning fires    |
+| `ANNOUNCE_SAUNA_WASTE_REPEAT_MIN` | `15`                                             | Repeat interval until heater goes off          |
 
 ### Bridge-side env
 
