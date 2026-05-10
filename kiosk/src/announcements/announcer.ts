@@ -48,6 +48,11 @@ const LIVE_QUEUE_MAX = 12;
 // always played and don't count against this cap.
 const PER_INTERLUDE_MAX = 2;
 
+// Cap on events shown on the Kuulutukset carousel slide. Older entries are
+// pruned from the DOM. Sized large enough to span a normal day's worth of
+// events at verbosity 3.
+const HISTORY_MAX = 200;
+
 // localStorage key — record the date we last spoke the morning digest, so a
 // page reload doesn't replay it.
 const DIGEST_DATE_KEY = 'announcer.digestDate';
@@ -265,6 +270,10 @@ function handleEvent(ev: AnnouncementEvent): void {
   if (ev.id <= lastSeenId) return;
   lastSeenId = ev.id;
 
+  // History list always reflects every event we receive, regardless of
+  // whether quiet hours suppress immediate playback or not.
+  appendHistoryItem(ev);
+
   // Critical events (priority 0) bypass quiet hours — these are the
   // "wake the house" cases: HVAC freezing, sauna left on overnight,
   // overheated heater. Anything else gets deferred to the morning digest.
@@ -274,6 +283,77 @@ function handleEvent(ev: AnnouncementEvent): void {
     return;
   }
   enqueueLive(ev);
+}
+
+// -- History slide --------------------------------------------------------
+
+function formatTime(ts: number | null): string {
+  const d = ts ? new Date(ts * 1000) : new Date();
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+function ensureHistoryDom(): { list: HTMLElement; count: HTMLElement; empty: HTMLElement } | null {
+  const slide = document.getElementById('announcements-slide');
+  if (!slide) return null;
+  if (!slide.dataset.initialized) {
+    slide.innerHTML = `
+      <div class="ann-header">
+        <h2>Kuulutukset</h2>
+        <span class="ann-count">0</span>
+      </div>
+      <div class="ann-empty">Ei vielä kuulutuksia.</div>
+      <div class="ann-list" hidden></div>
+    `;
+    slide.dataset.initialized = '1';
+  }
+  const list  = slide.querySelector('.ann-list')  as HTMLElement;
+  const count = slide.querySelector('.ann-count') as HTMLElement;
+  const empty = slide.querySelector('.ann-empty') as HTMLElement;
+  return { list, count, empty };
+}
+
+function appendHistoryItem(ev: AnnouncementEvent): void {
+  const dom = ensureHistoryDom();
+  if (!dom) return;
+
+  const item = document.createElement('div');
+  item.className = `ann-item ann-prio-${Math.max(0, Math.min(3, ev.priority))}`;
+  item.dataset.id = String(ev.id);
+  item.innerHTML = `
+    <span class="ann-dot"></span>
+    <span class="ann-time"></span>
+    <span class="ann-text"></span>
+  `;
+  (item.querySelector('.ann-time') as HTMLElement).textContent = formatTime(ev.ts);
+  (item.querySelector('.ann-text') as HTMLElement).textContent = ev.text;
+
+  // Newest at the top.
+  dom.list.prepend(item);
+  while (dom.list.childElementCount > HISTORY_MAX) {
+    dom.list.lastElementChild?.remove();
+  }
+  dom.count.textContent = String(dom.list.childElementCount);
+  dom.empty.hidden = true;
+  dom.list.hidden = false;
+}
+
+async function loadInitialHistory(): Promise<void> {
+  ensureHistoryDom();  // create the empty-state DOM up-front
+  try {
+    const res = await fetch('/api/chat/announcements/history?limit=200');
+    if (!res.ok) return;
+    const data = await res.json() as { events?: AnnouncementEvent[] };
+    if (!data.events || data.events.length === 0) return;
+    // Server returns oldest-first. handleEvent prepends, so iterate oldest→
+    // newest and the newest ends up at the top.
+    for (const ev of data.events) {
+      if (typeof ev.id === 'number' && ev.id > lastSeenId) lastSeenId = ev.id;
+      appendHistoryItem(ev);
+    }
+    debugLog(`announce: loaded ${data.events.length} history items`);
+  } catch (err) {
+    debugLog(`announce: history load failed: ${err}`);
+  }
 }
 
 function connect(): void {
@@ -302,7 +382,10 @@ export function initAnnouncer(): void {
     debugLog('announce: EventSource not available — announcer disabled');
     return;
   }
-  connect();
+  // Backfill the history slide before opening SSE — that way replayed events
+  // (Last-Event-ID-driven) and the initial fetch don't double-count, since
+  // the history endpoint and the SSE replay share the same ring + ids.
+  loadInitialHistory().finally(connect);
 
   // Kick the drain on every phase change — that's when canSpeakNow() can
   // flip true (e.g., GREETING → COOLDOWN) and we want to start speaking

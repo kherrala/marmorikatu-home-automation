@@ -30,6 +30,85 @@ html, body {
   display: block;
 }
 
+/* -- Native (non-iframe) slides --------------------------------------- */
+.native-slide {
+  width: 100%;
+  height: 100%;
+  background: #111;
+  color: #eee;
+  font-family: system-ui, -apple-system, sans-serif;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* -- Announcements slide ---------------------------------------------- */
+#announcements-slide .ann-header {
+  padding: 32px 56px 18px;
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+#announcements-slide .ann-header h2 {
+  font-size: 38px;
+  font-weight: 600;
+  color: #fff;
+  letter-spacing: -0.5px;
+}
+#announcements-slide .ann-header .ann-count {
+  font-size: 18px;
+  color: #888;
+}
+#announcements-slide .ann-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 56px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+#announcements-slide .ann-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #555;
+  font-size: 22px;
+  font-style: italic;
+}
+#announcements-slide .ann-item {
+  display: grid;
+  grid-template-columns: 14px 84px 1fr;
+  gap: 16px;
+  align-items: baseline;
+  padding: 14px 18px;
+  background: rgba(255,255,255,0.03);
+  border-radius: 10px;
+  font-size: 22px;
+  line-height: 1.35;
+}
+#announcements-slide .ann-item.ann-prio-0 { background: rgba(229,57,53,0.16); }
+#announcements-slide .ann-item.ann-prio-1 { background: rgba(255,179,0,0.10); }
+#announcements-slide .ann-item .ann-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  align-self: center;
+}
+#announcements-slide .ann-item.ann-prio-0 .ann-dot { background: #e53935; }
+#announcements-slide .ann-item.ann-prio-1 .ann-dot { background: #ffb300; }
+#announcements-slide .ann-item.ann-prio-2 .ann-dot { background: #43a047; }
+#announcements-slide .ann-item.ann-prio-3 .ann-dot { background: #555; }
+#announcements-slide .ann-item .ann-time {
+  color: #888;
+  font-variant-numeric: tabular-nums;
+  font-size: 18px;
+}
+#announcements-slide .ann-item .ann-text {
+  color: #eee;
+}
+
 /* -- Swipe / click edge strips ---------------------------------------- */
 /* Narrow strip + touch-pass-through on touch devices: the document-level
    swipe handler still catches horizontal swipes anywhere on screen, so the

@@ -1266,7 +1266,10 @@ async def cached_report_endpoint(request: Request) -> JSONResponse:
 # pick up events it missed (Last-Event-ID header).
 
 _ANNOUNCE_PUSH_TOKEN = os.environ.get("ANNOUNCE_PUSH_TOKEN", "")
-_ANNOUNCE_RING_SIZE = int(os.environ.get("ANNOUNCE_RING_SIZE", "32"))
+# Sized to be useful both as an SSE replay window AND as the source for the
+# kiosk's announcement-history slide on initial load. ~200 covers a full day
+# of normal-verbosity events with headroom; restart still loses everything.
+_ANNOUNCE_RING_SIZE = int(os.environ.get("ANNOUNCE_RING_SIZE", "200"))
 _ANNOUNCE_KEEPALIVE_SEC = float(os.environ.get("ANNOUNCE_KEEPALIVE_SEC", "20"))
 
 _announce_subscribers: set[asyncio.Queue] = set()
@@ -1324,6 +1327,23 @@ async def announce_push_endpoint(request: Request) -> JSONResponse:
     }
     await _broadcast_announcement(event)
     return JSONResponse({"ok": True, "id": _announce_seq, "subscribers": len(_announce_subscribers)})
+
+
+async def announce_history_endpoint(request: Request) -> JSONResponse:
+    """GET /announcements/history?limit=N — recent events from the ring.
+
+    Returned in chronological order (oldest first) so the kiosk can append
+    them straight onto its history list. Survives only as long as the bridge
+    process — restart loses the buffer.
+    """
+    limit_raw = request.query_params.get("limit", "200")
+    try:
+        limit = max(1, min(int(limit_raw), _ANNOUNCE_RING_SIZE))
+    except ValueError:
+        limit = _ANNOUNCE_RING_SIZE
+    async with _announce_lock:
+        events = list(_announce_ring)[-limit:]
+    return JSONResponse({"events": events, "ring_size": _ANNOUNCE_RING_SIZE})
 
 
 async def announce_stream_endpoint(request: Request) -> Response:
@@ -1409,6 +1429,7 @@ app = Starlette(
         Route("/cached/quote", cached_quote_endpoint),
         Route("/cached/report", cached_report_endpoint),
         Route("/announcements/stream", announce_stream_endpoint),
+        Route("/announcements/history", announce_history_endpoint),
         Route("/announcements/push", announce_push_endpoint, methods=["POST"]),
         Route("/debug", debug_endpoint, methods=["GET", "POST"]),
         Route("/health", health_endpoint),

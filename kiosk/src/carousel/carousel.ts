@@ -57,7 +57,13 @@ export function initCarousel(): Subscription {
     const div = document.createElement('div');
     div.className = 'slide';
     div.id = `slide-${i}`;
-    div.innerHTML = `<iframe title="${def.title}" src="${def.src}"></iframe>`;
+    if (def.kind === 'native' && def.nativeId) {
+      // Native slide — owning module mounts its UI into the inner div.
+      div.classList.add('slide-native');
+      div.innerHTML = `<div id="${def.nativeId}" class="native-slide"></div>`;
+    } else {
+      div.innerHTML = `<iframe title="${def.title}" src="${def.src}"></iframe>`;
+    }
     slidesContainer.appendChild(div);
 
     const dot = document.createElement('div');

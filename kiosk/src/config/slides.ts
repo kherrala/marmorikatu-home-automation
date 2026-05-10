@@ -7,8 +7,10 @@ export const SLIDE_DEFS: readonly SlideDefinition[] = [
   { title: 'Uutiset', src: '/news/' },
   { title: 'Kalenteri', src: '/calendar/' },
   { title: 'Nysse', src: '/nysse/' },
+  { title: 'Kuulutukset', src: '#announcements', kind: 'native', nativeId: 'announcements-slide' },
 ];
 
 export const NYSSE_IDX = SLIDE_DEFS.findIndex(s => s.title === 'Nysse');
 export const NEWS_IDX = SLIDE_DEFS.findIndex(s => s.title === 'Uutiset');
+export const ANNOUNCEMENTS_IDX = SLIDE_DEFS.findIndex(s => s.title === 'Kuulutukset');
 export const TOTAL = SLIDE_DEFS.length;
