@@ -1,0 +1,11 @@
+{
+  "name": "Marmorikatu",
+  "short_name": "Marmorikatu",
+  "description": "Marmorikatu home automation kiosk: dashboards, voice avatar and announcements.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "landscape",
+  "background_color": "#111111",
+  "theme_color": "#111111"
+}

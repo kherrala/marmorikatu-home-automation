@@ -69,6 +69,15 @@ server {
         add_header Content-Disposition 'attachment; filename="kiosk.cer"';
     }
 
+    # PWA manifest — explicit MIME type so Safari parses it correctly when
+    # the user picks Share → Add to Home Screen. Without this, default mime
+    # types fall back to octet-stream and iOS silently treats the page as a
+    # regular bookmark (no persistent permissions).
+    location = /manifest.webmanifest {
+        default_type application/manifest+json;
+        try_files $uri =404;
+    }
+
     location / {
         try_files $uri $uri/ /index.html;
         add_header Cache-Control "no-store, no-cache, must-revalidate";
