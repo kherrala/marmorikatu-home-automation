@@ -779,9 +779,15 @@ def check_and_control():
 
         reason = None
 
-        if pol.auto_off_after_sunrise_min is not None and now >= sunrise + timedelta(
-                minutes=pol.auto_off_after_sunrise_min):
-            reason = "after_sunrise"
+        # Daytime auto-off: only between sunrise+grace and sunset. The
+        # condition used to be `now >= sunrise + grace`, which was true
+        # all day AND all evening — so a light turned on at 22:30 in
+        # the dark was instantly auto-offed because "now > 05:55"
+        # (today's sunrise + 60 min). Bracketing with `< sunset`
+        # restricts the rule to actual daylight hours.
+        if (pol.auto_off_after_sunrise_min is not None
+                and sunrise + timedelta(minutes=pol.auto_off_after_sunrise_min) <= now < sunset):
+            reason = "during_daylight"
         elif pol.auto_off_when_unoccupied and (
                 (weekday and WORKDAY_START_HOUR <= now.hour < WORKDAY_END_HOUR and not occupied)
                 or (idx not in ABSENCE_EXEMPT_INDICES and long_absent)
