@@ -12,6 +12,7 @@ import {
 import { KioskPhase } from '../types/state.js';
 import { captureFrame, isVisionRequest } from '../camera/capture.js';
 import { greetingAbortController } from './greeting.js';
+import { speakPendingInInterlude } from '../announcements/announcer.js';
 
 function showScreenshot(dataUri: string): void {
   console.log('[screenshot] showing, data length:', dataUri.length);
@@ -242,7 +243,14 @@ export async function handleVoiceResult(transcript: string): Promise<void> {
     // Clear processing BEFORE starting listening (guard checks it)
     dispatch({ type: 'SET_PROCESSING', processing: false });
     if (getState().phase === KioskPhase.GREETING) {
-      startListeningFn?.();
+      // Slot pending announcements into the natural conversation pause so the
+      // user hears alarms / sauna / lights events as part of the chat rhythm
+      // instead of waiting for the greeting to dismiss. Capped at 2 normal
+      // events (plus all criticals) so a backlog doesn't hijack the turn.
+      await speakPendingInInterlude();
+      if (getState().phase === KioskPhase.GREETING) {
+        startListeningFn?.();
+      }
     }
   } finally {
     // Ensure processing is always cleared even on error

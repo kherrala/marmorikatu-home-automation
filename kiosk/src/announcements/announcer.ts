@@ -41,6 +41,13 @@ const DIGEST_MAX = 3;
 // hour-old "kitchen light turned on" when we finally get a chance to speak.
 const LIVE_QUEUE_MAX = 12;
 
+// Cap on announcements played in a single conversation interlude (between
+// the AI reply finishing and listening reopening). Keeps the conversation
+// from turning into an announcement reading session — the rest stays
+// queued for the next idle window. Critical (priority 0) events are
+// always played and don't count against this cap.
+const PER_INTERLUDE_MAX = 2;
+
 // localStorage key — record the date we last spoke the morning digest, so a
 // page reload doesn't replay it.
 const DIGEST_DATE_KEY = 'announcer.digestDate';
@@ -159,6 +166,33 @@ async function drain(): Promise<void> {
     debugLog(`announce: speak failed: ${err}`);
   }
   if (liveQueue.length > 0) scheduleDrain();
+}
+
+/**
+ * Play pending announcements in the conversation interlude — between the
+ * avatar's reply and re-opening the mic. Bypasses the canSpeakNow gate
+ * because the caller has already asserted it's safe to speak. Plays at most
+ * PER_INTERLUDE_MAX queued events plus all critical (priority 0) ones, then
+ * returns; the rest stays for the next idle drain so we don't turn each
+ * turn-take into an announcement reading session.
+ */
+export async function speakPendingInInterlude(): Promise<void> {
+  if (liveQueue.length === 0) return;
+
+  let normalSpoken = 0;
+  while (liveQueue.length > 0) {
+    const next = liveQueue[0]!;
+    const isCritical = next.priority === 0;
+    if (!isCritical && normalSpoken >= PER_INTERLUDE_MAX) break;
+    liveQueue.shift();
+    if (!isCritical) normalSpoken++;
+    debugLog(`announce: interlude speaking [${next.kind}/p${next.priority}] ${next.text.slice(0, 60)}`);
+    try {
+      await speakAndWait(next.text);
+    } catch (err) {
+      debugLog(`announce: interlude speak failed: ${err}`);
+    }
+  }
 }
 
 function flushDigestIfDue(): void {
