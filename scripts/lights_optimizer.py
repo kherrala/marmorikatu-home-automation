@@ -172,9 +172,9 @@ LIGHT_POLICY: dict[int, str] = {
     34: "toilet",      # Kylpyhuone yläkerta peilivalo
 
     # Bedrooms (upstairs, sleeping use). Aula is NOT a bedroom.
-    22: "bedroom", 23: "bedroom",                  # Aatu (upstairs)
-    28: "bedroom", 30: "bedroom",                  # Onni (upstairs)
-    31: "bedroom", 32: "bedroom", 33: "bedroom",   # Essi (upstairs) — vaatehuone + ikkuna + katto
+    22: "bedroom", 23: "bedroom",                  # Aarni (upstairs; PLC legacy name "Aatu")
+    28: "bedroom", 30: "bedroom",                  # Seela (upstairs; PLC legacy name "Onni")
+    31: "bedroom", 32: "bedroom", 33: "bedroom",   # Aikuiset (upstairs; PLC legacy name "Essi") — vaatehuone + ikkuna + katto
 
     # Kitchen — note: idx 40 (Keittiö kattovalo) is CO₂-auto-managed below,
     # NOT in this policy.

@@ -14,6 +14,14 @@ SWITCH_LABELS keys are wall-switch input position numbers (1–56).
 Both tables are derived from the canonical CSVs at
 ../marmorikatu-plc/PlcLogic/visu/buttontxt.txt and
 ../marmorikatu-plc/PlcLogic/visu/buttonpos.txt.
+
+Note on bedroom names: the upstairs bedroom labels here use the *current*
+occupants (Aarni / Seela / Aikuiset). The PLC's CSV source files still spell
+them as the previous owners' children (Aatu / Onni / Essi) — see
+`memory/plc_bedroom_naming.md`. We deliberately diverge from the CSV here so
+that announcements, voice commands and Grafana dashboards say the right
+name; the integer indices are unchanged so MQTT topics, lights_optimizer
+policies and historic InfluxDB data continue to line up.
 """
 
 LIGHT_LABELS = {
@@ -29,17 +37,17 @@ LIGHT_LABELS = {
     18: ("MH alakerta ikkuna", 1),
     19: ("Ruokailu", 1),
     20: ("Ruokailu ikkuna", 1),
-    22: ("Aatu kattovalo", 2),
-    23: ("Aatu ikkunavalo", 2),
+    22: ("Aarni kattovalo", 2),
+    23: ("Aarni ikkunavalo", 2),
     24: ("Aula ikkunavalo", 2),
     25: ("Aula rappuset", 2),
     26: ("Yläkerta aula kattovalo", 2),
-    28: ("Onni kattovalo", 2),
+    28: ("Seela kattovalo", 2),
     29: ("Kylpyhuone yläkerta katto", 2),
-    30: ("Onni ikkunavalo", 2),
-    31: ("Essi vaatehuone", 2),
-    32: ("Essi ikkunavalo", 2),
-    33: ("Essi kattovalo", 2),
+    30: ("Seela ikkunavalo", 2),
+    31: ("Aikuiset vaatehuone", 2),
+    32: ("Aikuiset ikkunavalo", 2),
+    33: ("Aikuiset kattovalo", 2),
     34: ("Kylpyhuone yläkerta peilivalo", 2),
     35: ("Eteinen", 1),
     36: ("Tuulikaappi vaatehuone", 1),
@@ -87,19 +95,19 @@ SWITCH_LABELS = {
     16: ("Tuulikaappi vaatehuone", 1),
     17: ("Porras AK 1", 1),
     18: ("Porras AK 2", 1),
-    19: ("Essi 1", 2),
-    20: ("Essi 2", 2),
-    21: ("Essi vaatehuone", 2),
+    19: ("Aikuiset 1", 2),
+    20: ("Aikuiset 2", 2),
+    21: ("Aikuiset vaatehuone", 2),
     23: ("Kylpyhuone YK 1", 2),
     24: ("Kylpyhuone YK 2", 2),
     25: ("Porras YK 1", 2),
     26: ("Porras YK 2", 2),
     27: ("Aula YK 1", 2),
     28: ("Aula YK 2", 2),
-    29: ("Onni 1", 2),
-    30: ("Onni 2", 2),
-    31: ("Aatu 1", 2),
-    32: ("Aatu 2", 2),
+    29: ("Seela 1", 2),
+    30: ("Seela 2", 2),
+    31: ("Aarni 1", 2),
+    32: ("Aarni 2", 2),
     33: ("Tekninen tila", 1),
     34: ("Kellari WC", 0),
     35: ("Kellari eteinen 1", 0),

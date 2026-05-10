@@ -209,7 +209,7 @@ imported from `Temperatures*.csv` files.
 
 The WAGO MQTT publisher emits **integer 0–100 PID%** per zone on
 `marmorikatu/heating`, written as `room_type=pid` float fields (e.g.
-`MH_Seela_PID = 60.0` means the Aatu/Seela zone is calling for 60% heating
+`MH_Seela_PID = 60.0` means Seela's bedroom zone is calling for 60% heating
 output). This replaces the earlier scheme where the publisher emitted only
 boolean valve-open/closed and the subscriber synthesised 0/100% PID rows.
 Historical `room_type=valve` rows from that interim period remain in the
@@ -268,9 +268,9 @@ Binary 0/1 fields, one per zone, written when the corresponding valve is open.
 | `LL_Eteinen` | 1 | Entrance / foyer |
 | `LL_AK_MH` | 1 | Lower-floor bedroom |
 | `LL_YK_aula` | 2 | Upper-floor hall |
-| `LL_Aatu` | 2 | Aatu's room |
-| `LL_Onni` | 2 | Onni's room |
-| `LL_Essi` | 2 | Essi's room |
+| `LL_Aatu` | 2 | Aarni's room (PLC field still spells legacy owner "Aatu") |
+| `LL_Onni` | 2 | Seela's room (PLC field still spells legacy owner "Onni") |
+| `LL_Essi` | 2 | Master bedroom (PLC field still spells legacy owner "Essi") |
 
 #### `room_type=energy` — Building Energy Totals (legacy)
 
