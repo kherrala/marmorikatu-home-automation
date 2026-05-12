@@ -135,7 +135,7 @@ without needing a baseline (also handles cold-start after restart when the
 | `OCCUPANCY_WINDOW_MIN` | 30 | `house_occupied` lookback |
 | `LONG_ABSENCE_MIN` | 120 | `long_unoccupied` lookback |
 | `CO2_OCCUPANCY_DELTA_PPM` | 30 | Old `co2_recently_elevated` threshold |
-| `MANUAL_HOLD_MIN` | 15 | Default min-hold-after-manual |
+| `MANUAL_HOLD_MIN` | 90 | Grace after a manual on-press for `kitchen` / `livingroom` / `general` categories. Generous on purpose: cooking, eating, hanging out and tidying take longer than the 15 min it was before — letting auto-off fire that quickly trained the optimizer to fight active users. After this window the `during_daylight` / `house_unoccupied` / `after_midnight` rules can fire. |
 | `BEDROOM_HOLD_MIN` | 30 | Bedroom min-hold-after-manual |
 | `PORCH_OFF_HOUR` | 22 | Front-porch schedule end (local). `TERRACE_OFF_HOUR` is accepted as a fallback for backwards compatibility. |
 | `AFTER_MIDNIGHT_END_HOUR` | 5 | `in_after_midnight_window` upper bound (local). Default 05:00 leaves the 00:30–05:00 deep-night window where forgotten lights get culled, but releases the morning routine (≥ 05:00) to be governed by the regular per-policy duration cap. Was 07:00 — that overlapped with the early-riser bathroom use and caused the toilet light to flap-off against an active user. |

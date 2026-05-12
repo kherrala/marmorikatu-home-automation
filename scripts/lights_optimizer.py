@@ -71,7 +71,14 @@ STAIRCASE_TIMEOUT_MIN = int(os.environ.get("STAIRCASE_TIMEOUT_MIN", "30"))
 OCCUPANCY_WINDOW_MIN = int(os.environ.get("OCCUPANCY_WINDOW_MIN", "30"))
 LONG_ABSENCE_MIN = int(os.environ.get("LONG_ABSENCE_MIN", "120"))
 CO2_OCCUPANCY_DELTA_PPM = float(os.environ.get("CO2_OCCUPANCY_DELTA_PPM", "30"))
-MANUAL_HOLD_MIN = int(os.environ.get("MANUAL_HOLD_MIN", "15"))
+# Grace period after a manual on-press for kitchen / livingroom / general
+# categories. After this many minutes the auto-off rules (`during_daylight`,
+# `house_unoccupied`, `after_midnight`) can fire. Default 90 min — short
+# enough that a forgotten light during an empty workday eventually gets
+# culled, long enough that setting the dinner table, cooking, or hanging
+# out in the living room doesn't get cut short by the optimizer at the
+# 15-minute mark. (Was 15.)
+MANUAL_HOLD_MIN = int(os.environ.get("MANUAL_HOLD_MIN", "90"))
 BEDROOM_HOLD_MIN = int(os.environ.get("BEDROOM_HOLD_MIN", "30"))
 PORCH_OFF_HOUR = int(os.environ.get("PORCH_OFF_HOUR", os.environ.get("TERRACE_OFF_HOUR", "23")))
 # After-midnight auto-off rule (toilet / staircase / bedroom / kitchen / etc.

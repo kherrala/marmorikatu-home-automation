@@ -398,7 +398,7 @@ services:
       - OCCUPANCY_WINDOW_MIN=30
       - LONG_ABSENCE_MIN=120
       - CO2_OCCUPANCY_DELTA_PPM=30
-      - MANUAL_HOLD_MIN=15
+      - MANUAL_HOLD_MIN=90
       - BEDROOM_HOLD_MIN=30
       - TERRACE_OFF_HOUR=22
       # Deep-night auto-off window (00:30 → AFTER_MIDNIGHT_END_HOUR). Stops
