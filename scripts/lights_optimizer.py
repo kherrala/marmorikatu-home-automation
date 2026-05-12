@@ -74,6 +74,14 @@ CO2_OCCUPANCY_DELTA_PPM = float(os.environ.get("CO2_OCCUPANCY_DELTA_PPM", "30"))
 MANUAL_HOLD_MIN = int(os.environ.get("MANUAL_HOLD_MIN", "15"))
 BEDROOM_HOLD_MIN = int(os.environ.get("BEDROOM_HOLD_MIN", "30"))
 PORCH_OFF_HOUR = int(os.environ.get("PORCH_OFF_HOUR", os.environ.get("TERRACE_OFF_HOUR", "23")))
+# After-midnight auto-off rule (toilet / staircase / bedroom / kitchen / etc.
+# policies that opt in via `auto_off_after_midnight=True`) only fires while
+# wall-clock is inside [AFTER_MIDNIGHT_START_HOUR:30, AFTER_MIDNIGHT_END_HOUR).
+# Default end at 05:00 — early-risers' bathroom routine (06–07 local) used to
+# overlap with the previous 07:00 cutoff, causing the optimizer to flap-off
+# the toilet light every minute against an active user. After 05:00 the
+# regular per-category duration timeout (TOILET_TIMEOUT_MIN etc.) takes over.
+AFTER_MIDNIGHT_END_HOUR = int(os.environ.get("AFTER_MIDNIGHT_END_HOUR", "5"))
 # Even in midsummer when sunset is past PORCH_OFF_HOUR, keep the porch
 # on for at least this many minutes after sunset so the schedule is
 # always meaningful. Without this, the on-window would degenerate to
@@ -565,8 +573,11 @@ def log_decision(idx: int, decision: str, reason: str, on_dur: float | None = No
 # ── Decision loop ─────────────────────────────────────────────────────────────
 
 def in_after_midnight_window(now: datetime) -> bool:
-    """00:30 ≤ now < 07:00 local time. `now` is local-tz-aware."""
-    return dtime(0, 30) <= now.time() < dtime(7, 0)
+    """00:30 ≤ now < AFTER_MIDNIGHT_END_HOUR local time. `now` is local-tz-aware.
+
+    Catches "light left on overnight" without trampling early-morning use.
+    """
+    return dtime(0, 30) <= now.time() < dtime(AFTER_MIDNIGHT_END_HOUR, 0)
 
 
 def check_and_control():

@@ -401,6 +401,10 @@ services:
       - MANUAL_HOLD_MIN=15
       - BEDROOM_HOLD_MIN=30
       - TERRACE_OFF_HOUR=22
+      # Deep-night auto-off window (00:30 → AFTER_MIDNIGHT_END_HOUR). Stops
+      # before the early-riser routine so the toilet light isn't flapped off
+      # against an active user.
+      - AFTER_MIDNIGHT_END_HOUR=5
       - DRY_RUN=0
     depends_on:
       influxdb:

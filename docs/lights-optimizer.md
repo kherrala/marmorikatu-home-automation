@@ -138,6 +138,7 @@ without needing a baseline (also handles cold-start after restart when the
 | `MANUAL_HOLD_MIN` | 15 | Default min-hold-after-manual |
 | `BEDROOM_HOLD_MIN` | 30 | Bedroom min-hold-after-manual |
 | `PORCH_OFF_HOUR` | 22 | Front-porch schedule end (local). `TERRACE_OFF_HOUR` is accepted as a fallback for backwards compatibility. |
+| `AFTER_MIDNIGHT_END_HOUR` | 5 | `in_after_midnight_window` upper bound (local). Default 05:00 leaves the 00:30–05:00 deep-night window where forgotten lights get culled, but releases the morning routine (≥ 05:00) to be governed by the regular per-policy duration cap. Was 07:00 — that overlapped with the early-riser bathroom use and caused the toilet light to flap-off against an active user. |
 | `SUN_DARK_ELEVATION_DEG` | 8 | Dark threshold for CO₂ auto-on |
 | `CO2_AUTO_ON_DELTA_PPM` | 20 | ELEVATED delta threshold |
 | `CO2_AUTO_ON_ABSOLUTE_PPM` | 580 | ELEVATED absolute fallback |
