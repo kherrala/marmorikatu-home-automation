@@ -224,7 +224,12 @@ class Policy:
 
 
 POLICIES: dict[str, Policy] = {
-    "toilet":           Policy(None, False, TOILET_TIMEOUT_MIN,    True,  5),
+    # Toilet auto_off_after_midnight intentionally disabled. Toilet visits
+    # at 03–05 local are normal in this household (early risers, kids); the
+    # deep-night rule was killing the light 5 min after manual press during
+    # active use. The duration cap (TOILET_TIMEOUT_MIN, default 60) handles
+    # genuinely forgotten lights with much better UX.
+    "toilet":           Policy(None, False, TOILET_TIMEOUT_MIN,    False, 5),
     "staircase":        Policy(SUNRISE_GRACE_MIN, True, STAIRCASE_TIMEOUT_MIN, True, 5),
     "bedroom":          Policy(None, True,  None,                  True,  BEDROOM_HOLD_MIN),
     "kitchen":          Policy(SUNRISE_GRACE_MIN, True, None,      True,  MANUAL_HOLD_MIN),
@@ -615,32 +620,46 @@ def check_and_control():
     def _porch_window(s: datetime) -> tuple[datetime, datetime]:
         """Return (on, off) for the porch window starting at sunset `s`.
 
-        Off-time selection:
-          1. Anchor at today's PORCH_OFF_HOUR. If sunset already passed it
-             (midsummer: sunset 22:02, off-hour 22:00), bump to tomorrow's
-             PORCH_OFF_HOUR.
-          2. Honour PORCH_MIN_DURATION_MIN as a floor — but only against
-             the un-bumped off-hour. After bumping we already have a
-             post-midnight off-time; the floor is no longer needed.
-          3. Cap at the following day's sunrise. Daylight makes the porch
-             pointless and previously the bumped value of "tomorrow 22:00"
-             combined with the floor would keep the lamp on for an entire
-             day after a midsummer sunset.
+        Three branches keyed off the relationship between sunset and
+        PORCH_OFF_HOUR:
+
+        a) Sunset is BEFORE today's PORCH_OFF_HOUR (autumn → spring).
+           Off at today's PORCH_OFF_HOUR (e.g. sunset 15:30 → off 22:00).
+           PORCH_MIN_DURATION_MIN acts as a floor for the rare case the
+           user sets PORCH_OFF_HOUR uncomfortably close to sunset.
+
+        b) Sunset is AFTER today's PORCH_OFF_HOUR (midsummer:
+           sunset 22:02, off-hour 22:00). The off-hour is already past
+           when the porch turns on, so we can't anchor on it. Use
+           sunset + PORCH_MIN_DURATION_MIN instead — gives a meaningful
+           ~2 h window (sunset 22:02 → off ~00:02) and keeps the porch
+           off through the night and the next day. Capped at next
+           sunrise so it never extends into daylight.
+
+        c) PORCH_OFF_HOUR >= 24 (user explicitly wants a post-midnight
+           off, e.g. 26 = 02:00 tomorrow). Bump and use the bumped
+           value, again capped at next sunrise so a typo can't pin the
+           porch on through daylight.
         """
         off_hour_today = s.replace(
             hour=PORCH_OFF_HOUR % 24, minute=0, second=0, microsecond=0,
         )
-        bumped = PORCH_OFF_HOUR >= 24 or off_hour_today <= s
-        if bumped:
-            off_hour_today = off_hour_today + timedelta(days=1)
-            off_time = off_hour_today  # already in the next day; floor unnecessary
+        next_sunrise, _ = todays_sun(s + timedelta(days=1))
+
+        if PORCH_OFF_HOUR >= 24:
+            # Case (c): explicit next-day off-hour.
+            off_time = off_hour_today + timedelta(days=1)
+        elif off_hour_today <= s:
+            # Case (b): midsummer — sunset past PORCH_OFF_HOUR. Bumping
+            # to tomorrow's same hour creates a 24-hour-long window
+            # (the bug we just had). Use min-duration floor as the
+            # off-time directly.
+            off_time = s + timedelta(minutes=PORCH_MIN_DURATION_MIN)
         else:
+            # Case (a): normal — off-hour later today.
             min_off = s + timedelta(minutes=PORCH_MIN_DURATION_MIN)
             off_time = max(off_hour_today, min_off)
-        # Cap at next sunrise — porch on into daylight is pointless and
-        # was the visible failure mode of the previous bumped-off-hour
-        # path in midsummer (sunset 22:02 → off scheduled tomorrow 22:00).
-        next_sunrise, _ = todays_sun(s + timedelta(days=1))
+
         return s, min(off_time, next_sunrise)
 
     yest_sunrise, yest_sunset = todays_sun(now - timedelta(days=1))

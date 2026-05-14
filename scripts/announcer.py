@@ -930,7 +930,17 @@ def tick(infl: Influx, st: TickState, *, bootstrap: bool = False) -> None:
                  min_gap_s=15)
 
     # --- lights_optimizer decisions since last poll.
+    # The optimizer publishes the same off-command on consecutive ticks
+    # while waiting for the PLC to actually flip the light — that yielded
+    # duplicate auto-off announcements ~2 min apart (the prior 120 s
+    # cooldown was racing the 60 s tick interval, e.g. 121 s gap → second
+    # push went through). Two-layer dedup:
+    #   (a) within this poll, collapse repeat (light_id, reason) rows so a
+    #       single batch of optimizer ticks announces once.
+    #   (b) cross-poll cooldown raised to 600 s so a slow PLC catching up
+    #       across multiple polls can't slip a duplicate through.
     rows = infl.lights_optimizer_decisions_since(st.last_lights_opt_seen)
+    seen_in_tick: set[str] = set()
     for row in rows:
         ts = row.get("ts")
         if ts is None:
@@ -939,9 +949,13 @@ def tick(infl: Influx, st: TickState, *, bootstrap: bool = False) -> None:
             st.last_lights_opt_seen = ts
         if bootstrap:
             continue
+        tick_key = f"{row.get('light_id', '')}:{row.get('reason', '')}"
+        if tick_key in seen_in_tick:
+            continue
+        seen_in_tick.add(tick_key)
         ev = _format_lights_optimizer(row)
         if ev:
-            emit(ev, min_gap_s=120)
+            emit(ev, min_gap_s=600)
 
     # Cap per-tick burst — keep highest-priority items, drop the rest.
     if not deferred:
