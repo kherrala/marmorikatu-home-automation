@@ -613,14 +613,35 @@ def check_and_control():
     pol = POLICIES["porch_schedule"]
 
     def _porch_window(s: datetime) -> tuple[datetime, datetime]:
-        """Return (on, off) for the porch window starting at sunset `s`."""
+        """Return (on, off) for the porch window starting at sunset `s`.
+
+        Off-time selection:
+          1. Anchor at today's PORCH_OFF_HOUR. If sunset already passed it
+             (midsummer: sunset 22:02, off-hour 22:00), bump to tomorrow's
+             PORCH_OFF_HOUR.
+          2. Honour PORCH_MIN_DURATION_MIN as a floor — but only against
+             the un-bumped off-hour. After bumping we already have a
+             post-midnight off-time; the floor is no longer needed.
+          3. Cap at the following day's sunrise. Daylight makes the porch
+             pointless and previously the bumped value of "tomorrow 22:00"
+             combined with the floor would keep the lamp on for an entire
+             day after a midsummer sunset.
+        """
         off_hour_today = s.replace(
             hour=PORCH_OFF_HOUR % 24, minute=0, second=0, microsecond=0,
         )
-        if PORCH_OFF_HOUR >= 24 or off_hour_today <= s:
+        bumped = PORCH_OFF_HOUR >= 24 or off_hour_today <= s
+        if bumped:
             off_hour_today = off_hour_today + timedelta(days=1)
-        min_off = s + timedelta(minutes=PORCH_MIN_DURATION_MIN)
-        return s, max(off_hour_today, min_off)
+            off_time = off_hour_today  # already in the next day; floor unnecessary
+        else:
+            min_off = s + timedelta(minutes=PORCH_MIN_DURATION_MIN)
+            off_time = max(off_hour_today, min_off)
+        # Cap at next sunrise — porch on into daylight is pointless and
+        # was the visible failure mode of the previous bumped-off-hour
+        # path in midsummer (sunset 22:02 → off scheduled tomorrow 22:00).
+        next_sunrise, _ = todays_sun(s + timedelta(days=1))
+        return s, min(off_time, next_sunrise)
 
     yest_sunrise, yest_sunset = todays_sun(now - timedelta(days=1))
     today_on, today_off = _porch_window(sunset)
