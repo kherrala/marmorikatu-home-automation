@@ -34,7 +34,7 @@ Policy(auto_off_after_sunrise_min,
 
 | Policy | Behaviour |
 |---|---|
-| `toilet` | Forced off after `TOILET_TIMEOUT_MIN` (default 60) since manual on. Deep-night `after_midnight` rule deliberately NOT applied — toilet visits at 03–05 local were getting cut off 5 min after manual press. |
+| `toilet` | Forced off after `TOILET_TIMEOUT_MIN` (default 30) since manual on. Deep-night `after_midnight` rule deliberately NOT applied — toilet visits at 03–05 local were getting cut off 5 min after manual press; the 30-min duration cap remains the only auto-off path. |
 | `staircase` | Sunrise grace + occupancy + duration cap + midnight off. |
 | `bedroom` | Occupancy off (workday rule); midnight off; longer manual hold (30 min). |
 | `kitchen` | Sunrise grace + occupancy + midnight off. |

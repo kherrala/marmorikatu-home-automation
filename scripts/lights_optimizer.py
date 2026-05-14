@@ -227,8 +227,8 @@ POLICIES: dict[str, Policy] = {
     # Toilet auto_off_after_midnight intentionally disabled. Toilet visits
     # at 03–05 local are normal in this household (early risers, kids); the
     # deep-night rule was killing the light 5 min after manual press during
-    # active use. The duration cap (TOILET_TIMEOUT_MIN, default 60) handles
-    # genuinely forgotten lights with much better UX.
+    # active use. The 30-min duration cap (TOILET_TIMEOUT_MIN) remains the
+    # only auto-off path — that's the desired ceiling regardless of clock.
     "toilet":           Policy(None, False, TOILET_TIMEOUT_MIN,    False, 5),
     "staircase":        Policy(SUNRISE_GRACE_MIN, True, STAIRCASE_TIMEOUT_MIN, True, 5),
     "bedroom":          Policy(None, True,  None,                  True,  BEDROOM_HOLD_MIN),
