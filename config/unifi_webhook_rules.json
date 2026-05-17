@@ -1,0 +1,34 @@
+{
+  "_comment": "Rules for the unifi-webhook service. Reloaded automatically when this file's mtime changes. Each rule's `match` keys are AND-ed and matched against the alarm payload (alarm_name, device, trigger_key, event_id). Missing keys = wildcard. A list value matches any element.",
+
+  "rules": [
+    {
+      "_comment": "Front-door person detection — kiosk announces, shows the snapshot for 5 minutes, and pulses the front porch light (idx 47) on for 5 minutes IF it's not already on (so lights-optimizer's sunset → 22:00 schedule and any manual ON aren't disturbed). A fresh detection within the 5-min window extends the OFF timer.",
+      "match": {
+        "alarm_name": "Etupihalla ihminen",
+        "trigger_key": "person"
+      },
+      "cooldown_s": 60,
+      "actions": [
+        {
+          "type": "announce",
+          "text": "Etupihalla on henkilö.",
+          "kind": "unifi_person_front",
+          "priority": 1,
+          "key": "unifi_person_front",
+          "include_image": true,
+          "image_duration_s": 300
+        },
+        {
+          "type": "mqtt_pulse",
+          "topic": "marmorikatu/light/47/set",
+          "light_id": 47,
+          "duration_s": 300,
+          "on_payload": "true",
+          "off_payload": "false",
+          "skip_if_on": true
+        }
+      ]
+    }
+  ]
+}

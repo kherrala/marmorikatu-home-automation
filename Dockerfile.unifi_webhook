@@ -1,0 +1,9 @@
+FROM python:3.12-slim
+
+WORKDIR /app
+
+RUN pip install --no-cache-dir paho-mqtt
+
+COPY scripts/unifi_webhook.py /app/
+
+CMD ["python", "-u", "unifi_webhook.py"]

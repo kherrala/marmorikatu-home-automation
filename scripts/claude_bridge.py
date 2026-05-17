@@ -1288,12 +1288,18 @@ async def _broadcast_announcement(event: dict) -> None:
     would leave a zombie queue here forever — every subsequent event would
     be silently dropped to that dead queue and the live count would
     misleadingly show `subscribers > 0`.
+
+    Embedded images (`image` field, typically a data URI) are broadcast live
+    but stripped from the ring buffer. The kiosk only needs the image while
+    the event is fresh; keeping 50–100 KB payloads in the history ring would
+    balloon memory and slow every /announcements/history fetch.
     """
     global _announce_seq
     async with _announce_lock:
         _announce_seq += 1
         event = {**event, "id": _announce_seq}
-        _announce_ring.append(event)
+        ring_event = {k: v for k, v in event.items() if k != "image"}
+        _announce_ring.append(ring_event)
         targets = list(_announce_subscribers)
     dead: list[asyncio.Queue] = []
     for q in targets:
@@ -1311,12 +1317,15 @@ async def _broadcast_announcement(event: dict) -> None:
 async def announce_push_endpoint(request: Request) -> JSONResponse:
     """POST /announcements/push — internal endpoint for announcer.py.
 
-    Body: {"text": "...", "kind": "...", "priority": 0..3, "key": "...", "ts": <epoch>}
+    Body: {"text": "...", "kind": "...", "priority": 0..3, "key": "...", "ts": <epoch>,
+           "image": "data:image/...;base64,...", "image_duration_s": 300}
       - text: Finnish sentence to speak
       - kind: short event class (hvac_freezing, sauna_on, light_on, ...)
       - priority: 0=critical, 1=normal, 2=verbose, 3=debug (advisory)
       - key: dedup key — kiosk replaces older queued items with same key
       - ts:  source-side epoch seconds (optional)
+      - image: optional data URI to display on the kiosk (camera snapshot, …)
+      - image_duration_s: seconds to keep the image visible (default 300)
 
     Auth: if ANNOUNCE_PUSH_TOKEN env is set, the request must carry
     X-Announce-Token matching it. Defaults to open inside the docker network.
@@ -1343,6 +1352,15 @@ async def announce_push_endpoint(request: Request) -> JSONResponse:
         # events (e.g. don't speak an hour-old event after a kiosk reload).
         "ts": float(body.get("ts") or 0) or _time.time(),
     }
+    image = body.get("image")
+    if isinstance(image, str) and image.startswith("data:"):
+        event["image"] = image
+        dur = body.get("image_duration_s")
+        if dur is not None:
+            try:
+                event["image_duration_s"] = float(dur)
+            except (TypeError, ValueError):
+                pass
     await _broadcast_announcement(event)
     return JSONResponse({"ok": True, "id": _announce_seq, "subscribers": len(_announce_subscribers)})
 

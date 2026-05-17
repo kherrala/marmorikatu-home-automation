@@ -440,6 +440,41 @@ services:
         condition: service_started
     restart: unless-stopped
 
+  # Unifi Protect webhook bridge: receives camera alarm POSTs on :5645 and
+  # dispatches them through a JSON rules table (./config/unifi_webhook_rules.json)
+  # to the kiosk announcement channel and/or arbitrary MQTT topics. Designed to
+  # be extended with future triggers (e.g. person at front door → porch light
+  # on) by editing the rules file — no code change required.
+  unifi-webhook:
+    build:
+      context: .
+      dockerfile: Dockerfile.unifi_webhook
+    container_name: marmorikatu-unifi-webhook
+    ports:
+      - "5645:5645"
+    volumes:
+      - ./config/unifi_webhook_rules.json:/config/rules.json:ro
+    environment:
+      - UNIFI_WEBHOOK_PORT=5645
+      - UNIFI_WEBHOOK_RULES=/config/rules.json
+      - BRIDGE_PUSH_URL=http://claude-bridge:3002/announcements/push
+      - MQTT_BROKER=freenas.kherrala.fi
+      - MQTT_PORT=1883
+      # InfluxDB used only by mqtt_pulse to skip re-publishing ON for a
+      # light that's already on (so we don't fight lights-optimizer).
+      - INFLUXDB_URL=http://influxdb:8086
+      - INFLUXDB_TOKEN=wago-secret-token
+      - INFLUXDB_ORG=wago
+      - INFLUXDB_BUCKET=building_automation
+      # Set UNIFI_WEBHOOK_TOKEN to require an X-Webhook-Token header or
+      # ?token=… query string. Default empty = open inside the LAN.
+    depends_on:
+      claude-bridge:
+        condition: service_started
+      influxdb:
+        condition: service_healthy
+    restart: unless-stopped
+
   backup:
     build:
       context: .

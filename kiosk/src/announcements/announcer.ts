@@ -17,7 +17,11 @@
 import { speakAndWait } from '../audio/tts.js';
 import { getState, select } from '../state/store.js';
 import { KioskPhase } from '../types/state.js';
-import { ttsAudio, greetingOverlay, reportText } from '../dom/elements.js';
+import {
+  ttsAudio, greetingOverlay, reportText,
+  announceImageOverlay, announceImageThumb, announceImageTitle, announceImageClose,
+  announceImageFullscreen, announceImageFullscreenImg,
+} from '../dom/elements.js';
 import { debugLog } from '../debug.js';
 
 interface AnnouncementEvent {
@@ -27,7 +31,13 @@ interface AnnouncementEvent {
   readonly priority: number;  // 0=critical .. 3=debug
   readonly key: string;
   readonly ts: number | null;
+  readonly image?: string;             // data URI, optional
+  readonly image_duration_s?: number;  // seconds to keep the image visible
 }
+
+// Default duration to display an announcement image when the server didn't
+// specify one. 5 minutes matches the "person at the front door" use case.
+const ANNOUNCE_IMAGE_DEFAULT_DURATION_S = 300;
 
 // Quiet-hours window — local hours, [start, end). Defaults match typical sleep.
 const QUIET_START_HOUR = 22;
@@ -280,6 +290,54 @@ function flushDigestIfDue(): void {
   digestPending = false;
 }
 
+// -- Announcement image overlay ----------------------------------------
+// A separate display channel from the conversation `screenshot-bubble` so
+// the two don't fight for the same DOM during an active chat. Top-right
+// placement keeps it out of the way of the bottom-right mini-avatar.
+
+let imageHideTimer: number | null = null;
+
+function hideAnnounceImage(): void {
+  if (imageHideTimer !== null) {
+    clearTimeout(imageHideTimer);
+    imageHideTimer = null;
+  }
+  announceImageOverlay.classList.add('hidden');
+  announceImageFullscreen.classList.add('hidden');
+  announceImageThumb.src = '';
+  announceImageFullscreenImg.src = '';
+}
+
+function showAnnounceImage(ev: AnnouncementEvent): void {
+  if (!ev.image) return;
+  if (imageHideTimer !== null) clearTimeout(imageHideTimer);
+
+  announceImageThumb.src = ev.image;
+  announceImageTitle.textContent = ev.text;
+  announceImageOverlay.classList.remove('hidden');
+
+  const durS = Math.max(5, ev.image_duration_s ?? ANNOUNCE_IMAGE_DEFAULT_DURATION_S);
+  imageHideTimer = window.setTimeout(hideAnnounceImage, durS * 1000);
+  debugLog(`announce: showing image for ${Math.round(durS)}s [${ev.kind}]`);
+}
+
+announceImageOverlay.addEventListener('click', (e) => {
+  // Close button — explicit dismiss. Anything else opens fullscreen.
+  if (e.target instanceof HTMLElement && e.target.classList.contains('ai-close')) {
+    hideAnnounceImage();
+    return;
+  }
+  announceImageFullscreenImg.src = announceImageThumb.src;
+  announceImageFullscreen.classList.remove('hidden');
+});
+announceImageClose.addEventListener('click', (e) => {
+  e.stopPropagation();
+  hideAnnounceImage();
+});
+announceImageFullscreen.addEventListener('click', () => {
+  announceImageFullscreen.classList.add('hidden');
+});
+
 function handleEvent(ev: AnnouncementEvent): void {
   // Slide dedup is driven by the `data-id` attribute inside appendHistoryItem
   // — the same event arriving via history-fetch + SSE replay only renders
@@ -309,6 +367,14 @@ function handleEvent(ev: AnnouncementEvent): void {
       debugLog(`announce: skipping playback [${ev.kind}] — ${Math.round(ageS)}s old (replay)`);
       return;
     }
+  }
+
+  // Image overlay: the camera snapshot is a visual cue independent of TTS,
+  // so show it even during quiet hours (the speak path may defer to the
+  // morning digest, but a person at the door at 3am still warrants an
+  // immediate visible alert on the kiosk).
+  if (ev.image) {
+    showAnnounceImage(ev);
   }
 
   // Critical events (priority 0) bypass quiet hours — these are the
