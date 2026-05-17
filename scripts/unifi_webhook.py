@@ -312,9 +312,41 @@ def _mqtt_send(topic: str, payload: str, *, qos: int = 1, retain: bool = False) 
         return False
 
 
-def _pulse_off(topic: str, payload: str) -> None:
+def _influx_write_override(light_id: int, hold_until_epoch: float) -> None:
+    """Write a `light_override.hold_until` row so lights-optimizer can
+    suspend its schedule for this light while the pulse is in flight.
+    Best-effort — failures are logged and the pulse still proceeds (the
+    pulse itself does the right thing for the user even if the optimizer
+    flips the light back off; this just removes the race)."""
+    if not INFLUXDB_TOKEN:
+        return
+    # Line protocol, second precision. Field must be a float literal.
+    line = f"light_override,light_id={int(light_id)} hold_until={float(hold_until_epoch)} {int(time.time())}"
+    url = (
+        f"{INFLUXDB_URL.rstrip('/')}/api/v2/write"
+        f"?org={INFLUXDB_ORG}&bucket={INFLUXDB_BUCKET}&precision=s"
+    )
+    req = urllib.request.Request(
+        url,
+        data=line.encode("utf-8"),
+        headers={
+            "Authorization": f"Token {INFLUXDB_TOKEN}",
+            "Content-Type":  "text/plain; charset=utf-8",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=INFLUX_TIMEOUT_S) as resp:
+            resp.read()
+    except (urllib.error.URLError, OSError) as e:
+        log.warning("influx write override for light %d failed: %s", light_id, e)
+
+
+def _pulse_off(topic: str, payload: str, light_id: int | None) -> None:
     with _pulse_lock:
         _pulse_timers.pop(topic, None)
+    if light_id is not None:
+        _influx_write_override(light_id, 0.0)
     if _mqtt_send(topic, payload):
         log.info("pulse OFF %s → %s", topic, payload)
 
@@ -334,30 +366,40 @@ def _publish_mqtt_pulse(action: dict[str, Any], ctx: dict[str, Any]) -> None:
     skip_if_on = bool(action.get("skip_if_on", True))
     light_id   = action.get("light_id")
 
-    if skip_if_on and light_id is not None:
-        try:
-            light_id_int = int(light_id)
-        except (TypeError, ValueError):
-            light_id_int = None
-        if light_id_int is not None:
-            state = _light_currently_on(light_id_int)
-            if state is True:
-                # Already on — extend the OFF timer if we own one (so the
-                # pulse window doesn't expire mid-visit), but don't re-publish.
+    try:
+        light_id_int = int(light_id) if light_id is not None else None
+    except (TypeError, ValueError):
+        light_id_int = None
+
+    hold_until = time.time() + duration_s
+
+    if skip_if_on and light_id_int is not None:
+        state = _light_currently_on(light_id_int)
+        if state is True:
+            # Already on — extend the OFF timer if we own one (so the
+            # pulse window doesn't expire mid-visit), but don't re-publish.
+            with _pulse_lock:
+                existing = _pulse_timers.pop(topic, None)
+            if existing is not None:
+                existing.cancel()
+                _influx_write_override(light_id_int, hold_until)
+                timer = threading.Timer(
+                    duration_s, _pulse_off, args=(topic, off_payload, light_id_int))
+                timer.daemon = True
                 with _pulse_lock:
-                    existing = _pulse_timers.pop(topic, None)
-                if existing is not None:
-                    existing.cancel()
-                    timer = threading.Timer(duration_s, _pulse_off, args=(topic, off_payload))
-                    timer.daemon = True
-                    with _pulse_lock:
-                        _pulse_timers[topic] = timer
-                    timer.start()
-                    log.info("pulse %s: already on, extended OFF by %.0fs", topic, duration_s)
-                else:
-                    log.info("pulse %s: already on, not our pulse — leaving alone", topic)
-                return
-            # state is False or None — proceed.
+                    _pulse_timers[topic] = timer
+                timer.start()
+                log.info("pulse %s: already on, extended OFF by %.0fs", topic, duration_s)
+            else:
+                log.info("pulse %s: already on, not our pulse — leaving alone", topic)
+            return
+        # state is False or None — proceed.
+
+    # Tell the optimizer to suspend its schedule for this light BEFORE we
+    # publish ON, so an unlucky tick interleaving can't fire OFF after our
+    # publish but before the override row is visible to the next query.
+    if light_id_int is not None:
+        _influx_write_override(light_id_int, hold_until)
 
     if not _mqtt_send(topic, on_payload):
         return
@@ -369,7 +411,8 @@ def _publish_mqtt_pulse(action: dict[str, Any], ctx: dict[str, Any]) -> None:
         prev = _pulse_timers.pop(topic, None)
     if prev is not None:
         prev.cancel()
-    timer = threading.Timer(duration_s, _pulse_off, args=(topic, off_payload))
+    timer = threading.Timer(
+        duration_s, _pulse_off, args=(topic, off_payload, light_id_int))
     timer.daemon = True
     with _pulse_lock:
         _pulse_timers[topic] = timer

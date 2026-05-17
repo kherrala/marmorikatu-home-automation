@@ -353,6 +353,28 @@ from(bucket: "{INFLUXDB_BUCKET}")
     return any((r.get_value() or 0) > 0 for r in rows)
 
 
+def light_override_until(light_id: int) -> float:
+    """Return the latest `light_override.hold_until` epoch for this light,
+    or 0.0 if no override is in effect. Used by the porch scheduler to
+    let external systems (e.g. unifi-webhook on person detection) hold a
+    light on for a window despite the schedule. Lookback is bounded so a
+    stale row from days ago doesn't keep the schedule pinned."""
+    flux = f'''
+from(bucket: "{INFLUXDB_BUCKET}")
+  |> range(start: -2h)
+  |> filter(fn: (r) => r._measurement == "light_override"
+        and r._field == "hold_until" and r.light_id == "{light_id}")
+  |> last()
+'''
+    rows = _query(flux)
+    if not rows:
+        return 0.0
+    try:
+        return float(rows[0].get_value() or 0.0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def light_turned_on_recently(minutes: int) -> bool:
     flux = f'''
 from(bucket: "{INFLUXDB_BUCKET}")
@@ -667,10 +689,21 @@ def check_and_control():
     yest_on, yest_off = _porch_window(yest_sunset)
     target_on = (today_on <= now < today_off) or (yest_on <= now < yest_off)
 
+    # External hold (e.g. unifi-webhook person-detection pulse) overrides
+    # the schedule. Forces ON for the duration the override row covers; once
+    # `hold_until` has passed, the schedule reasserts on the next tick.
+    porch_hold_until = light_override_until(porch_idx)
+    hold_active = porch_hold_until > now.timestamp()
+    if hold_active and not target_on:
+        target_on = True
+        log.info("porch hold active until %s — forcing ON",
+                 datetime.fromtimestamp(porch_hold_until, tz=LOCAL_TZ).strftime("%H:%M:%S"))
+
     if porch_state is None or porch_state[0] != target_on:
         publish_state(porch_idx, target_on, "porch_schedule")
         log_decision(porch_idx, "on" if target_on else "off",
-                     "porch_schedule", category="porch_schedule")
+                     "porch_hold" if hold_active else "porch_schedule",
+                     category="porch_schedule")
     else:
         log_decision(porch_idx, "hold", "porch_already_correct",
                      category="porch_schedule")
