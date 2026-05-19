@@ -1,0 +1,5 @@
+pytest>=8.0
+# Optimizer runtime deps — needed because tests import lights_optimizer.py
+astral>=3.2
+paho-mqtt>=2.0.0
+influxdb-client>=1.36.0

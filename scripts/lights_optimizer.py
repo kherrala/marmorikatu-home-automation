@@ -8,9 +8,10 @@ per-category (toilet, bedroom, kitchen, …) — see LIGHT_POLICY / POLICIES
 below.
 
 Also runs a few sensor- or schedule-driven ON/OFF blocks:
-  - Front porch (Sisäänkäynti, idx 47): ON sunset → PORCH_OFF_HOUR
-    (default 23), with a PORCH_MIN_DURATION_MIN floor so midsummer
-    still has a meaningful window.
+  - Front porch (Sisäänkäynti, idx 47): ON when it's actually getting
+    dark (sun elevation < SUN_DARK_ELEVATION_DEG, default 8°) AND
+    within the evening window (12:00 → PORCH_OFF_HOUR). Skips the porch
+    entirely on midsummer evenings when sun never dips below 8°.
   - Sauna laude LED (idx 4): hysteresis on Ruuvi Sauna temperature
     (50–55 °C dead-band).
   - Post-sauna cooldown auto-off (idx 1, 38, 39): once the sauna has
@@ -89,12 +90,8 @@ PORCH_OFF_HOUR = int(os.environ.get("PORCH_OFF_HOUR", os.environ.get("TERRACE_OF
 # the toilet light every minute against an active user. After 05:00 the
 # regular per-category duration timeout (TOILET_TIMEOUT_MIN etc.) takes over.
 AFTER_MIDNIGHT_END_HOUR = int(os.environ.get("AFTER_MIDNIGHT_END_HOUR", "5"))
-# Even in midsummer when sunset is past PORCH_OFF_HOUR, keep the porch
-# on for at least this many minutes after sunset so the schedule is
-# always meaningful. Without this, the on-window would degenerate to
-# zero (or even negative) when sunset >= PORCH_OFF_HOUR.
-PORCH_MIN_DURATION_MIN = int(os.environ.get("PORCH_MIN_DURATION_MIN", "120"))
-# Sun elevation below this (°) → "dark enough indoors" for CO₂-driven auto-on.
+# Sun elevation below this (°) → "dark enough indoors" for CO₂-driven auto-on
+# AND for the front-porch schedule.
 # 8° lands roughly 30–60 min either side of horizon depending on latitude/
 # season — covers the Finnish dim-evening / dim-morning the user notices.
 SUN_DARK_ELEVATION_DEG = float(os.environ.get("SUN_DARK_ELEVATION_DEG", "8"))
@@ -209,7 +206,7 @@ LIGHT_POLICY: dict[int, str] = {
     35: "general", 36: "general", 37: "general", 43: "general", 56: "general",
 
     # Schedule-driven
-    47: "porch_schedule",  # Sisäänkäynti (front porch) — sunset → PORCH_OFF_HOUR
+    47: "porch_schedule",  # Sisäänkäynti (front porch) — sun-elevation driven, capped by PORCH_OFF_HOUR
 }
 
 
@@ -614,6 +611,36 @@ def in_after_midnight_window(now: datetime) -> bool:
     return dtime(0, 30) <= now.time() < dtime(AFTER_MIDNIGHT_END_HOUR, 0)
 
 
+def porch_target_state(now: datetime, sun_elev_deg: float) -> bool:
+    """Whether the porch (idx 47) should be on at this instant.
+
+    Drives transitions off the same "getting dark" threshold used by the
+    CO₂-managed lights (sun elevation < SUN_DARK_ELEVATION_DEG, default
+    8°) — well before sunset (elev=0°) in winter, and matching the
+    "indoors is getting dim" experience.
+
+    Returns True iff:
+      - It's actually dark (sun elevation below threshold), AND
+      - Wall clock is inside the evening window.
+
+    The evening-window gate prevents pre-dawn twilight (sun rising back
+    up through the threshold in the morning) from turning the porch on
+    again at 04:00. PORCH_OFF_HOUR caps the late-night side so the porch
+    isn't on through the whole dark winter night.
+
+    Wrap-around: when PORCH_OFF_HOUR >= 24 (e.g. 26 = 02:00 next day),
+    the window spans midnight and any hour ≥ 12 OR < (off_hour % 24)
+    counts as "in window".
+    """
+    is_dark = sun_elev_deg < SUN_DARK_ELEVATION_DEG
+    off_hour = PORCH_OFF_HOUR % 24
+    if PORCH_OFF_HOUR >= 24:
+        in_window = (now.hour >= 12) or (now.hour < off_hour)
+    else:
+        in_window = (12 <= now.hour < off_hour)
+    return is_dark and in_window
+
+
 def check_and_control():
     now = datetime.now(LOCAL_TZ)
     weekday = now.weekday() < 5
@@ -631,67 +658,25 @@ def check_and_control():
         len(states),
     )
 
-    # --- Front-porch scheduler (idx 47): on at sunset, off at
-    #     PORCH_OFF_HOUR (or sunset + PORCH_MIN_DURATION_MIN, whichever
-    #     is later). Handles after-midnight off hours and midsummer
-    #     when sunset is past the off hour.
+    # --- Front-porch (idx 47): track real darkness, not a clock-only
+    #     schedule. The porch toggles only when sun elevation crosses
+    #     SUN_DARK_ELEVATION_DEG (same threshold as the CO₂-managed
+    #     lights) — meaningfully earlier than sunset in winter, and
+    #     skipping the porch entirely on midsummer evenings when it
+    #     never actually gets dark. PORCH_OFF_HOUR still caps the
+    #     late-night side so the porch isn't on through the whole
+    #     dark winter night.
     porch_idx = 47
     porch_state = states.get(porch_idx)
-    pol = POLICIES["porch_schedule"]
-
-    def _porch_window(s: datetime) -> tuple[datetime, datetime]:
-        """Return (on, off) for the porch window starting at sunset `s`.
-
-        Three branches keyed off the relationship between sunset and
-        PORCH_OFF_HOUR:
-
-        a) Sunset is BEFORE today's PORCH_OFF_HOUR (autumn → spring).
-           Off at today's PORCH_OFF_HOUR (e.g. sunset 15:30 → off 22:00).
-           PORCH_MIN_DURATION_MIN acts as a floor for the rare case the
-           user sets PORCH_OFF_HOUR uncomfortably close to sunset.
-
-        b) Sunset is AFTER today's PORCH_OFF_HOUR (midsummer:
-           sunset 22:02, off-hour 22:00). The off-hour is already past
-           when the porch turns on, so we can't anchor on it. Use
-           sunset + PORCH_MIN_DURATION_MIN instead — gives a meaningful
-           ~2 h window (sunset 22:02 → off ~00:02) and keeps the porch
-           off through the night and the next day. Capped at next
-           sunrise so it never extends into daylight.
-
-        c) PORCH_OFF_HOUR >= 24 (user explicitly wants a post-midnight
-           off, e.g. 26 = 02:00 tomorrow). Bump and use the bumped
-           value, again capped at next sunrise so a typo can't pin the
-           porch on through daylight.
-        """
-        off_hour_today = s.replace(
-            hour=PORCH_OFF_HOUR % 24, minute=0, second=0, microsecond=0,
-        )
-        next_sunrise, _ = todays_sun(s + timedelta(days=1))
-
-        if PORCH_OFF_HOUR >= 24:
-            # Case (c): explicit next-day off-hour.
-            off_time = off_hour_today + timedelta(days=1)
-        elif off_hour_today <= s:
-            # Case (b): midsummer — sunset past PORCH_OFF_HOUR. Bumping
-            # to tomorrow's same hour creates a 24-hour-long window
-            # (the bug we just had). Use min-duration floor as the
-            # off-time directly.
-            off_time = s + timedelta(minutes=PORCH_MIN_DURATION_MIN)
-        else:
-            # Case (a): normal — off-hour later today.
-            min_off = s + timedelta(minutes=PORCH_MIN_DURATION_MIN)
-            off_time = max(off_hour_today, min_off)
-
-        return s, min(off_time, next_sunrise)
-
-    yest_sunrise, yest_sunset = todays_sun(now - timedelta(days=1))
-    today_on, today_off = _porch_window(sunset)
-    yest_on, yest_off = _porch_window(yest_sunset)
-    target_on = (today_on <= now < today_off) or (yest_on <= now < yest_off)
+    try:
+        porch_sun_elev = sun_elevation(LOC.observer, dateandtime=now)
+    except Exception:
+        porch_sun_elev = 0.0  # conservative: treat as borderline
+    target_on = porch_target_state(now, porch_sun_elev)
 
     # External hold (e.g. unifi-webhook person-detection pulse) overrides
-    # the schedule. Forces ON for the duration the override row covers; once
-    # `hold_until` has passed, the schedule reasserts on the next tick.
+    # the darkness gate. Forces ON for the duration the override row covers;
+    # once `hold_until` has passed, the darkness rule reasserts on the next tick.
     porch_hold_until = light_override_until(porch_idx)
     hold_active = porch_hold_until > now.timestamp()
     if hold_active and not target_on:
@@ -700,9 +685,9 @@ def check_and_control():
                  datetime.fromtimestamp(porch_hold_until, tz=LOCAL_TZ).strftime("%H:%M:%S"))
 
     if porch_state is None or porch_state[0] != target_on:
-        publish_state(porch_idx, target_on, "porch_schedule")
+        publish_state(porch_idx, target_on, "porch_dark_schedule")
         log_decision(porch_idx, "on" if target_on else "off",
-                     "porch_hold" if hold_active else "porch_schedule",
+                     "porch_hold" if hold_active else "porch_dark_schedule",
                      category="porch_schedule")
     else:
         log_decision(porch_idx, "hold", "porch_already_correct",

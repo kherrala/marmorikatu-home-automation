@@ -41,7 +41,7 @@ Policy(auto_off_after_sunrise_min,
 | `livingroom` | Same as kitchen. |
 | `general` | Same as kitchen, used for hallways, outdoor power, etc. |
 | `manual_only` | Never auto-managed. Long manual hold (60 min). |
-| `porch_schedule` | Hard-coded ON between `sunset` and `PORCH_OFF_HOUR` (default 22:00 local). Front porch (idx 47) only. |
+| `porch_schedule` | Hard-coded ON when sun elevation < `SUN_DARK_ELEVATION_DEG` (default 8°) **and** local time is in the evening window 12:00 → `PORCH_OFF_HOUR`. Front porch (idx 47) only. |
 
 `ABSENCE_EXEMPT_INDICES` is currently empty; it remains as a hook for any
 future light moved back into a policy that respects occupancy.
@@ -50,10 +50,25 @@ future light moved back into a policy that respects occupancy.
 
 ### Front Porch (idx 47, `porch_schedule`)
 
-`Sisäänkäynti` — front-porch light. ON between `sunset` and `PORCH_OFF_HOUR`
-(default 22:00 local), OFF otherwise. Idempotent — only publishes when state
-disagrees with target. (Idx 48 `Ulkovalo terassi` is `manual_only` — the
-back-yard terrace light is no longer on a schedule.)
+`Sisäänkäynti` — front-porch light. Tracks **real darkness** rather than a
+clock-only schedule:
+
+- ON when `sun elevation < SUN_DARK_ELEVATION_DEG` (default **8°**, same
+  threshold the CO₂-managed lights use for "getting dark indoors") **and**
+  local hour is in the evening window 12:00 → `PORCH_OFF_HOUR`.
+- OFF otherwise (daylight, after the off-hour cap, or pre-dawn morning).
+- The evening-window gate is what prevents the porch from flapping back
+  on at 04:00 when sun is still below 8° — only evening darkness counts.
+- In midsummer, when the sun never dips below 8° in Tampere, the porch
+  stays off the whole evening (intentional — there's no real darkness).
+
+Idempotent — only publishes when state disagrees with target.
+(Idx 48 `Ulkovalo terassi` is `manual_only` — the back-yard terrace
+light is no longer on a schedule.)
+
+External holds (e.g. `unifi-webhook` person-detection pulses) override the
+darkness gate and force the porch ON until the override `hold_until`
+expires; the darkness rule reasserts on the next tick after that.
 
 ### Sauna Laude LED (idx 4)
 
