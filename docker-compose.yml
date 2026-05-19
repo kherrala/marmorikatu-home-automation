@@ -58,6 +58,7 @@ services:
     depends_on:
       influxdb:
         condition: service_healthy
+    restart: unless-stopped
 
   # Legacy CSV-over-SFTP sync — superseded by the `plc` MQTT service.
   # Kept here (commented out) for emergency rollback. Remove once the MQTT
