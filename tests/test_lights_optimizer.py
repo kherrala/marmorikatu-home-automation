@@ -157,6 +157,7 @@ def co2_harness(monkeypatch):
     monkeypatch.setattr(lo, "_co2_auto_on_at", {})
     monkeypatch.setattr(lo, "_co2_auto_on_confirmed", {})
     monkeypatch.setattr(lo, "_co2_dismissed_date", {})
+    monkeypatch.setattr(lo, "_co2_after_midnight_quenched", {})
 
     # Quiet the rest of the tick: no occupancy, no other lights, no sauna,
     # no porch logic firing on real data.
@@ -336,3 +337,68 @@ def test_co2_after_midnight_turns_off_running_light(co2_harness):
     offs = [p for p in published if p[1] is False]
     assert (lo.CO2_AUTO_KITCHEN_IDX, False, "co2_auto_after_midnight") in offs
     assert (lo.CO2_AUTO_LIVINGROOM_IDX, False, "co2_auto_after_midnight") in offs
+
+
+def test_co2_after_midnight_quench_prevents_reflapping(co2_harness):
+    """Regression for the 00:00-02:00 ON/OFF storm: after_midnight off
+    must mark a same-night quench so the very next tick — with CO₂ still
+    elevated and the room still dark — does NOT re-fire ON."""
+    state, published, decisions = co2_harness
+    today = _local(2026, 5, 23, 0, 30).date()
+
+    # Tick 1: deep night, kitchen+livingroom on, CO₂ still elevated
+    # (someone awake). after_midnight rule fires OFF on both.
+    state["now"] = _local(2026, 5, 23, 0, 30)
+    state["kitchen_on"] = True
+    state["livingroom_on"] = True
+    state["co2"] = "ELEVATED"
+    lo.check_and_control()
+
+    offs = [p for p in _co2_pubs(published) if p[1] is False]
+    assert (lo.CO2_AUTO_KITCHEN_IDX, False, "co2_auto_after_midnight") in offs
+    assert (lo.CO2_AUTO_LIVINGROOM_IDX, False, "co2_auto_after_midnight") in offs
+    assert lo._co2_after_midnight_quenched.get(lo.CO2_AUTO_KITCHEN_IDX) == today
+    assert lo._co2_after_midnight_quenched.get(lo.CO2_AUTO_LIVINGROOM_IDX) == today
+
+    # Tick 2: relay confirmed the off, CO₂ still elevated, still dark,
+    # still in the after-midnight window. The quench must block re-fire.
+    state["now"] += timedelta(minutes=1)
+    state["kitchen_on"] = False
+    state["livingroom_on"] = False
+    published.clear()
+    decisions.clear()
+    lo.check_and_control()
+
+    assert not [p for p in _co2_pubs(published) if p[1] is True], \
+        "after_midnight quench must block immediate re-fire"
+    reasons = {(idx, reason) for idx, _, reason, _ in decisions}
+    assert (lo.CO2_AUTO_KITCHEN_IDX, "after_midnight_quenched") in reasons
+    assert (lo.CO2_AUTO_LIVINGROOM_IDX, "after_midnight_quenched") in reasons
+
+
+def test_co2_after_midnight_quench_releases_outside_window(co2_harness):
+    """Quench is scoped to the after-midnight window only — once the clock
+    passes AFTER_MIDNIGHT_END_HOUR, normal CO₂ auto-on resumes the same day."""
+    state, published, _ = co2_harness
+
+    # Tick 1: 00:45 → after_midnight off + quench set
+    state["now"] = _local(2026, 5, 23, 0, 45)
+    state["kitchen_on"] = True
+    state["livingroom_on"] = True
+    state["co2"] = "ELEVATED"
+    lo.check_and_control()
+
+    today = state["now"].date()
+    assert lo._co2_after_midnight_quenched.get(lo.CO2_AUTO_KITCHEN_IDX) == today
+
+    # Tick 2: jump to 05:30 (past AFTER_MIDNIGHT_END_HOUR=5) — quench should
+    # no longer gate, so auto-on fires again on still-elevated CO₂.
+    state["now"] = _local(2026, 5, 23, 5, 30)
+    state["kitchen_on"] = False
+    state["livingroom_on"] = False
+    published.clear()
+    lo.check_and_control()
+
+    on_publishes = [p for p in _co2_pubs(published) if p[1] is True]
+    assert (lo.CO2_AUTO_KITCHEN_IDX, True, "co2_occupancy") in on_publishes
+    assert (lo.CO2_AUTO_LIVINGROOM_IDX, True, "co2_occupancy") in on_publishes

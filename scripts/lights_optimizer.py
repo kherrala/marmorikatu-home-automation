@@ -261,9 +261,18 @@ query_api = None
 #                                 publish (e.g. unresponsive relay).
 #   _co2_dismissed_date[idx]    = local date the user dismissed the auto-on,
 #                                 so we don't re-enable it the same day.
+#   _co2_after_midnight_quenched[idx]
+#                              = local date the after-midnight rule killed
+#                                this light. Suppresses re-auto-on for the
+#                                rest of the after-midnight window (00:30 →
+#                                AFTER_MIDNIGHT_END_HOUR) so a still-elevated
+#                                CO₂ reading can't loop the light back on
+#                                every tick. Normal auto-on resumes once
+#                                the window ends.
 _co2_auto_on_at: dict[int, datetime] = {}
 _co2_auto_on_confirmed: dict[int, bool] = {}
 _co2_dismissed_date: dict[int, date] = {}
+_co2_after_midnight_quenched: dict[int, date] = {}
 _CO2_PUBLISH_GRACE_SECONDS = 90.0  # how long to wait for the relay to confirm
 
 
@@ -714,6 +723,13 @@ def check_and_control():
     for idx_d, date_d in list(_co2_dismissed_date.items()):
         if date_d < today:
             del _co2_dismissed_date[idx_d]
+    # Same lifecycle for the after-midnight quench: it suppresses auto-on
+    # only while we're still in tonight's after-midnight window AND the
+    # quench was set on the current local date. Stale entries from previous
+    # days get dropped so tomorrow's window starts fresh.
+    for idx_q, date_q in list(_co2_after_midnight_quenched.items()):
+        if date_q < today:
+            del _co2_after_midnight_quenched[idx_q]
 
     for idx_co2 in CO2_AUTO_MANAGED:
         co2_state = states.get(idx_co2)
@@ -748,6 +764,10 @@ def check_and_control():
                 log_decision(idx_co2, "off", "after_midnight", category="co2_auto")
                 _co2_auto_on_at.pop(idx_co2, None)
                 _co2_auto_on_confirmed.pop(idx_co2, None)
+                # Quench: block auto-on for the rest of tonight's
+                # after-midnight window so an unchanged CO₂ reading can't
+                # loop the light right back on next tick.
+                _co2_after_midnight_quenched[idx_co2] = today
             elif co2 == "DROPPED":
                 # Don't auto-off too soon after our own auto-on — prevents
                 # flapping when CO₂ wanders through the dead-band.
@@ -768,8 +788,14 @@ def check_and_control():
             else:
                 log_decision(idx_co2, "hold", f"co2_{co2.lower()}", category="co2_auto")
         else:
+            after_midnight_quenched = (
+                _co2_after_midnight_quenched.get(idx_co2) == today
+                and in_after_midnight_window(now)
+            )
             if dismissed_today:
                 log_decision(idx_co2, "hold", "dismissed_today", category="co2_auto")
+            elif after_midnight_quenched:
+                log_decision(idx_co2, "hold", "after_midnight_quenched", category="co2_auto")
             elif idx_co2 not in eligible_for_on:
                 log_decision(idx_co2, "hold", "outside_dark_window", category="co2_auto")
             elif co2 == "ELEVATED":
