@@ -146,37 +146,38 @@ html, body {
 }
 
 /* -- Swipe / click edge strips ---------------------------------------- */
-/* Narrow strip + touch-pass-through on touch devices: the document-level
-   swipe handler still catches horizontal swipes anywhere on screen, so the
-   strip is only useful for mouse clicks on desktop. On iPad it would
-   otherwise swallow touches meant for the Grafana iframe behind it. */
+/* Tappable on touch devices too — the document-level swipe handler also
+   catches horizontal swipes anywhere on screen, but explicit chevron taps
+   are the only navigation affordance some users will try. 72px width hits
+   Apple's 44pt min-touch-target with margin; `touch-action: manipulation`
+   removes the 300 ms iOS tap delay. */
 .swipe-edge {
   position: fixed;
   top: 20%;
   height: 60%;
-  width: 36px;
+  width: 72px;
   z-index: 100;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: 0 6px 6px 0;
-}
-@media (hover: none) and (pointer: coarse) {
-  .swipe-edge { pointer-events: none; }
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: rgba(255,255,255,0.15);
 }
 #swipe-left  { left: 0; border-radius: 0 6px 6px 0; }
 #swipe-right { right: 0; border-radius: 6px 0 0 6px; }
 
 .swipe-edge::after {
   content: var(--chevron);
-  font-size: 28px;
-  color: rgba(255,255,255,0.18);
+  font-size: 36px;
+  color: rgba(255,255,255,0.35);
   transition: color 0.2s, transform 0.2s;
   user-select: none;
 }
-.swipe-edge:hover::after {
-  color: rgba(255,255,255,0.65);
+.swipe-edge:hover::after,
+.swipe-edge:active::after {
+  color: rgba(255,255,255,0.8);
   transform: scale(1.2);
 }
 #swipe-left  { --chevron: "\2039"; }
