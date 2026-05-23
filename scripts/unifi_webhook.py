@@ -67,10 +67,13 @@ import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
 import paho.mqtt.publish as mqtt_publish
+from astral import LocationInfo
+from astral.sun import elevation as sun_elevation
 
 # ── Configuration ────────────────────────────────────────────────────────────
 
@@ -105,6 +108,31 @@ RULES_PATH  = os.environ.get("UNIFI_WEBHOOK_RULES", "/config/rules.json")
 # Optional shared-secret check. When set, requests must carry either
 # header `X-Webhook-Token: <token>` or query string `?token=<token>`.
 WEBHOOK_TOKEN = os.environ.get("UNIFI_WEBHOOK_TOKEN", "")
+
+# Sun-elevation darkness gate. Same threshold the lights-optimizer uses for
+# its CO₂-driven kitchen + livingroom auto-on. Set `only_if_dark: true` on
+# an `mqtt_pulse` action to skip the publish entirely when the sun is above
+# this — keeps the unifi person-detection from forcing the porch light on
+# in broad daylight.
+HOME_LAT = float(os.environ.get("HOME_LAT") or os.environ.get("WEATHER_LAT") or "61.4978")
+HOME_LON = float(os.environ.get("HOME_LON") or os.environ.get("WEATHER_LON") or "23.7610")
+SUN_DARK_ELEVATION_DEG = float(os.environ.get("SUN_DARK_ELEVATION_DEG", "8"))
+_LOC = LocationInfo("Tampere", "Finland", "Europe/Helsinki", HOME_LAT, HOME_LON)
+
+
+def _is_dark_now() -> bool:
+    """True iff the sun is below SUN_DARK_ELEVATION_DEG right now.
+
+    Conservative on error: returns False (treat as bright) so a sun-library
+    hiccup can't accidentally trigger a daytime pulse we'd otherwise have
+    suppressed."""
+    try:
+        elev = sun_elevation(_LOC.observer, dateandtime=datetime.now(timezone.utc))
+    except Exception as e:
+        log.warning("sun elevation lookup failed (treating as bright): %s", e)
+        return False
+    return elev < SUN_DARK_ELEVATION_DEG
+
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("unifi-webhook")
@@ -355,6 +383,12 @@ def _publish_mqtt_pulse(action: dict[str, Any], ctx: dict[str, Any]) -> None:
     topic = action.get("topic")
     if not topic:
         log.warning("mqtt_pulse missing topic: %r", action)
+        return
+    # Darkness gate: e.g. the front-porch pulse should only fire when it's
+    # actually getting dark — otherwise person-detection during the day
+    # forces the porch light on in broad daylight.
+    if bool(action.get("only_if_dark", False)) and not _is_dark_now():
+        log.info("pulse %s suppressed: only_if_dark=True and sun is up", topic)
         return
     on_payload  = str(action.get("on_payload",  "true"))
     off_payload = str(action.get("off_payload", "false"))

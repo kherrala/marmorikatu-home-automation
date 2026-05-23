@@ -3,7 +3,7 @@
 
   "rules": [
     {
-      "_comment": "Front-door person detection — kiosk announces, shows the snapshot for 5 minutes, and pulses the front porch light (idx 47) on for 5 minutes IF it's not already on (so lights-optimizer's sunset → 22:00 schedule and any manual ON aren't disturbed). A fresh detection within the 5-min window extends the OFF timer.",
+      "_comment": "Front-door person detection — kiosk announces, shows the snapshot for 5 minutes, and pulses the front porch light (idx 47) on for 5 minutes IF it's actually dark (sun below SUN_DARK_ELEVATION_DEG) and not already on. The `only_if_dark` gate prevents daytime person-detections from forcing the porch on in broad daylight. A fresh detection within the 5-min window extends the OFF timer.",
       "match": {
         "alarm_name": "Etupihalla ihminen",
         "trigger_key": "person"
@@ -26,7 +26,8 @@
           "duration_s": 300,
           "on_payload": "true",
           "off_payload": "false",
-          "skip_if_on": true
+          "skip_if_on": true,
+          "only_if_dark": true
         }
       ]
     }
