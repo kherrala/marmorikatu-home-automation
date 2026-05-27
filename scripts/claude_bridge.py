@@ -919,6 +919,62 @@ def _get_whisper_model():
         return _whisper_model
 
 
+# Whisper has well-documented failure modes on quiet / noise-only input: it
+# emits common Finnish "stock phrases" or chains a short n-gram several times.
+# When face-detection false-positives keep the kiosk in GREETING with no one
+# actually present, every hallucination is sent on to the LLM, the response
+# is TTS'd, the speaker bleeds back into the mic, and the cycle compounds.
+# The two stages below catch both shapes — known stock phrases AND repetition
+# — *after* faster-whisper's own VAD has run.
+_WHISPER_STOCK_HALLUCINATIONS = (
+    "tekstitys: yle",
+    "tilaa lisää",
+    "tilaa kanava",
+    "yle ohjelmat",
+    "subtekstit",
+    "subtitles by",
+    "kiitos kun katsoit",
+    "translation by",
+)
+
+
+def _is_whisper_hallucination(text: str) -> bool:
+    """Heuristic: True iff `text` is a Whisper repetition / stock-phrase
+    hallucination rather than real speech.
+
+    Rules (any one trips):
+      - matches a known Whisper Finnish stock phrase substring
+      - >=4 words and unique-word ratio < 0.5 ("X. X. X. X.")
+      - >=4 words and >=50% of bigrams/trigrams repeat ("A B C A B C A B C")
+    Short transcripts (<4 words) bypass the ratio rules — the kiosk has
+    legitimate one-word answers ("joo", "ei", "stop") that must not be
+    misclassified.
+    """
+    import re
+    from collections import Counter
+    t = text.strip().lower()
+    if not t:
+        return True
+    if any(p in t for p in _WHISPER_STOCK_HALLUCINATIONS):
+        return True
+    words = re.findall(r"[\wäöå]+", t)
+    if len(words) < 4:
+        return False
+    if len(set(words)) / len(words) < 0.5:
+        return True
+    for n in (2, 3):
+        if len(words) < n * 2:
+            continue
+        ngrams = list(zip(*[words[i:] for i in range(n)]))
+        if len(ngrams) < 3:
+            continue
+        counts = Counter(ngrams)
+        repeated = sum(1 for c in counts.values() if c > 1)
+        if repeated / len(counts) >= 0.5:
+            return True
+    return False
+
+
 async def transcribe_endpoint(request: Request) -> JSONResponse:
     """POST /transcribe — server-side speech-to-text using local faster-whisper.
 
@@ -976,10 +1032,30 @@ async def transcribe_endpoint(request: Request) -> JSONResponse:
 
             loop = asyncio.get_event_loop()
             model = await loop.run_in_executor(None, _get_whisper_model)
+            # vad_filter=True: faster-whisper runs Silero VAD and drops
+            #   non-speech chunks before they ever reach the model. Single
+            #   biggest mitigation against the "silence → stock phrase"
+            #   hallucination loop the kiosk used to fall into when face
+            #   detection false-positived on on-screen artwork.
+            # condition_on_previous_text=False: stops the model from being
+            #   primed on its own prior output within the same call — a
+            #   known cause of within-clip n-gram looping
+            #   ("X X X X X").
             segments, _info = await loop.run_in_executor(
-                None, lambda: model.transcribe(transcribe_path, language="fi", beam_size=3)
+                None,
+                lambda: model.transcribe(
+                    transcribe_path,
+                    language="fi",
+                    beam_size=3,
+                    vad_filter=True,
+                    vad_parameters={"min_silence_duration_ms": 500},
+                    condition_on_previous_text=False,
+                ),
             )
             text = " ".join(s.text.strip() for s in segments).strip()
+            if text and _is_whisper_hallucination(text):
+                log.warning("Transcribe: dropping hallucination '%s'", text)
+                text = ""
             log.info("Transcribe (Whisper): '%s'", text)
 
             # Clean up wav temp file

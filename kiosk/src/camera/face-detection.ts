@@ -58,9 +58,14 @@ async function runDetection(): Promise<void> {
     return;
   }
 
+  // scoreThreshold=0.5 is face-api.js's own default and the empirical break
+  // point between real faces (avgScore typically ≥0.6) and face-shaped
+  // false-positives in on-screen artwork or room photos (which clustered
+  // around 0.40 in production debug logs and kept the kiosk pinned in
+  // GREETING with no human present).
   const detection = await faceapi.detectSingleFace(
     videoEl,
-    new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.35 }),
+    new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.5 }),
   );
 
   if (detection) {
