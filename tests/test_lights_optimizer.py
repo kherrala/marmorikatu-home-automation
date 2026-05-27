@@ -402,3 +402,70 @@ def test_co2_after_midnight_quench_releases_outside_window(co2_harness):
     on_publishes = [p for p in _co2_pubs(published) if p[1] is True]
     assert (lo.CO2_AUTO_KITCHEN_IDX, True, "co2_occupancy") in on_publishes
     assert (lo.CO2_AUTO_LIVINGROOM_IDX, True, "co2_occupancy") in on_publishes
+
+
+def test_co2_publish_failure_does_not_record_auto_on(co2_harness, monkeypatch):
+    """If `publish_state` returns False (MQTT broker unreachable), the
+    optimizer must not pretend the light came on: no `_co2_auto_on_at`
+    entry, and the decision log should reflect the failure so analytics
+    don't double-count phantom auto-ons."""
+    state, published, decisions = co2_harness
+
+    def fake_publish_fail(idx, on, reason):
+        published.append((idx, on, reason))
+        return False
+    monkeypatch.setattr(lo, "publish_state", fake_publish_fail)
+
+    state["co2"] = "ELEVATED"
+    lo.check_and_control()
+
+    assert lo.CO2_AUTO_KITCHEN_IDX not in lo._co2_auto_on_at
+    reasons = {(idx, reason) for idx, _, reason, _ in decisions}
+    assert (lo.CO2_AUTO_KITCHEN_IDX, "mqtt_publish_failed") in reasons
+
+
+def test_post_sauna_skips_freshly_pressed_light(monkeypatch):
+    """A bathroom press inside the post-sauna lookback window must NOT
+    be auto-offed by the cooldown rule — these lights are manual_only
+    precisely so wall-clock timers can't cut a fresh shower short."""
+    monkeypatch.setattr(lo, "switch_pressed_recently", lambda m: False)
+    monkeypatch.setattr(lo, "light_turned_on_recently", lambda m: False)
+    monkeypatch.setattr(lo, "co2_recently_elevated", lambda m: False)
+    monkeypatch.setattr(lo, "fetch_sauna_temp_recent", lambda: None)
+    monkeypatch.setattr(lo, "co2_signal_class", lambda: "BASELINE")
+    monkeypatch.setattr(lo, "light_override_until", lambda idx: 0.0)
+    monkeypatch.setattr(lo, "todays_sun",
+                        lambda now: (now.replace(hour=6, minute=0, second=0, microsecond=0),
+                                     now.replace(hour=21, minute=0, second=0, microsecond=0)))
+    import lights_optimizer as _lo
+    monkeypatch.setattr(_lo, "sun_elevation", lambda observer, dateandtime: 30.0)
+
+    fresh_press_t = datetime.now(timezone.utc) - timedelta(minutes=2)
+    monkeypatch.setattr(lo, "fetch_last_zero_to_one",
+                        lambda idx: fresh_press_t if idx in lo.SAUNA_AFTER_LIGHTS else None)
+    monkeypatch.setattr(lo, "sauna_session_ended_minutes_ago", lambda: 90.0)
+
+    states_now = datetime.now(HELSINKI)
+    def fake_states():
+        out = {idx: (True, states_now) for idx in lo.SAUNA_AFTER_LIGHTS}
+        out[47] = (False, states_now)
+        return out
+    monkeypatch.setattr(lo, "fetch_current_light_states", fake_states)
+
+    published = []
+    decisions = []
+    monkeypatch.setattr(lo, "publish_state",
+                        lambda idx, on, reason: (published.append((idx, on, reason)), True)[1])
+    monkeypatch.setattr(lo, "log_decision",
+                        lambda idx, decision, reason, on_dur=None, category="":
+                            decisions.append((idx, decision, reason, category)))
+
+    lo.check_and_control()
+
+    post_sauna_offs = [p for p in published
+                       if p[0] in lo.SAUNA_AFTER_LIGHTS and p[1] is False]
+    assert post_sauna_offs == [], \
+        f"manual press should suppress post-sauna auto-off, got: {post_sauna_offs}"
+    reasons = {(idx, reason) for idx, _, reason, _ in decisions}
+    for idx_after in lo.SAUNA_AFTER_LIGHTS:
+        assert (idx_after, "post_sauna_manual_grace") in reasons

@@ -34,6 +34,7 @@ review via Grafana / the MCP `get_lights_optimizer_status` tool.
 """
 
 import logging
+import math
 import os
 import signal
 import time
@@ -364,10 +365,13 @@ def light_override_until(light_id: int) -> float:
     or 0.0 if no override is in effect. Used by the porch scheduler to
     let external systems (e.g. unifi-webhook on person detection) hold a
     light on for a window despite the schedule. Lookback is bounded so a
-    stale row from days ago doesn't keep the schedule pinned."""
+    stale row from days ago doesn't keep the schedule pinned — but wide
+    enough that overrides longer than the previous 2h window can't fall
+    off `last()` while still in effect; caller filters expired holds via
+    `hold_until > now.timestamp()`."""
     flux = f'''
 from(bucket: "{INFLUXDB_BUCKET}")
-  |> range(start: -2h)
+  |> range(start: -24h)
   |> filter(fn: (r) => r._measurement == "light_override"
         and r._field == "hold_until" and r.light_id == "{light_id}")
   |> last()
@@ -501,6 +505,21 @@ from(bucket: "{INFLUXDB_BUCKET}")
     if recent is None:
         return "UNKNOWN"
 
+    # Cold-start fallback: if the narrow -2h→-1h baseline window is empty
+    # (e.g. service was down for the last hour, or the Ruuvi reconnected
+    # late), widen to -6h→-1h. Restores delta-classification right after
+    # a restart instead of falling back to ABS-only thresholds for an hour.
+    if base is None:
+        flux_baseline_wide = f'''
+from(bucket: "{INFLUXDB_BUCKET}")
+  |> range(start: -6h, stop: -1h)
+  |> filter(fn: (r) => r._measurement == "ruuvi" and r.sensor_name == "Keittiö" and r._field == "co2")
+  |> mean()
+'''
+        wide_rows = _query(flux_baseline_wide)
+        if wide_rows:
+            base = wide_rows[0].get_value()
+
     # Absolute fallbacks first — they don't need a baseline.
     if recent >= CO2_AUTO_ON_ABSOLUTE_PPM:
         return "ELEVATED"
@@ -602,7 +621,7 @@ def log_decision(idx: int, decision: str, reason: str, on_dur: float | None = No
         .field("dry_run", 1 if DRY_RUN else 0)
         .time(datetime.now(timezone.utc), WritePrecision.S)
     )
-    if on_dur is not None:
+    if on_dur is not None and math.isfinite(on_dur):
         p = p.field("on_duration_min", float(on_dur))
     try:
         write_api.write(bucket=INFLUXDB_BUCKET, org=INFLUXDB_ORG, record=p)
@@ -680,7 +699,11 @@ def check_and_control():
     try:
         porch_sun_elev = sun_elevation(LOC.observer, dateandtime=now)
     except Exception:
-        porch_sun_elev = 0.0  # conservative: treat as borderline
+        # Fail safe: if astral throws, assume bright daylight so we don't
+        # accidentally pin the porch on (or auto-on the CO₂-managed lights
+        # below). is_dark uses `< SUN_DARK_ELEVATION_DEG`, so a high
+        # elevation reliably evaluates to "not dark".
+        porch_sun_elev = 90.0
     target_on = porch_target_state(now, porch_sun_elev)
 
     # External hold (e.g. unifi-webhook person-detection pulse) overrides
@@ -694,10 +717,13 @@ def check_and_control():
                  datetime.fromtimestamp(porch_hold_until, tz=LOCAL_TZ).strftime("%H:%M:%S"))
 
     if porch_state is None or porch_state[0] != target_on:
-        publish_state(porch_idx, target_on, "porch_dark_schedule")
-        log_decision(porch_idx, "on" if target_on else "off",
-                     "porch_hold" if hold_active else "porch_dark_schedule",
-                     category="porch_schedule")
+        reason = "porch_hold" if hold_active else "porch_dark_schedule"
+        if publish_state(porch_idx, target_on, "porch_dark_schedule"):
+            log_decision(porch_idx, "on" if target_on else "off", reason,
+                         category="porch_schedule")
+        else:
+            log_decision(porch_idx, "hold", "mqtt_publish_failed",
+                         category="porch_schedule")
     else:
         log_decision(porch_idx, "hold", "porch_already_correct",
                      category="porch_schedule")
@@ -715,7 +741,9 @@ def check_and_control():
     try:
         sun_elev = sun_elevation(LOC.observer, dateandtime=now)
     except Exception:
-        sun_elev = 0.0  # conservative: treat as borderline
+        # Fail safe: if astral throws, assume bright daylight so we don't
+        # auto-on the kitchen / livingroom lights on a sensor error.
+        sun_elev = 90.0
     is_dark_now = sun_elev < SUN_DARK_ELEVATION_DEG
     eligible_for_on: set[int] = set(CO2_AUTO_MANAGED) if is_dark_now else set()
 
@@ -760,14 +788,17 @@ def check_and_control():
 
         if currently_on:
             if in_after_midnight_window(now):
-                publish_state(idx_co2, False, "co2_auto_after_midnight")
-                log_decision(idx_co2, "off", "after_midnight", category="co2_auto")
-                _co2_auto_on_at.pop(idx_co2, None)
-                _co2_auto_on_confirmed.pop(idx_co2, None)
-                # Quench: block auto-on for the rest of tonight's
-                # after-midnight window so an unchanged CO₂ reading can't
-                # loop the light right back on next tick.
-                _co2_after_midnight_quenched[idx_co2] = today
+                if publish_state(idx_co2, False, "co2_auto_after_midnight"):
+                    log_decision(idx_co2, "off", "after_midnight", category="co2_auto")
+                    _co2_auto_on_at.pop(idx_co2, None)
+                    _co2_auto_on_confirmed.pop(idx_co2, None)
+                    # Quench: block auto-on for the rest of tonight's
+                    # after-midnight window so an unchanged CO₂ reading can't
+                    # loop the light right back on next tick.
+                    _co2_after_midnight_quenched[idx_co2] = today
+                else:
+                    log_decision(idx_co2, "hold", "mqtt_publish_failed",
+                                 category="co2_auto")
             elif co2 == "DROPPED":
                 # Don't auto-off too soon after our own auto-on — prevents
                 # flapping when CO₂ wanders through the dead-band.
@@ -781,10 +812,13 @@ def check_and_control():
                         category="co2_auto",
                     )
                 else:
-                    publish_state(idx_co2, False, "co2_no_occupancy")
-                    log_decision(idx_co2, "off", "co2_no_occupancy", category="co2_auto")
-                    _co2_auto_on_at.pop(idx_co2, None)
-                    _co2_auto_on_confirmed.pop(idx_co2, None)
+                    if publish_state(idx_co2, False, "co2_no_occupancy"):
+                        log_decision(idx_co2, "off", "co2_no_occupancy", category="co2_auto")
+                        _co2_auto_on_at.pop(idx_co2, None)
+                        _co2_auto_on_confirmed.pop(idx_co2, None)
+                    else:
+                        log_decision(idx_co2, "hold", "mqtt_publish_failed",
+                                     category="co2_auto")
             else:
                 log_decision(idx_co2, "hold", f"co2_{co2.lower()}", category="co2_auto")
         else:
@@ -799,14 +833,17 @@ def check_and_control():
             elif idx_co2 not in eligible_for_on:
                 log_decision(idx_co2, "hold", "outside_dark_window", category="co2_auto")
             elif co2 == "ELEVATED":
-                publish_state(idx_co2, True, "co2_occupancy")
-                _co2_auto_on_at[idx_co2] = now
-                _co2_auto_on_confirmed.pop(idx_co2, None)
-                log_decision(idx_co2, "on", "co2_occupancy", category="co2_auto")
-                # Brief pause so a second publish in the same tick (the
-                # other CO₂-managed light) doesn't pile onto the PLC's
-                # MQTT command handler before it has finished the first.
-                time.sleep(0.3)
+                if publish_state(idx_co2, True, "co2_occupancy"):
+                    _co2_auto_on_at[idx_co2] = now
+                    _co2_auto_on_confirmed.pop(idx_co2, None)
+                    log_decision(idx_co2, "on", "co2_occupancy", category="co2_auto")
+                    # Brief pause so a second publish in the same tick (the
+                    # other CO₂-managed light) doesn't pile onto the PLC's
+                    # MQTT command handler before it has finished the first.
+                    time.sleep(0.3)
+                else:
+                    log_decision(idx_co2, "hold", "mqtt_publish_failed",
+                                 category="co2_auto")
             else:
                 log_decision(idx_co2, "hold", f"co2_{co2.lower()}", category="co2_auto")
 
@@ -827,9 +864,12 @@ def check_and_control():
             target_on = currently_on  # within dead-band → hold
             reason = f"hysteresis_hold_{sauna_temp:.1f}C"
         if target_on != currently_on:
-            publish_state(SAUNA_LAUDE_IDX, target_on, reason)
-            log_decision(SAUNA_LAUDE_IDX, "on" if target_on else "off",
-                         reason, category="sauna_laude")
+            if publish_state(SAUNA_LAUDE_IDX, target_on, reason):
+                log_decision(SAUNA_LAUDE_IDX, "on" if target_on else "off",
+                             reason, category="sauna_laude")
+            else:
+                log_decision(SAUNA_LAUDE_IDX, "hold", "mqtt_publish_failed",
+                             category="sauna_laude")
         else:
             log_decision(SAUNA_LAUDE_IDX, "hold", reason, category="sauna_laude")
     elif laude_state is not None:
@@ -844,13 +884,31 @@ def check_and_control():
     #     temperature directly, so it's not in this list.
     ended_min = sauna_session_ended_minutes_ago()
     if ended_min is not None and ended_min >= SAUNA_AFTER_DELAY_MIN:
+        manual_grace_min = POLICIES["manual_only"].min_hold_after_manual_min
         for idx_after in SAUNA_AFTER_LIGHTS:
             after_state = states.get(idx_after)
             if after_state is None or not after_state[0]:
                 continue
+            # Don't interrupt a fresh shower/bath. These lights are
+            # `manual_only` specifically so wall-clock auto-off can't cut
+            # sessions short; the same constraint must apply when the
+            # post-sauna cooldown rule is the one firing — otherwise a
+            # bathroom press at any point in the SAUNA_AFTER_LOOKBACK_H
+            # window after a sauna gets killed on the next tick.
+            on_t = fetch_last_zero_to_one(idx_after)
+            if on_t is not None:
+                on_dur = (datetime.now(timezone.utc) - on_t).total_seconds() / 60.0
+                if on_dur < manual_grace_min:
+                    log_decision(idx_after, "hold", "post_sauna_manual_grace",
+                                 on_dur, category="sauna_post_session")
+                    continue
             reason = f"post_sauna_cooled_{ended_min:.0f}min_ago"
-            publish_state(idx_after, False, reason)
-            log_decision(idx_after, "off", reason, category="sauna_post_session")
+            if publish_state(idx_after, False, reason):
+                log_decision(idx_after, "off", reason,
+                             category="sauna_post_session")
+            else:
+                log_decision(idx_after, "hold", "mqtt_publish_failed",
+                             category="sauna_post_session")
 
     # --- Per-light evaluation
     #     Skip lights that already have a dedicated block above. The
@@ -870,8 +928,16 @@ def check_and_control():
 
         # Manual-on grace window
         on_t = fetch_last_zero_to_one(idx)
-        on_dur = (datetime.now(timezone.utc) - on_t).total_seconds() / 60.0 if on_t else None
-        if on_dur is not None and on_dur < pol.min_hold_after_manual_min:
+        if on_t is not None:
+            on_dur = (datetime.now(timezone.utc) - on_t).total_seconds() / 60.0
+        else:
+            # No 0→1 transition in the 24h lookback. Most likely the light
+            # has been continuously on for >24h — treat as long-lived so
+            # the manual-grace check correctly skips AND duration-based
+            # auto-off can still fire (would otherwise be inert because
+            # the rule guards on `on_dur is not None`).
+            on_dur = float("inf")
+        if on_dur < pol.min_hold_after_manual_min:
             log_decision(idx, "hold", "manual_grace", on_dur, cat)
             continue
 
@@ -891,15 +957,17 @@ def check_and_control():
                 or long_absent
         ):
             reason = "house_unoccupied"
-        elif pol.auto_off_after_on_duration_min is not None and on_dur is not None \
+        elif pol.auto_off_after_on_duration_min is not None \
                 and on_dur >= pol.auto_off_after_on_duration_min:
             reason = "duration_exceeded"
         elif pol.auto_off_after_midnight and in_after_midnight_window(now):
             reason = "after_midnight"
 
         if reason:
-            publish_state(idx, False, reason)
-            log_decision(idx, "off", reason, on_dur, cat)
+            if publish_state(idx, False, reason):
+                log_decision(idx, "off", reason, on_dur, cat)
+            else:
+                log_decision(idx, "hold", "mqtt_publish_failed", on_dur, cat)
         else:
             log_decision(idx, "hold", "no_rule_fired", on_dur, cat)
 
