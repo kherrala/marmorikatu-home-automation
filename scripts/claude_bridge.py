@@ -958,6 +958,11 @@ def _is_whisper_hallucination(text: str) -> bool:
     if any(p in t for p in _WHISPER_STOCK_HALLUCINATIONS):
         return True
     words = re.findall(r"[\wäöå]+", t)
+    if not words:
+        # Punctuation/ellipsis only ("...", "... ... ...") — Whisper's
+        # output when it detected acoustic energy but couldn't transcribe
+        # any actual words. Not real speech.
+        return True
     if len(words) < 4:
         return False
     if len(set(words)) / len(words) < 0.5:

@@ -76,6 +76,21 @@ def test_whitespace_only():
     assert _is_hallucination("   \n  \t  ")
 
 
+def test_punctuation_only_ellipsis():
+    # Observed in the 2026-06-03 loop — Whisper emitted just ellipsis
+    # on background noise. Non-empty string → kiosk client treats it as
+    # truthy and forwards to the LLM unless we drop it server-side.
+    assert _is_hallucination("...")
+
+
+def test_punctuation_only_repeated_ellipsis():
+    assert _is_hallucination("... ... ...")
+
+
+def test_punctuation_only_mixed():
+    assert _is_hallucination("?!. -- ,,,")
+
+
 # ── True negatives (must pass through) ──────────────────────────────────────
 
 def test_real_short_command_joo():
