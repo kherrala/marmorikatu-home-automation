@@ -22,6 +22,14 @@ export const NativeSpeechRecognition: (new () => SpeechRecognition) | null =
 
 export let analyserNode: AnalyserNode | null = null;
 
+// Track the live source node so we can disconnect it before wiring a fresh
+// one to a replacement audioStream (camera restart, visibility change, etc.).
+// Without this, the old MediaStreamAudioSourceNode kept the previous stream
+// pinned in memory AND the analyser kept reading from a dead source — so
+// getRMS() returned ~0 forever and recorder.ts silence detection never
+// triggered, causing every recording to run the full MAX_RECORDING_MS.
+let currentSource: MediaStreamAudioSourceNode | null = null;
+
 function setupAudioAnalyser(): void {
   try {
     let audioContext: AudioContext;
@@ -38,15 +46,32 @@ function setupAudioAnalyser(): void {
         (err) => debugLog(`audioContext: resume failed (${err})`),
       );
     }
-    const source = audioContext.createMediaStreamSource(audioStream!);
-    analyserNode = audioContext.createAnalyser();
-    analyserNode.fftSize = 512;
-    source.connect(analyserNode);
+    if (currentSource) {
+      try { currentSource.disconnect(); } catch {}
+      currentSource = null;
+    }
+    if (!audioStream) {
+      debugLog('audioContext: setup skipped (no audioStream)');
+      return;
+    }
+    currentSource = audioContext.createMediaStreamSource(audioStream);
+    if (!analyserNode) {
+      analyserNode = audioContext.createAnalyser();
+      analyserNode.fftSize = 512;
+    }
+    currentSource.connect(analyserNode);
     debugLog('audioContext: analyser wired');
   } catch (err) {
     const e = err as Error;
     debugLog(`audioContext: setup FAILED (${e.name}: ${e.message})`);
   }
+}
+
+// Public hook for camera.ts to call after replacing `audioStream` on a
+// restart — re-points the analyser at the new source so silence detection
+// keeps working.
+export function rewireAudioAnalyser(): void {
+  setupAudioAnalyser();
 }
 
 export function initMicrophone(): void {

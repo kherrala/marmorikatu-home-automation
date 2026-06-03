@@ -1,6 +1,7 @@
 import { videoEl } from '../dom/elements.js';
 import { resumeIfSuspended } from '../audio/context.js';
 import { debugLog } from '../debug.js';
+import { rewireAudioAnalyser } from '../voice/microphone.js';
 
 export let audioStream: MediaStream | null = null;
 
@@ -9,6 +10,19 @@ export function setAudioStream(stream: MediaStream | null): void {
 }
 
 let videoRestartPending = false;
+
+// Stop every track on a MediaStream we're about to discard. Without this,
+// the previous stream stays open in WebKit native memory after we reassign
+// videoEl.srcObject — over hours/days of camera restarts on the wall iPad,
+// the accumulated native resources contribute to the periodic Safari OOM.
+function stopAllTracks(stream: MediaStream | null): void {
+  if (!stream) return;
+  try {
+    stream.getTracks().forEach(t => {
+      try { t.stop(); } catch {}
+    });
+  } catch {}
+}
 
 function describeStream(stream: MediaStream): string {
   const v = stream.getVideoTracks();
@@ -88,17 +102,30 @@ export function scheduleVideoRestart(): void {
         video: { facingMode: 'user', width: 320, height: 240 },
         audio: true,
       });
+      // Stop the previous stream's tracks before swapping. Otherwise the
+      // old MediaStream stays alive in WebKit; over repeated restarts the
+      // accumulated native handles are a real contributor to long-running
+      // memory growth.
+      const prevVideoStream = videoEl.srcObject as MediaStream | null;
+      const prevAudioStream = audioStream;
       videoEl.srcObject = stream;
       stream.getAudioTracks().forEach(t => t.enabled = false);
       await videoEl.play();
       watchCameraTracks();
-      if (audioStream) {
+      if (prevAudioStream) {
         const audioTracks = stream.getAudioTracks();
         if (audioTracks.length > 0) {
           audioTracks.forEach(t => t.enabled = true);
           setAudioStream(new MediaStream(audioTracks));
+          // Re-point the analyser at the new source — without this,
+          // getRMS() reads from a detached source forever, silence
+          // detection in recorder.ts always sees ~0, and every
+          // recording runs the full MAX_RECORDING_MS (10s).
+          rewireAudioAnalyser();
         }
       }
+      stopAllTracks(prevVideoStream);
+      stopAllTracks(prevAudioStream);
       debugLog(`camera: restart ok ${describeStream(stream)} dim=${videoEl.videoWidth}x${videoEl.videoHeight}`);
     } catch (err) {
       const e = err as Error;

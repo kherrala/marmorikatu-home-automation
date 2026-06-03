@@ -43,13 +43,16 @@ export function unlockAudio(): void {
     setAudioContext(ttsAudioCtx);
   } catch {}
 
-  // iOS speechSynthesis keepalive -- prevent the speech engine from going dormant
+  // iOS speechSynthesis keepalive -- prevent the speech engine from going
+  // dormant. Reuse a single utterance object instead of allocating a fresh
+  // one every 10s (≈60k SpeechSynthesisUtterance objects per week on a
+  // 24/7 kiosk, which iOS's speech engine is known to retain).
+  const keepaliveUtterance = new SpeechSynthesisUtterance('');
+  keepaliveUtterance.volume = 0;
   setInterval(() => {
     if (!speechSynthesis.speaking) {
       speechSynthesis.cancel();
-      const keepalive = new SpeechSynthesisUtterance('');
-      keepalive.volume = 0;
-      speechSynthesis.speak(keepalive);
+      speechSynthesis.speak(keepaliveUtterance);
     }
   }, 10_000);
 
