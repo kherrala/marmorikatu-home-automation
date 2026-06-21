@@ -158,10 +158,10 @@ LIGHT_POLICY: dict[int, str] = {
                         # as a daytime workspace; the ceiling light needs
                         # to stay on during Zoom calls regardless of the
                         # kitchen-Ruuvi-CO₂ occupancy proxy missing her.
-    18: "bedroom",      # MH alakerta ikkuna — only the kattovalo needs the
-                        # workspace exemption; the window light is fine
-                        # under the normal bedroom rules (auto-off when
-                        # unoccupied / after midnight).
+    18: "bedroom_window",  # MH alakerta ikkuna — only the kattovalo (17)
+                        # needs the workspace exemption; the window light
+                        # also auto-offs in daylight (bedroom_window) since
+                        # the workspace has natural light during the day.
     1:  "manual_only",  # Kylpyhuone alakerta — bathroom needs to stay on for
                         # showers/baths; no Ruuvi sensor here so we can't
                         # drive it from humidity like the sauna laude LED
@@ -188,9 +188,12 @@ LIGHT_POLICY: dict[int, str] = {
     34: "toilet",      # Kylpyhuone yläkerta peilivalo
 
     # Bedrooms (upstairs, sleeping use). Aula is NOT a bedroom.
-    22: "bedroom", 23: "bedroom",                  # Aarni (upstairs; PLC legacy name "Aatu")
-    28: "bedroom", 30: "bedroom",                  # Seela (upstairs; PLC legacy name "Onni")
-    31: "bedroom", 32: "bedroom", 33: "bedroom",   # Aikuiset (upstairs; PLC legacy name "Essi") — vaatehuone + ikkuna + katto
+    # Window lights (ikkunavalo) use bedroom_window so they ALSO auto-off in
+    # daylight; ceiling/vaatehuone lights stay plain bedroom (no daylight-off,
+    # so a daytime nap isn't interrupted).
+    22: "bedroom", 23: "bedroom_window",                    # Aarni (kattovalo / ikkunavalo; PLC legacy "Aatu")
+    28: "bedroom", 30: "bedroom_window",                    # Seela (kattovalo / ikkunavalo; PLC legacy "Onni")
+    31: "bedroom", 32: "bedroom_window", 33: "bedroom",     # Aikuiset (vaatehuone / ikkunavalo / kattovalo; PLC legacy "Essi")
 
     # Kitchen — note: idx 40 (Keittiö kattovalo) is CO₂-auto-managed below,
     # NOT in this policy.
@@ -233,6 +236,11 @@ POLICIES: dict[str, Policy] = {
     "toilet":           Policy(None, False, TOILET_TIMEOUT_MIN,    False, 5),
     "staircase":        Policy(SUNRISE_GRACE_MIN, True, STAIRCASE_TIMEOUT_MIN, True, 5),
     "bedroom":          Policy(None, True,  None,                  True,  BEDROOM_HOLD_MIN),
+    # Bedroom window lights: same as bedroom (off when unoccupied / after
+    # midnight) but ALSO off in daylight — a window light serves no purpose
+    # when the sun is up, and unlike the ceiling light it won't darken a
+    # daytime nap.
+    "bedroom_window":   Policy(SUNRISE_GRACE_MIN, True, None,      True,  BEDROOM_HOLD_MIN),
     "kitchen":          Policy(SUNRISE_GRACE_MIN, True, None,      True,  MANUAL_HOLD_MIN),
     "livingroom":       Policy(SUNRISE_GRACE_MIN, True, None,      True,  MANUAL_HOLD_MIN),
     "general":          Policy(SUNRISE_GRACE_MIN, True, None,      True,  MANUAL_HOLD_MIN),
