@@ -169,12 +169,15 @@ LIGHT_POLICY: dict[int, str] = {
                         # sauna ceiling lights (idx 38, 39): no auto-off,
                         # user toggles manually.
     38: "manual_only", 39: "manual_only",
-    48: "manual_only",  # Ulkovalo terassi (no schedule — used manually)
+    48: "outdoor",      # Ulkovalo terassi — auto-off in daylight / after
+                        # midnight, never auto-on (user switches it on for
+                        # evenings; it just won't get left on overnight).
     49: "manual_only",  # Kellari etuosa
     50: "manual_only",  # Kellari takaosa
     51: "manual_only",  # Biljardipöytä
     52: "manual_only",  # WC kellari
-    59: "manual_only", 60: "manual_only", 61: "manual_only",
+    59: "manual_only", 61: "manual_only",
+    60: "outdoor",      # Varasto ulkovalo — outdoor, same auto-off as terrace
 
     53: "general",     # Kellari varasto — small windows, follows sunrise rule
 
@@ -234,6 +237,12 @@ POLICIES: dict[str, Policy] = {
     "livingroom":       Policy(SUNRISE_GRACE_MIN, True, None,      True,  MANUAL_HOLD_MIN),
     "general":          Policy(SUNRISE_GRACE_MIN, True, None,      True,  MANUAL_HOLD_MIN),
     "manual_only":      Policy(None, False, None,                  False, 60),
+    # Outdoor lights (terrace, storage): force OFF whenever the sun is up
+    # (auto_off_after_sunrise) and after midnight, but NEVER auto-on and
+    # never auto-off on the indoor occupancy proxy — someone sitting out on
+    # the terrace in the evening reads as "unoccupied" to the indoor Ruuvis,
+    # and we must not kill the light out from under them.
+    "outdoor":          Policy(SUNRISE_GRACE_MIN, False, None,      True,  MANUAL_HOLD_MIN),
     "porch_schedule":   Policy(None, False, None,                  False, 5),
 }
 
