@@ -241,8 +241,13 @@ POLICIES: dict[str, Policy] = {
     # (auto_off_after_sunrise) and after midnight, but NEVER auto-on and
     # never auto-off on the indoor occupancy proxy — someone sitting out on
     # the terrace in the evening reads as "unoccupied" to the indoor Ruuvis,
-    # and we must not kill the light out from under them.
-    "outdoor":          Policy(SUNRISE_GRACE_MIN, False, None,      True,  MANUAL_HOLD_MIN),
+    # and we must not kill the light out from under them. The manual-hold is
+    # only 5 min (not MANUAL_HOLD_MIN): the long grace exists to protect a
+    # light deliberately switched on, but for an outdoor light the priority
+    # is "definitely off when the sun is up", so daylight auto-off should
+    # fire promptly. (You only switch these on in the dark, when the daylight
+    # rule is inactive anyway, so the short grace costs nothing in practice.)
+    "outdoor":          Policy(SUNRISE_GRACE_MIN, False, None,      True,  5),
     "porch_schedule":   Policy(None, False, None,                  False, 5),
 }
 
