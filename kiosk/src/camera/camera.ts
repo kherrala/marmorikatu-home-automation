@@ -2,6 +2,7 @@ import { videoEl } from '../dom/elements.js';
 import { resumeIfSuspended } from '../audio/context.js';
 import { debugLog } from '../debug.js';
 import { rewireAudioAnalyser } from '../voice/microphone.js';
+import { FACE_INPUT_SIZE, CAMERA_WIDTH, CAMERA_HEIGHT } from '../config/constants.js';
 
 export let audioStream: MediaStream | null = null;
 
@@ -36,7 +37,7 @@ export async function setupCamera(): Promise<boolean> {
   const t0 = performance.now();
   try {
     const stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: 'user', width: 320, height: 240 },
+      video: { facingMode: 'user', width: CAMERA_WIDTH, height: CAMERA_HEIGHT },
       audio: true,
     });
     videoEl.srcObject = stream;
@@ -48,7 +49,7 @@ export async function setupCamera(): Promise<boolean> {
     debugLog(`setupCamera: video+audio failed (${e.name}: ${e.message}), trying video-only`);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'user', width: 320, height: 240 },
+        video: { facingMode: 'user', width: CAMERA_WIDTH, height: CAMERA_HEIGHT },
         audio: false,
       });
       videoEl.srcObject = stream;
@@ -71,6 +72,26 @@ export async function setupCamera(): Promise<boolean> {
     const e = err as Error;
     debugLog(`setupCamera: face-api model load FAILED (${e.name}: ${e.message})`);
     return false;
+  }
+
+  // Warm up the detector NOW, during activation, while the start overlay is
+  // still up. The first WebGL inference on iOS compiles shaders and can take
+  // 15-20s; without this the FIRST real detection when someone walks up
+  // stalls for ~20s ("face recognition took forever"). Run one throwaway
+  // detection on a blank canvas at the SAME inputSize the live loop uses, so
+  // the shaders are already compiled by the time a face appears.
+  try {
+    const tWarm = performance.now();
+    const warm = document.createElement('canvas');
+    warm.width = FACE_INPUT_SIZE;
+    warm.height = FACE_INPUT_SIZE;
+    await faceapi.detectSingleFace(
+      warm as unknown as HTMLVideoElement,
+      new faceapi.TinyFaceDetectorOptions({ inputSize: FACE_INPUT_SIZE, scoreThreshold: 0.5 }),
+    );
+    debugLog(`setupCamera: detector warmup done in ${Math.round(performance.now() - tWarm)}ms`);
+  } catch (err) {
+    debugLog(`setupCamera: detector warmup failed (${(err as Error).message})`);
   }
 
   return true;
@@ -99,7 +120,7 @@ export function scheduleVideoRestart(): void {
     debugLog('camera: restarting stream');
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'user', width: 320, height: 240 },
+        video: { facingMode: 'user', width: CAMERA_WIDTH, height: CAMERA_HEIGHT },
         audio: true,
       });
       // Stop the previous stream's tracks before swapping. Otherwise the

@@ -3,7 +3,7 @@ import { exhaustMap, withLatestFrom, filter } from 'rxjs/operators';
 import { getState, dispatch, state$ } from '../state/store.js';
 import { videoEl } from '../dom/elements.js';
 import {
-  FACE_DETECT_INTERVAL, DETECTIONS_REQUIRED,
+  FACE_DETECT_INTERVAL, DETECTIONS_REQUIRED, FACE_INPUT_SIZE,
   GREETING_COOLDOWN, FACE_GONE_DISMISS_MS, MIN_GREETING_ALIVE_MS,
 } from '../config/constants.js';
 import { isSpeaking } from '../audio/tts.js';
@@ -102,7 +102,7 @@ async function runDetection(): Promise<void> {
   // GREETING with no human present).
   const detection = await faceapi.detectSingleFace(
     videoEl,
-    new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.5 }),
+    new faceapi.TinyFaceDetectorOptions({ inputSize: FACE_INPUT_SIZE, scoreThreshold: 0.5 }),
   );
 
   if (detection) {
