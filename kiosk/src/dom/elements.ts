@@ -12,6 +12,7 @@ export const edgeLeft = getEl<HTMLDivElement>('swipe-left');
 export const edgeRight = getEl<HTMLDivElement>('swipe-right');
 export const startOverlay = getEl<HTMLDivElement>('start-overlay');
 export const cameraDot = getEl<HTMLDivElement>('camera-dot');
+export const audioLockedHint = getEl<HTMLDivElement>('audio-locked-hint');
 export const greetingOverlay = getEl<HTMLDivElement>('greeting-overlay');
 export const greetingCard = getEl<HTMLDivElement>('greeting-card');
 export const greetingText = getEl<HTMLDivElement>('greeting-text');

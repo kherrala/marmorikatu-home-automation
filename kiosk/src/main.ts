@@ -146,6 +146,12 @@ startOverlay.addEventListener('click', async function handleStart() {
   }
 });
 
+// Any tap anywhere re-arms audio. iOS can re-lock the AudioContext / persistent
+// <audio> element after a long idle WITHOUT reloading the page, which silently
+// kills announcements, the hourly news, and greetings. Re-running unlock on
+// every pointerdown makes recovery a single touch (and clears the hint).
+document.addEventListener('pointerdown', () => unlockAudio(), { passive: true });
+
 document.getElementById('retry-btn')?.addEventListener('click', async (e) => {
   e.stopPropagation();
   initError.classList.remove('visible');

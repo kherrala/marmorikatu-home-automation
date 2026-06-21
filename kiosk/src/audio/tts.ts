@@ -1,6 +1,7 @@
 import { ttsAudio } from '../dom/elements.js';
 import { setSpeaking } from '../dom/avatar.js';
 import { resumeIfSuspended } from './context.js';
+import { showAudioHint, hideAudioHint } from './audio-unlock.js';
 
 const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
   || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
@@ -21,7 +22,11 @@ export function playSentence(b64wav: string): Promise<boolean> {
     };
     ttsAudio.src = url;
     ttsAudio.currentTime = 0;
-    ttsAudio.play().catch(() => { cleanup(); resolve(false); });
+    // A rejected play() here is iOS's autoplay block — audio re-locked since
+    // the last tap. Surface the hint so a single tap re-arms it.
+    ttsAudio.play()
+      .then(() => hideAudioHint())
+      .catch(() => { showAudioHint(); cleanup(); resolve(false); });
     setSpeaking(true);
     safetyTimer = setTimeout(() => { cleanup(); resolve(false); }, 15_000);
     ttsAudio.onended = () => { cleanup(); resolve(true); };

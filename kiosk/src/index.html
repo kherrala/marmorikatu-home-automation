@@ -44,6 +44,11 @@
   <!-- Camera active indicator -->
   <div id="camera-dot"></div>
 
+  <!-- Audio-locked hint: shown when an announcement/greeting wants to play but
+       iOS audio is still locked (no tap since the last reload). Tapping
+       anywhere re-arms audio and hides this. -->
+  <div id="audio-locked-hint" class="hidden">🔇 Kosketa kuullaksesi</div>
+
   <!-- Greeting + AI report overlay -->
   <div id="greeting-overlay">
     <div id="greeting-card">
@@ -138,9 +143,14 @@
 
   <div id="pause-badge">&#x23F8; jatkuu 30 s</div>
 
-  <!-- Hidden video element for face detection camera feed -->
+  <!-- Hidden video element for face detection camera feed.
+       Kept INSIDE the viewport (a 2px corner dot) rather than far off-screen:
+       iOS 17/18 WebKit can hand black frames to canvas/face-api drawImage when
+       the source <video> is positioned way off-screen, which silently breaks
+       face detection (maxScore stuck at 0). A tiny in-viewport footprint keeps
+       real frames flowing while staying effectively invisible. -->
   <video id="camera" autoplay playsinline muted width="320" height="240"
-         style="position:fixed;top:-9999px;left:-9999px;"></video>
+         style="position:fixed;bottom:0;right:0;width:2px;height:2px;pointer-events:none;"></video>
 
   <!-- Greeting jingle (local MP3, preloaded for instant playback) -->
   <audio id="jingle" preload="auto" src="/jingle.mp3"></audio>

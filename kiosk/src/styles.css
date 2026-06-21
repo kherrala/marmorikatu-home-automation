@@ -314,6 +314,30 @@ html, body {
 #camera-dot.active { opacity: 0.7; background: #4caf50; }
 #camera-dot.failed { opacity: 0.7; background: #e53935; }
 
+/* -- Audio-locked hint (tap to enable sound) -------------------------- */
+#audio-locked-hint {
+  position: fixed;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 600;
+  padding: 10px 18px;
+  border-radius: 999px;
+  background: rgba(20, 20, 20, 0.85);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+  animation: audio-hint-pulse 1.6s ease-in-out infinite;
+}
+#audio-locked-hint.hidden { display: none; }
+@keyframes audio-hint-pulse {
+  0%, 100% { opacity: 0.85; }
+  50%      { opacity: 0.45; }
+}
+
 /* -- Greeting overlay (centered card) --------------------------------- */
 #greeting-overlay {
   position: fixed;

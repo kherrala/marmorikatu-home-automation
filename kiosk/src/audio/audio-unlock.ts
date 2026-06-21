@@ -1,11 +1,50 @@
-import { jingleAudio, ttsAudio } from '../dom/elements.js';
-import { setAudioContext } from './context.js';
+import { jingleAudio, ttsAudio, audioLockedHint } from '../dom/elements.js';
+import { getAudioContext, setAudioContext } from './context.js';
 import { dispatch } from '../state/store.js';
+import { debugLog } from '../debug.js';
 
 let audioUnlocked = false;
 
+// Silent 44-byte WAV used to (re)arm the persistent TTS <audio> element.
+const SILENT_WAV =
+  'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=';
+
+/** Show/hide the "tap to enable sound" hint. Called when a queued
+ *  announcement or greeting can't play because iOS audio is still locked. */
+export function showAudioHint(): void {
+  if (audioLockedHint.classList.contains('hidden')) {
+    debugLog('audio: playback blocked — showing "tap to enable sound" hint');
+  }
+  audioLockedHint.classList.remove('hidden');
+}
+export function hideAudioHint(): void {
+  audioLockedHint.classList.add('hidden');
+}
+
+/** Re-arm audio after a re-lock that did NOT reload the page (iOS suspends the
+ *  AudioContext / drops the <audio> unlock after long idle). Safe to call on
+ *  every user tap — cheap and idempotent. Resumes the context and replays the
+ *  silent WAV inside the gesture so the next real playSentence() succeeds. */
+export function ensureAudioReady(): void {
+  try {
+    const ctx = getAudioContext();
+    if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+  } catch {}
+  // Only re-arm the element if it's not mid-playback, to avoid cutting off a
+  // sentence that's currently speaking.
+  if (ttsAudio.paused) {
+    const prevSrc = ttsAudio.src;
+    ttsAudio.muted = true;
+    ttsAudio.src = SILENT_WAV;
+    ttsAudio.play()
+      .then(() => { ttsAudio.pause(); ttsAudio.muted = false; if (prevSrc.startsWith('blob:')) ttsAudio.removeAttribute('src'); })
+      .catch(() => { ttsAudio.muted = false; });
+  }
+  hideAudioHint();
+}
+
 export function unlockAudio(): void {
-  if (audioUnlocked) return;
+  if (audioUnlocked) { ensureAudioReady(); return; }
   audioUnlocked = true;
 
   // Unlock speechSynthesis
@@ -21,7 +60,7 @@ export function unlockAudio(): void {
 
   // Unlock persistent TTS <audio> with silent WAV
   ttsAudio.muted = true;
-  ttsAudio.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=';
+  ttsAudio.src = SILENT_WAV;
   ttsAudio.play()
     .then(() => { ttsAudio.pause(); ttsAudio.muted = false; })
     .catch(() => { ttsAudio.muted = false; });

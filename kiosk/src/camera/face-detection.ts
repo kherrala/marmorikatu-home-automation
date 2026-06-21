@@ -24,17 +24,52 @@ let _maxScore = 0;
 let _lastSummaryTime = 0;
 const SUMMARY_INTERVAL_MS = 30_000;
 
+// Frame-brightness probe. Distinguishes "camera works but no face present"
+// (brightness > 0) from "iOS is handing us black frames" (brightness ~0,
+// which makes face detection impossible no matter who stands there). Sampled
+// from a tiny 16x16 downscale so it's cheap.
+let _brightCanvas: HTMLCanvasElement | null = null;
+let _brightCtx: CanvasRenderingContext2D | null = null;
+let _brightSum = 0;
+let _brightSamples = 0;
+let _brightMax = 0;
+
+function sampleBrightness(): void {
+  try {
+    if (!_brightCanvas) {
+      _brightCanvas = document.createElement('canvas');
+      _brightCanvas.width = 16;
+      _brightCanvas.height = 16;
+      _brightCtx = _brightCanvas.getContext('2d', { willReadFrequently: true });
+    }
+    if (!_brightCtx) return;
+    _brightCtx.drawImage(videoEl, 0, 0, 16, 16);
+    const data = _brightCtx.getImageData(0, 0, 16, 16).data;
+    let sum = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      sum += ((data[i] ?? 0) + (data[i + 1] ?? 0) + (data[i + 2] ?? 0)) / 3;
+    }
+    const avg = sum / (data.length / 4);  // 0..255
+    _brightSum += avg;
+    _brightSamples++;
+    if (avg > _brightMax) _brightMax = avg;
+  } catch { /* tainted/blank canvas — ignore */ }
+}
+
 function maybeLogSummary(): void {
   const now = Date.now();
   if (now - _lastSummaryTime < SUMMARY_INTERVAL_MS) return;
   _lastSummaryTime = now;
   const avg = _hits > 0 ? (_scoreSum / _hits).toFixed(2) : '-';
+  const bAvg = _brightSamples > 0 ? (_brightSum / _brightSamples).toFixed(1) : '-';
   debugLog(
     `face: 30s summary attempts=${_attempts} hits=${_hits} ` +
     `skipsNoVideo=${_skipsNoVideo} errors=${_errors} ` +
-    `avgScore=${avg} maxScore=${_maxScore.toFixed(2)}`
+    `avgScore=${avg} maxScore=${_maxScore.toFixed(2)} ` +
+    `bright=${bAvg}/${_brightMax.toFixed(0)} (0-255)`
   );
   _attempts = 0; _hits = 0; _skipsNoVideo = 0; _errors = 0; _scoreSum = 0; _maxScore = 0;
+  _brightSum = 0; _brightSamples = 0; _brightMax = 0;
 }
 
 let onGreetingTrigger: (() => void) | null = null;
@@ -57,6 +92,8 @@ async function runDetection(): Promise<void> {
     maybeLogSummary();
     return;
   }
+
+  sampleBrightness();
 
   // scoreThreshold=0.5 is face-api.js's own default and the empirical break
   // point between real faces (avgScore typically ≥0.6) and face-shaped
