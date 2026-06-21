@@ -44,7 +44,7 @@ from zoneinfo import ZoneInfo
 
 import paho.mqtt.publish as mqtt_publish
 from astral import LocationInfo
-from astral.sun import sun, elevation as sun_elevation
+from astral.sun import sunrise as sun_rise, sunset as sun_set, elevation as sun_elevation
 from influxdb_client import InfluxDBClient, Point, WritePrecision
 from influxdb_client.client.write_api import SYNCHRONOUS
 
@@ -286,8 +286,25 @@ def signal_handler(sig, frame):
 # ── Sun ───────────────────────────────────────────────────────────────────────
 
 def todays_sun(now: datetime) -> tuple[datetime, datetime]:
-    s = sun(LOC.observer, date=now.date(), tzinfo=LOCAL_TZ)
-    return s["sunrise"], s["sunset"]
+    # Compute sunrise/sunset directly rather than via sun(), which ALSO
+    # derives dawn/dusk at −6° civil twilight. Around midsummer at this
+    # latitude the sun never drops 6° below the horizon, so sun() raises
+    # ValueError ("Sun never reaches 6 degrees below the horizon") even
+    # though the sun itself still rises and sets — that exception used to
+    # crash check_and_control() on every tick, freezing all auto-off rules.
+    # sunrise()/sunset() only fail under true polar day/night (which Tampere
+    # never sees); the fallbacks below degrade to a full-daylight window so
+    # the daytime auto-off rules keep running regardless.
+    d = now.date()
+    try:
+        sr = sun_rise(LOC.observer, date=d, tzinfo=LOCAL_TZ)
+    except ValueError:
+        sr = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    try:
+        ss = sun_set(LOC.observer, date=d, tzinfo=LOCAL_TZ)
+    except ValueError:
+        ss = now.replace(hour=23, minute=59, second=0, microsecond=0)
+    return sr, ss
 
 
 # ── InfluxDB queries ──────────────────────────────────────────────────────────
