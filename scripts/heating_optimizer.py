@@ -38,17 +38,24 @@ Outputs (written to InfluxDB measurement `heating_optimizer`):
 import logging
 import os
 import signal
+import sys
 import time
 from datetime import datetime, timedelta, timezone
 
 from influxdb_client import InfluxDBClient, Point, WritePrecision
 from influxdb_client.client.write_api import SYNCHRONOUS
 
+from health import touch_health
+
 # ── Configuration ─────────────────────────────────────────────────────────────
 INFLUXDB_URL = os.environ.get("INFLUXDB_URL", "http://localhost:8086")
 INFLUXDB_TOKEN = os.environ.get("INFLUXDB_TOKEN", "wago-secret-token")
 INFLUXDB_ORG = os.environ.get("INFLUXDB_ORG", "wago")
 INFLUXDB_BUCKET = os.environ.get("INFLUXDB_BUCKET", "building_automation")
+
+# Liveness: exit non-zero after this many consecutive failed classifications so
+# the container crash-loops visibly instead of looping forever. See health.py.
+MAX_CONSECUTIVE_FAILURES = int(os.environ.get("MAX_CONSECUTIVE_FAILURES", "5"))
 
 PRICE_PERCENTILE_CHEAP = float(os.environ.get("PRICE_PERCENTILE_CHEAP", "25"))
 PRICE_PERCENTILE_EXPENSIVE = float(os.environ.get("PRICE_PERCENTILE_EXPENSIVE", "75"))
@@ -470,14 +477,32 @@ def main():
     query_api = influx_client.query_api()
     write_api = influx_client.write_api(write_options=SYNCHRONOUS)
 
-    check_and_classify(query_api, write_api)
+    consecutive_failures = 0
+    try:
+        check_and_classify(query_api, write_api)
+        touch_health()
+    except Exception as e:
+        consecutive_failures += 1
+        log.exception("check_and_classify failed: %s", e)
 
     while running:
         secs = seconds_until_next_price_boundary()
         log.info(f"Sleeping {secs:.0f}s until next price slot boundary")
         sleep_interruptible(secs)
         if running:
-            check_and_classify(query_api, write_api)
+            try:
+                check_and_classify(query_api, write_api)
+                consecutive_failures = 0
+                touch_health()
+            except Exception as e:
+                consecutive_failures += 1
+                log.exception("check_and_classify failed (%d/%d consecutive): %s",
+                              consecutive_failures, MAX_CONSECUTIVE_FAILURES, e)
+                if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
+                    log.critical("%d consecutive failures — exiting non-zero for restart/visibility",
+                                 consecutive_failures)
+                    influx_client.close()
+                    sys.exit(1)
 
     influx_client.close()
     log.info("Shutdown complete")

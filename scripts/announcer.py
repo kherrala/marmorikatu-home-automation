@@ -34,6 +34,7 @@ import json
 import logging
 import os
 import signal
+import sys
 import time
 from collections import OrderedDict
 from dataclasses import dataclass
@@ -44,6 +45,7 @@ import urllib.request
 
 from influxdb_client import InfluxDBClient
 
+from health import touch_health
 from light_labels import LIGHT_LABELS
 
 # ── Configuration ────────────────────────────────────────────────────────────
@@ -63,6 +65,9 @@ PUSH_TIMEOUT_S = float(os.environ.get("ANNOUNCE_PUSH_TIMEOUT", "5"))
 # Default 3 for initial rollout — surface everything we know how to detect.
 VERBOSITY      = int(os.environ.get("ANNOUNCE_VERBOSITY", "3"))
 POLL_INTERVAL  = int(os.environ.get("ANNOUNCE_POLL_INTERVAL", "30"))
+# Liveness: exit non-zero after this many consecutive failed ticks so the
+# container crash-loops visibly instead of looping forever. See scripts/health.py.
+MAX_CONSECUTIVE_FAILURES = int(os.environ.get("MAX_CONSECUTIVE_FAILURES", "5"))
 
 # Suppress noisy bursts: don't push more than this many events per tick.
 MAX_PER_TICK   = int(os.environ.get("ANNOUNCE_MAX_PER_TICK", "5"))
@@ -1002,11 +1007,20 @@ def main():
     log.info("bootstrap done — sauna=%s tier=%s lights=%d alarms=%d",
              st.sauna_state, st.tier, len(st.lights_state), len(st.alarm_flags))
 
+    consecutive_failures = 0
     while _running:
         try:
             tick(infl, st)
+            consecutive_failures = 0
+            touch_health()
         except Exception as e:
-            log.exception("tick failed: %s", e)
+            consecutive_failures += 1
+            log.exception("tick failed (%d/%d consecutive): %s",
+                          consecutive_failures, MAX_CONSECUTIVE_FAILURES, e)
+            if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
+                log.critical("%d consecutive failures — exiting non-zero for restart/visibility",
+                             consecutive_failures)
+                sys.exit(1)
         end = time.monotonic() + POLL_INTERVAL
         while _running and time.monotonic() < end:
             time.sleep(min(1.0, end - time.monotonic()))

@@ -15,12 +15,15 @@ import json
 import logging
 import os
 import signal
+import sys
 import time
 from datetime import datetime, timezone
 
 import paho.mqtt.client as mqtt
 from influxdb_client import InfluxDBClient, Point
 from influxdb_client.client.write_api import SYNCHRONOUS
+
+from health import touch_health
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 MQTT_BROKER    = os.environ.get("MQTT_BROKER",    "freenas.kherrala.fi")
@@ -157,6 +160,9 @@ PRICE_BIAS_EXPENSIVE_FALLBACK_C_KWH = float(os.environ.get(
 DEMAND_BIAS_MAX_C = float(os.environ.get("DEMAND_BIAS_MAX_C", "3.0"))
 # How often to check and potentially publish (seconds)
 CHECK_INTERVAL  = int(os.environ.get("CHECK_INTERVAL", "300"))
+# Liveness: exit non-zero after this many consecutive failed checks so the
+# container crash-loops visibly instead of looping forever. See health.py.
+MAX_CONSECUTIVE_FAILURES = int(os.environ.get("MAX_CONSECUTIVE_FAILURES", "5"))
 # Minimum change (°C) required to trigger a new publish
 MIN_CHANGE      = float(os.environ.get("MIN_CHANGE", "0.1"))
 # Safety bounds — don't publish outside this range
@@ -565,12 +571,31 @@ def main():
     query_api = influx_client.query_api()
     write_api = influx_client.write_api(write_options=SYNCHRONOUS)
 
-    check_and_publish(query_api, write_api)
+    consecutive_failures = 0
+    try:
+        check_and_publish(query_api, write_api)
+        touch_health()
+    except Exception as e:
+        consecutive_failures += 1
+        log.exception("check_and_publish failed: %s", e)
 
     while running:
         sleep_interruptible(CHECK_INTERVAL)
         if running:
-            check_and_publish(query_api, write_api)
+            try:
+                check_and_publish(query_api, write_api)
+                consecutive_failures = 0
+                touch_health()
+            except Exception as e:
+                consecutive_failures += 1
+                log.exception("check_and_publish failed (%d/%d consecutive): %s",
+                              consecutive_failures, MAX_CONSECUTIVE_FAILURES, e)
+                if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
+                    log.critical("%d consecutive failures — exiting non-zero for restart/visibility",
+                                 consecutive_failures)
+                    write_api.close()
+                    influx_client.close()
+                    sys.exit(1)
 
     write_api.close()
     influx_client.close()

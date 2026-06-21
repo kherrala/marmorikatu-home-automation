@@ -347,6 +347,9 @@ services:
       - MIN_CHANGE=0.1
       - INDOOR_MIN=19.0
       - INDOOR_MAX=25.0
+      # Liveness: mark unhealthy if no successful publish-check in 15 min
+      # (CHECK_INTERVAL is 60s, so this allows ~15 missed ticks).
+      - HEALTH_MAX_AGE=900
     depends_on:
       influxdb:
         condition: service_healthy
@@ -369,6 +372,9 @@ services:
       - PRICE_PERCENTILE_CHEAP=25
       - PRICE_PERCENTILE_EXPENSIVE=75
       - PRE_HEAT_HOURS=2
+      # Liveness: this service only reclassifies at each ~15-min price-slot
+      # boundary, so allow a generous staleness window before unhealthy.
+      - HEALTH_MAX_AGE=1800
     depends_on:
       influxdb:
         condition: service_healthy

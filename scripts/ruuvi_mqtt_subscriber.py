@@ -17,6 +17,8 @@ import paho.mqtt.client as mqtt
 from influxdb_client import InfluxDBClient, Point, WritePrecision
 from influxdb_client.client.write_api import SYNCHRONOUS
 
+from health import touch_health
+
 # Configuration from environment
 MQTT_BROKER = os.environ.get("MQTT_BROKER", "freenas.kherrala.fi")
 MQTT_PORT = int(os.environ.get("MQTT_PORT", "1883"))
@@ -210,6 +212,9 @@ def on_message(client, userdata, msg):
 
         # Write to InfluxDB
         write_api.write(bucket=INFLUXDB_BUCKET, org=INFLUXDB_ORG, record=point)
+
+        # Liveness: Ruuvi data flowing end-to-end to InfluxDB. See scripts/health.py.
+        touch_health()
 
     except json.JSONDecodeError as e:
         print(f"Failed to parse JSON: {e}")

@@ -4,6 +4,12 @@ WORKDIR /app
 
 RUN pip install --no-cache-dir influxdb-client
 
+COPY scripts/health.py /app/
 COPY scripts/heating_optimizer.py /app/
+
+# Liveness heartbeat — see scripts/health.py. HEALTH_MAX_AGE is set generously
+# in docker-compose.yml because this service only ticks each price-slot boundary.
+HEALTHCHECK --interval=60s --timeout=5s --start-period=120s --retries=3 \
+  CMD python -c "import os,time,sys; f=os.environ.get('HEALTH_FILE','/tmp/service_healthy'); a=(time.time()-os.path.getmtime(f)) if os.path.exists(f) else 1e9; sys.exit(0 if a<float(os.environ.get('HEALTH_MAX_AGE','300')) else 1)"
 
 CMD ["python", "-u", "heating_optimizer.py"]

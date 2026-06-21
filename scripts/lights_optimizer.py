@@ -49,6 +49,7 @@ from astral.sun import sunrise as sun_rise, sunset as sun_set, elevation as sun_
 from influxdb_client import InfluxDBClient, Point, WritePrecision
 from influxdb_client.client.write_api import SYNCHRONOUS
 
+from health import touch_health
 from light_labels import LIGHT_LABELS
 
 # ── Configuration ─────────────────────────────────────────────────────────────
@@ -83,13 +84,12 @@ CO2_OCCUPANCY_DELTA_PPM = float(os.environ.get("CO2_OCCUPANCY_DELTA_PPM", "30"))
 # 15-minute mark. (Was 15.)
 MANUAL_HOLD_MIN = int(os.environ.get("MANUAL_HOLD_MIN", "90"))
 BEDROOM_HOLD_MIN = int(os.environ.get("BEDROOM_HOLD_MIN", "30"))
-# Liveness: every successful tick touches HEALTH_FILE; a Docker HEALTHCHECK
-# watches its mtime so a stuck/looping-but-failing optimizer shows up as
-# "(unhealthy)" in `docker compose ps` (the midsummer crash was invisible
-# there because the container kept running while every tick threw). After
-# MAX_CONSECUTIVE_FAILURES ticks all throwing, exit non-zero so the restart
-# policy crash-loops it loudly rather than failing silently forever.
-HEALTH_FILE = os.environ.get("HEALTH_FILE", "/tmp/lights_optimizer_healthy")
+# Liveness: every successful tick calls touch_health() (see scripts/health.py);
+# a Docker HEALTHCHECK watches the file mtime so a stuck/looping-but-failing
+# optimizer shows up as "(unhealthy)" in `docker compose ps` (the midsummer
+# crash was invisible there because the container kept running while every tick
+# threw). After MAX_CONSECUTIVE_FAILURES ticks all throwing, exit non-zero so
+# the restart policy crash-loops it loudly rather than failing silently forever.
 MAX_CONSECUTIVE_FAILURES = int(os.environ.get("MAX_CONSECUTIVE_FAILURES", "5"))
 PORCH_OFF_HOUR = int(os.environ.get("PORCH_OFF_HOUR", os.environ.get("TERRACE_OFF_HOUR", "23")))
 # After-midnight auto-off rule (toilet / staircase / bedroom / kitchen / etc.
@@ -312,16 +312,6 @@ def signal_handler(sig, frame):
     global running
     log.info("Shutdown requested")
     running = False
-
-
-def _touch_health() -> None:
-    """Update HEALTH_FILE mtime to mark a successful tick (Docker HEALTHCHECK
-    reads this). Best-effort: a failure to write must not crash the loop."""
-    try:
-        with open(HEALTH_FILE, "w") as fh:
-            fh.write(str(int(time.time())))
-    except OSError as e:
-        log.warning("could not write health file %s: %s", HEALTH_FILE, e)
 
 
 # ── Sun ───────────────────────────────────────────────────────────────────────
@@ -1066,7 +1056,7 @@ def main():
         try:
             check_and_control()
             consecutive_failures = 0
-            _touch_health()
+            touch_health()
         except Exception as e:
             consecutive_failures += 1
             log.exception("check_and_control failed (%d/%d consecutive): %s",

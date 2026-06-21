@@ -34,6 +34,7 @@ import paho.mqtt.client as mqtt
 from influxdb_client import InfluxDBClient, Point, WritePrecision
 from influxdb_client.client.write_api import SYNCHRONOUS
 
+from health import touch_health
 from light_labels import (
     LIGHT_LABELS, SWITCH_LABELS, FLOOR_NAMES, floor_name as _floor_name,
 )
@@ -589,6 +590,8 @@ def on_message(client, userdata, msg):
     try:
         write_api.write(bucket=INFLUXDB_BUCKET, org=INFLUXDB_ORG, record=points)
         print(f"[{suffix}] wrote {len(points)} point(s)", flush=True)
+        # Liveness: PLC data flowing end-to-end to InfluxDB. See scripts/health.py.
+        touch_health()
     except Exception as e:
         print(f"[{suffix}] influx write failed: {e}", flush=True)
 

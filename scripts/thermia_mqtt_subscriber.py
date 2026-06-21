@@ -17,6 +17,8 @@ import paho.mqtt.client as mqtt
 from influxdb_client import InfluxDBClient, Point, WritePrecision
 from influxdb_client.client.write_api import SYNCHRONOUS
 
+from health import touch_health
+
 # Configuration from environment
 MQTT_BROKER = os.environ.get("MQTT_BROKER", "freenas.kherrala.fi")
 MQTT_PORT = int(os.environ.get("MQTT_PORT", "1883"))
@@ -317,6 +319,9 @@ def on_message(client, userdata, msg):
 
         if not registers:
             return
+
+        # Liveness: register data is flowing end-to-end. See scripts/health.py.
+        touch_health()
 
         timestamp = datetime.now(timezone.utc)
         points = build_points(registers, timestamp)
