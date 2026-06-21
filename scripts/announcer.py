@@ -39,8 +39,10 @@ import time
 from collections import OrderedDict
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 import urllib.error
+import urllib.parse
 import urllib.request
 
 from influxdb_client import InfluxDBClient
@@ -71,6 +73,22 @@ MAX_CONSECUTIVE_FAILURES = int(os.environ.get("MAX_CONSECUTIVE_FAILURES", "5"))
 
 # Suppress noisy bursts: don't push more than this many events per tick.
 MAX_PER_TICK   = int(os.environ.get("ANNOUNCE_MAX_PER_TICK", "5"))
+
+# ── Periodic news headlines ──────────────────────────────────────────────────
+# Speak the top headlines once per clock-hour during the day. Independent of
+# ANNOUNCE_VERBOSITY (pushed with force=True) so news isn't silenced when the
+# rest of the announcements are turned down. Quiet hours on the kiosk still
+# apply, but the 07–20 window is inside waking hours anyway.
+LOCAL_TZ            = ZoneInfo(os.environ.get("LOCAL_TZ", "Europe/Helsinki"))
+NEWS_ENABLED        = os.environ.get("NEWS_ANNOUNCE_ENABLED", "1") == "1"
+NEWS_API_URL        = os.environ.get("NEWS_API_URL", "http://news:3021/api/news")
+NEWS_START_HOUR     = int(os.environ.get("NEWS_ANNOUNCE_START_HOUR", "7"))   # inclusive
+NEWS_END_HOUR       = int(os.environ.get("NEWS_ANNOUNCE_END_HOUR", "20"))    # exclusive
+NEWS_NATIONAL_N     = int(os.environ.get("NEWS_ANNOUNCE_NATIONAL_COUNT", "3"))
+NEWS_REGIONAL_N     = int(os.environ.get("NEWS_ANNOUNCE_REGIONAL_COUNT", "1"))
+NEWS_NATIONAL_SRC   = os.environ.get("NEWS_ANNOUNCE_NATIONAL_SOURCE", "Uutiset")
+NEWS_REGIONAL_SRC   = os.environ.get("NEWS_ANNOUNCE_REGIONAL_SOURCE", "Pirkanmaa")
+NEWS_FETCH_TIMEOUT  = float(os.environ.get("NEWS_ANNOUNCE_FETCH_TIMEOUT", "8"))
 
 # Air-quality classification thresholds (ppm CO2, µg/m³ PM2.5).
 CO2_ELEVATED   = float(os.environ.get("ANNOUNCE_CO2_ELEVATED", "800"))
@@ -127,8 +145,22 @@ class Event:
     ts: float         # event source-time (epoch seconds)
 
 
-def _push(event: Event) -> None:
-    if event.priority > VERBOSITY:
+def _fetch_headlines(source: str, limit: int) -> list[dict]:
+    """GET the top `limit` headlines for one source from the news service.
+    Returns [] on any error — news is best-effort, never fatal to the tick."""
+    url = f"{NEWS_API_URL}?source={urllib.parse.quote(source)}&limit={limit}"
+    try:
+        req = urllib.request.Request(url, method="GET")
+        with urllib.request.urlopen(req, timeout=NEWS_FETCH_TIMEOUT) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        return data if isinstance(data, list) else []
+    except Exception as e:
+        log.warning("news fetch (%s) failed: %s", source, e)
+        return []
+
+
+def _push(event: Event, *, force: bool = False) -> None:
+    if not force and event.priority > VERBOSITY:
         return
     payload = json.dumps({
         "text":     event.text,
@@ -647,6 +679,9 @@ class TickState:
         # Push-log cache: kind+key → last push epoch — soft rate-limit so a
         # flapping signal can't blast the kiosk every tick.
         self.last_push_at: "OrderedDict[str, float]" = OrderedDict()
+        # Periodic news: "YYYY-MM-DD-HH" (local) of the last hour we read the
+        # headlines, so we fire exactly once per clock-hour in the window.
+        self.last_news_hour: str = ""
 
     def cooldown_ok(self, kind: str, key: str, min_gap_s: float) -> bool:
         ck = f"{kind}:{key}"
@@ -961,6 +996,31 @@ def tick(infl: Influx, st: TickState, *, bootstrap: bool = False) -> None:
         ev = _format_lights_optimizer(row)
         if ev:
             emit(ev, min_gap_s=600)
+
+    # --- Periodic news headlines (once per clock-hour in the daytime window).
+    #     Pushed with force=True so it bypasses ANNOUNCE_VERBOSITY and the
+    #     per-tick burst cap — it's a deliberate, rate-limited feature, not
+    #     ambient noise.
+    if NEWS_ENABLED and not bootstrap:
+        now_local = datetime.now(LOCAL_TZ)
+        hour_key = now_local.strftime("%Y-%m-%d-%H")
+        if (NEWS_START_HOUR <= now_local.hour < NEWS_END_HOUR
+                and hour_key != st.last_news_hour):
+            st.last_news_hour = hour_key  # one attempt per hour, success or not
+            national = _fetch_headlines(NEWS_NATIONAL_SRC, NEWS_NATIONAL_N)
+            regional = _fetch_headlines(NEWS_REGIONAL_SRC, NEWS_REGIONAL_N)
+            if national or regional:
+                parts = [h["title"].strip().rstrip(".") + "."
+                         for h in national if h.get("title")]
+                text = "Uutiskatsaus. " + " ".join(parts)
+                reg_titles = [h["title"].strip().rstrip(".") + "."
+                              for h in regional if h.get("title")]
+                if reg_titles:
+                    text += " Pirkanmaalta: " + " ".join(reg_titles)
+                _push(Event(text, "news_headlines", 2, f"news:{hour_key}",
+                            now_local.timestamp()), force=True)
+            else:
+                log.info("news: no headlines available for %s", hour_key)
 
     # Cap per-tick burst — keep highest-priority items, drop the rest.
     if not deferred:

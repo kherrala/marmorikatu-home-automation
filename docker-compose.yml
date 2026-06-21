@@ -440,10 +440,21 @@ services:
       - ANNOUNCE_VERBOSITY=3
       - ANNOUNCE_POLL_INTERVAL=30
       - ANNOUNCE_MAX_PER_TICK=5
+      # Periodic news headlines (top of each hour, daytime). Spoken regardless
+      # of ANNOUNCE_VERBOSITY. Set NEWS_ANNOUNCE_ENABLED=0 to turn off.
+      - LOCAL_TZ=Europe/Helsinki
+      - NEWS_ANNOUNCE_ENABLED=1
+      - NEWS_API_URL=http://news:3021/api/news
+      - NEWS_ANNOUNCE_START_HOUR=7
+      - NEWS_ANNOUNCE_END_HOUR=20
+      - NEWS_ANNOUNCE_NATIONAL_COUNT=3
+      - NEWS_ANNOUNCE_REGIONAL_COUNT=1
     depends_on:
       influxdb:
         condition: service_healthy
       claude-bridge:
+        condition: service_started
+      news:
         condition: service_started
     restart: unless-stopped
 

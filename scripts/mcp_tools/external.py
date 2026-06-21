@@ -40,7 +40,7 @@ TOOLS = [
     ),
     Tool(
         name="get_news_article",
-        description="Fetch the full text content of a news article by its URL. Use this when the user wants more details about a specific news story from the headlines.",
+        description="Fetch the full text content of a news article. REQUIRES the 'url' argument, which must be the exact 'link' value from a get_news_headlines result — first call get_news_headlines, then pass that link here. Do not call this without a url.",
         inputSchema={
             "type": "object",
             "properties": {
@@ -202,9 +202,14 @@ async def handle_get_news_headlines(arguments):
 
 async def handle_get_news_article(arguments):
     try:
-        url = arguments.get("url", "").strip()
+        url = (arguments.get("url") or "").strip()
         if not url:
-            return [TextContent(type="text", text='{"error": "Missing url parameter"}')]
+            return [TextContent(type="text", text=(
+                "Missing 'url'. To read a full article you must first call "
+                "get_news_headlines, then call get_news_article with the "
+                "'link' value of the headline you want. If you already have "
+                "the headline text, answer the user from that instead."
+            ))]
 
         async with httpx.AsyncClient(timeout=15) as client:
             resp = await client.get(f"{NEWS_API_URL}/article", params={"url": url})

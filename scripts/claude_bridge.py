@@ -174,20 +174,25 @@ claude_client: anthropic.AsyncAnthropic | None = None
 # selection accuracy as the count grows — keep this lean and let Claude (full
 # fallback path) handle browser, Harmony, and deep diagnostics tools.
 _OLLAMA_ALLOWED_TOOLS = {
-    # Home environment — high-level only
-    "get_latest", "get_room_temperatures", "get_air_quality",
-    "get_thermia_status",
-    "get_heating_status", "get_energy_cost",
-    "get_electricity_prices", "get_sauna_status",
-    # Light control (PLC via MQTT)
+    # Light control (PLC via MQTT) — the avatar's primary voice job
     "list_lights", "set_light",
     "set_lights_by_floor", "set_lights_matching",
-    # External services
-    "get_weather_forecast", "get_news_headlines",
-    "get_bus_departures", "get_calendar_events", "get_daily_report",
+    # Sauna readiness — a frequent voice query
+    "get_sauna_status",
+    # External services people actually ask for out loud
+    "get_weather_forecast", "get_news_headlines", "get_bus_departures",
+    # One-call summary that subsumes the per-sensor status tools
+    # (room temps / air quality / heat pump / heating / energy) so we can
+    # keep the local tool set small without losing "how's the house?".
+    "get_daily_report",
     # Memory
     "remember", "recall",
 }
+# NOTE: per-sensor status, energy prices, and calendar tools are intentionally
+# kept OUT of the local set (the small model loses tool-selection accuracy as
+# the list grows). They remain available on the Claude fallback path, and
+# get_daily_report covers the common "summarise the house" ask. News is also
+# read out proactively by the announcer, so on-demand fetching is rarely needed.
 
 
 def _aggregated_tools(for_ollama: bool = False) -> list[dict]:
@@ -198,6 +203,22 @@ def _aggregated_tools(for_ollama: bool = False) -> list[dict]:
     if for_ollama:
         tools = [t for t in tools if t["name"] in _OLLAMA_ALLOWED_TOOLS]
     return tools
+
+
+def _ollama_tool_guard(tool_name: str) -> str | None:
+    """Gate Ollama tool execution to the advertised whitelist. Small models
+    hallucinate plausible-but-unadvertised tool names (e.g. get_news_article,
+    learned from another tool's description) and the MCP session would happily
+    run them. Returns a self-correcting message to feed back to the model when
+    the tool isn't allowed, or None when it is."""
+    if tool_name in _OLLAMA_ALLOWED_TOOLS:
+        return None
+    return (
+        f"Tool '{tool_name}' is not available to you. Use only the tools "
+        f"provided in this conversation — do not invent tool names. "
+        f"If you wanted the full text of a news article, that is not "
+        f"available; answer from the headline and description you already have."
+    )
 
 
 def _find_session(tool_name: str) -> ClientSession | None:
@@ -428,7 +449,12 @@ async def run_ollama_agentic_loop(messages: list[dict], tools: list[dict]) -> di
                 log.info("Ollama tool call [%d]: %s(%s)", iteration + 1, tool_name, json.dumps(tool_input, ensure_ascii=False))
                 all_tool_calls.append({"tool": tool_name, "input": tool_input})
 
-                result_text = await _call_tool_safe(tool_name, tool_input, iteration + 1, "Ollama")
+                guard = _ollama_tool_guard(tool_name)
+                if guard is not None:
+                    log.warning("Ollama: rejected unadvertised tool %r", tool_name)
+                    result_text = guard
+                else:
+                    result_text = await _call_tool_safe(tool_name, tool_input, iteration + 1, "Ollama")
 
                 ollama_messages.append({
                     "role": "tool",
@@ -623,10 +649,16 @@ async def chat_stream_endpoint(request: Request) -> Response:
                             tool_input = json.loads(tool_input)
                         except (json.JSONDecodeError, TypeError):
                             tool_input = {}
-                    log.info("Stream tool call [%d]: %s", iteration + 1, tool_name)
+                    log.info("Stream tool call [%d]: %s args=%s", iteration + 1,
+                             tool_name, json.dumps(tool_input, ensure_ascii=False)[:300])
                     all_tool_calls.append({"tool": tool_name, "input": tool_input})
                     # Stream tool progress to client immediately
                     yield f"data: {json.dumps({'tool_use': tool_name})}\n\n"
+                    guard = _ollama_tool_guard(tool_name)
+                    if guard is not None:
+                        log.warning("Stream: rejected unadvertised tool %r", tool_name)
+                        ollama_messages.append({"role": "tool", "content": guard})
+                        continue
                     result_text = await _call_tool_safe(tool_name, tool_input, iteration + 1, "Stream")
                     # Extract and stream screenshot image if present
                     img_match = re.search(r'\[IMAGE:(data:image/[^;]+;base64,[A-Za-z0-9+/=]+)\]', result_text)

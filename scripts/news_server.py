@@ -37,7 +37,7 @@ PORT = int(os.environ.get("NEWS_PORT", "3021"))
 MAX_ITEMS = 20
 
 # -- Cache --------------------------------------------------------------------
-_cache: dict = {"items": None, "ts": 0}
+_cache: dict = {"items": None, "by_source": {}, "ts": 0}
 
 
 def _label_for_url(url: str) -> str:
@@ -124,10 +124,24 @@ async def fetch_news() -> list[dict]:
     # Sort by publish date descending
     unique.sort(key=lambda x: x["_sort_ts"], reverse=True)
 
+    def _strip(item: dict) -> dict:
+        return {k: v for k, v in item.items() if k != "_sort_ts"}
+
     # Strip internal sort key, keep top N
-    result = [{k: v for k, v in item.items() if k != "_sort_ts"} for item in unique[:MAX_ITEMS]]
+    result = [_strip(item) for item in unique[:MAX_ITEMS]]
+
+    # Per-source breakdown (each already recency-sorted) so callers can ask for
+    # just the national or just the regional headlines — the merged top-N above
+    # is recency-dominated by the busy national feed and often contains zero
+    # regional items. Capped per source so the cache stays small.
+    by_source: dict[str, list[dict]] = {}
+    for item in unique:
+        by_source.setdefault(item["source"], [])
+        if len(by_source[item["source"]]) < MAX_ITEMS:
+            by_source[item["source"]].append(_strip(item))
 
     _cache["items"] = result
+    _cache["by_source"] = by_source
     _cache["ts"] = now
     log.info("News feeds refreshed — %d items from %d feeds", len(result), len(FEEDS))
     return result
@@ -231,6 +245,17 @@ async def fetch_article(url: str) -> dict:
 # -- Endpoints ----------------------------------------------------------------
 async def api_news(request):
     items = await fetch_news()
+    # Optional ?source=Uutiset|Pirkanmaa filter (recency-sorted within source)
+    # and ?limit=N. Default returns the merged recency list as before.
+    source = request.query_params.get("source", "").strip()
+    if source:
+        items = _cache.get("by_source", {}).get(source, [])
+    try:
+        limit = int(request.query_params.get("limit", "0"))
+    except ValueError:
+        limit = 0
+    if limit > 0:
+        items = items[:limit]
     return JSONResponse(items)
 
 
