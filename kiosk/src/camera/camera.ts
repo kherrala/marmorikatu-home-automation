@@ -2,7 +2,7 @@ import { videoEl } from '../dom/elements.js';
 import { resumeIfSuspended } from '../audio/context.js';
 import { debugLog } from '../debug.js';
 import { rewireAudioAnalyser } from '../voice/microphone.js';
-import { FACE_INPUT_SIZE, CAMERA_WIDTH, CAMERA_HEIGHT } from '../config/constants.js';
+import { CAMERA_WIDTH, CAMERA_HEIGHT } from '../config/constants.js';
 
 export let audioStream: MediaStream | null = null;
 
@@ -64,36 +64,9 @@ export async function setupCamera(): Promise<boolean> {
 
   debugLog(`setupCamera: video readyState=${videoEl.readyState} dim=${videoEl.videoWidth}x${videoEl.videoHeight}`);
 
-  const tModel = performance.now();
-  try {
-    await faceapi.nets.tinyFaceDetector.loadFromUri('/face-api');
-    debugLog(`setupCamera: face-api model loaded in ${Math.round(performance.now() - tModel)}ms`);
-  } catch (err) {
-    const e = err as Error;
-    debugLog(`setupCamera: face-api model load FAILED (${e.name}: ${e.message})`);
-    return false;
-  }
-
-  // Warm up the detector NOW, during activation, while the start overlay is
-  // still up. The first WebGL inference on iOS compiles shaders and can take
-  // 15-20s; without this the FIRST real detection when someone walks up
-  // stalls for ~20s ("face recognition took forever"). Run one throwaway
-  // detection on a blank canvas at the SAME inputSize the live loop uses, so
-  // the shaders are already compiled by the time a face appears.
-  try {
-    const tWarm = performance.now();
-    const warm = document.createElement('canvas');
-    warm.width = FACE_INPUT_SIZE;
-    warm.height = FACE_INPUT_SIZE;
-    await faceapi.detectSingleFace(
-      warm as unknown as HTMLVideoElement,
-      new faceapi.TinyFaceDetectorOptions({ inputSize: FACE_INPUT_SIZE, scoreThreshold: 0.5 }),
-    );
-    debugLog(`setupCamera: detector warmup done in ${Math.round(performance.now() - tWarm)}ms`);
-  } catch (err) {
-    debugLog(`setupCamera: detector warmup failed (${(err as Error).message})`);
-  }
-
+  // Detector model/asset loading + warmup now lives in the selected detector
+  // backend (see camera/detectors/), so an unused backend never loads tfjs.
+  // startFaceDetection() kicks off getDetector().init() in the background.
   return true;
 }
 

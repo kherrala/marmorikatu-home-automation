@@ -3,9 +3,10 @@ import { exhaustMap, withLatestFrom, filter } from 'rxjs/operators';
 import { getState, dispatch, state$ } from '../state/store.js';
 import { videoEl } from '../dom/elements.js';
 import {
-  FACE_DETECT_INTERVAL, DETECTIONS_REQUIRED, FACE_INPUT_SIZE,
+  FACE_DETECT_INTERVAL, DETECTIONS_REQUIRED,
   GREETING_COOLDOWN, FACE_GONE_DISMISS_MS, MIN_GREETING_ALIVE_MS,
 } from '../config/constants.js';
+import { getDetector } from './detectors/index.js';
 import { isSpeaking } from '../audio/tts.js';
 import { KioskPhase } from '../types/state.js';
 import { screenshotBubble } from '../dom/elements.js';
@@ -62,24 +63,13 @@ function maybeLogSummary(): void {
   _lastSummaryTime = now;
   const avg = _hits > 0 ? (_scoreSum / _hits).toFixed(2) : '-';
   const bAvg = _brightSamples > 0 ? (_brightSum / _brightSamples).toFixed(1) : '-';
-  // Memory probe — directly tests the "face-api leaks per detection" theory.
-  // tf.memory().numTensors climbing over hours = a tensor/texture leak in the
-  // detection loop (the prime suspect for the ~2.5h iOS memory-reap reload).
-  // A flat count exonerates face-api. Also count live <canvas> nodes.
-  let mem = '';
-  try {
-    type TfLike = { memory: () => { numTensors: number; numBytes: number } };
-    const tf: TfLike | undefined =
-      (faceapi as unknown as { tf?: TfLike }).tf
-      ?? (window as unknown as { tf?: TfLike }).tf;
-    if (tf?.memory) {
-      const m = tf.memory();
-      mem = ` tf=${m.numTensors}t/${(m.numBytes / 1048576).toFixed(0)}MB`;
-    }
-  } catch { /* tf not exposed */ }
-  mem += ` canvas=${document.querySelectorAll('canvas').length}`;
+  // Backend-specific stats (faceapi reports tf.memory() so we can watch for a
+  // tensor leak; pico/motion report nothing) + live <canvas> count. A climbing
+  // tf tensor count over hours = the leak behind the iOS memory-reap reloads.
+  const det = getDetector();
+  const mem = (det.debugStats?.() ?? '') + ` canvas=${document.querySelectorAll('canvas').length}`;
   debugLog(
-    `face: 30s summary attempts=${_attempts} hits=${_hits} ` +
+    `face[${det.name}]: 30s attempts=${_attempts} hits=${_hits} ` +
     `skipsNoVideo=${_skipsNoVideo} errors=${_errors} ` +
     `avgScore=${avg} maxScore=${_maxScore.toFixed(2)} ` +
     `bright=${bAvg}/${_brightMax.toFixed(0)} (0-255)${mem}`
@@ -111,18 +101,12 @@ async function runDetection(): Promise<void> {
 
   sampleBrightness();
 
-  // scoreThreshold=0.5 is face-api.js's own default and the empirical break
-  // point between real faces (avgScore typically ≥0.6) and face-shaped
-  // false-positives in on-screen artwork or room photos (which clustered
-  // around 0.40 in production debug logs and kept the kiosk pinned in
-  // GREETING with no human present).
-  const detection = await faceapi.detectSingleFace(
-    videoEl,
-    new faceapi.TinyFaceDetectorOptions({ inputSize: FACE_INPUT_SIZE, scoreThreshold: 0.5 }),
-  );
+  // Delegate to the active backend (faceapi / pico / motion). Each returns a
+  // positive, already-thresholded score when a person is present, else 0.
+  const score = await getDetector().detect(videoEl);
+  const detected = score > 0;
 
-  if (detection) {
-    const score = detection.score;
+  if (detected) {
     _hits++;
     _scoreSum += score;
     if (score > _maxScore) _maxScore = score;
@@ -137,7 +121,7 @@ async function runDetection(): Promise<void> {
   const state = getState();
 
   if (state.phase === KioskPhase.GREETING) {
-    if (detection) {
+    if (detected) {
       dispatch({ type: 'FACE_SEEN', time: Date.now() });
     } else if (state.faceDetection.lastFaceSeenTime > 0) {
       const sinceFace = Date.now() - state.faceDetection.lastFaceSeenTime;
@@ -159,7 +143,7 @@ async function runDetection(): Promise<void> {
   }
 
   // KioskPhase.READY
-  if (detection) {
+  if (detected) {
     dispatch({ type: 'FACE_DETECTED' });
     const updated = getState();
     if (updated.faceDetection.consecutiveDetections >= DETECTIONS_REQUIRED
@@ -185,6 +169,13 @@ export function startFaceDetection(): void {
     `startFaceDetection: interval=${FACE_DETECT_INTERVAL}ms required=${DETECTIONS_REQUIRED} ` +
     `dim=${videoEl.videoWidth}x${videoEl.videoHeight} ready=${videoEl.readyState}`
   );
+
+  // Load the selected backend's assets in the background; detect() returns 0
+  // until it's ready, so the loop simply doesn't fire greetings until then.
+  const det = getDetector();
+  det.init()
+    .then(() => debugLog(`detector "${det.name}": ready`))
+    .catch(e => debugLog(`detector "${det.name}": init FAILED — ${e}`));
 
   subscription = interval(FACE_DETECT_INTERVAL).pipe(
     withLatestFrom(state$),

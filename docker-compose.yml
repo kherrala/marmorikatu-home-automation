@@ -294,6 +294,12 @@ services:
       context: .
       dockerfile: Dockerfile.kiosk
     container_name: marmorikatu-kiosk
+    environment:
+      # Presence detector backend: faceapi (tfjs/WebGL, default) | pico
+      # (pure-JS PICO) | motion (frame-diff). Change + restart to A/B on the
+      # iPad; a ?detector= URL query overrides per-load. Trialing pico/motion
+      # tests whether the WebGL/tfjs backend is what drives the ~2.5h reloads.
+      - KIOSK_DETECTOR=faceapi
     ports:
       - "80:80"
       - "443:443"

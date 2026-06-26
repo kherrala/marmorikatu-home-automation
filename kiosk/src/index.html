@@ -157,8 +157,11 @@
   <!-- Persistent TTS audio element (reused to maintain iOS audio unlock) -->
   <audio id="tts-audio" preload="none"></audio>
 
-  <!-- face-api.js (served from nginx static files) -->
-  <script src="/face-api/face-api.min.js"></script>
+  <!-- Runtime config (detector backend) — written at container start by
+       entrypoint.sh from the KIOSK_DETECTOR env. May 404 in dev; the app
+       falls back to DEFAULT_DETECTOR. face-api.js is now loaded on demand by
+       the faceapi detector backend, not statically here. -->
+  <script src="/config.js"></script>
 
   <script type="module" src="./main.ts"></script>
 </body>

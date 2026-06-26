@@ -10,6 +10,26 @@ export const FACE_INPUT_SIZE = 320;
 // survive the downscale to FACE_INPUT_SIZE; 320x240 did not.
 export const CAMERA_WIDTH = 640;
 export const CAMERA_HEIGHT = 480;
+
+// --- Pluggable detector backends (faceapi | pico | motion) -------------------
+// Default backend when neither ?detector= query nor KIOSK_DETECTOR env is set.
+export const DEFAULT_DETECTOR = 'faceapi';
+
+// Motion (frame-difference) backend: downscale the frame to this size, count
+// pixels whose luma changed by > DELTA between consecutive frames; "present"
+// when the changed fraction exceeds RATIO.
+export const MOTION_W = 64;
+export const MOTION_H = 48;
+export const MOTION_PIXEL_DELTA = 24;   // 0-255 per-pixel luma change
+export const MOTION_RATIO = 0.04;       // 4% of pixels moved → presence
+
+// pico.js backend: grayscale working resolution + cascade tuning. QTHRESH is
+// the detection-quality cut (facefinder typically ~50 for a confident frontal
+// face); MINSIZE is the smallest face in px at the working resolution.
+export const PICO_W = 320;
+export const PICO_H = 240;
+export const PICO_QTHRESH = 50.0;
+export const PICO_MINSIZE = 60;
 export const GREETING_COOLDOWN = 10_000;
 export const JINGLE_DURATION = 30_000;
 export const FACE_GONE_DISMISS_MS = 30_000;
