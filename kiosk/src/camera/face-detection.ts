@@ -62,11 +62,27 @@ function maybeLogSummary(): void {
   _lastSummaryTime = now;
   const avg = _hits > 0 ? (_scoreSum / _hits).toFixed(2) : '-';
   const bAvg = _brightSamples > 0 ? (_brightSum / _brightSamples).toFixed(1) : '-';
+  // Memory probe — directly tests the "face-api leaks per detection" theory.
+  // tf.memory().numTensors climbing over hours = a tensor/texture leak in the
+  // detection loop (the prime suspect for the ~2.5h iOS memory-reap reload).
+  // A flat count exonerates face-api. Also count live <canvas> nodes.
+  let mem = '';
+  try {
+    type TfLike = { memory: () => { numTensors: number; numBytes: number } };
+    const tf: TfLike | undefined =
+      (faceapi as unknown as { tf?: TfLike }).tf
+      ?? (window as unknown as { tf?: TfLike }).tf;
+    if (tf?.memory) {
+      const m = tf.memory();
+      mem = ` tf=${m.numTensors}t/${(m.numBytes / 1048576).toFixed(0)}MB`;
+    }
+  } catch { /* tf not exposed */ }
+  mem += ` canvas=${document.querySelectorAll('canvas').length}`;
   debugLog(
     `face: 30s summary attempts=${_attempts} hits=${_hits} ` +
     `skipsNoVideo=${_skipsNoVideo} errors=${_errors} ` +
     `avgScore=${avg} maxScore=${_maxScore.toFixed(2)} ` +
-    `bright=${bAvg}/${_brightMax.toFixed(0)} (0-255)`
+    `bright=${bAvg}/${_brightMax.toFixed(0)} (0-255)${mem}`
   );
   _attempts = 0; _hits = 0; _skipsNoVideo = 0; _errors = 0; _scoreSum = 0; _maxScore = 0;
   _brightSum = 0; _brightSamples = 0; _brightMax = 0;

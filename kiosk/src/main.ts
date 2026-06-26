@@ -11,6 +11,10 @@ debugLog(
   `dpr=${window.devicePixelRatio} ` +
   `vp=${window.innerWidth}x${window.innerHeight} ` +
   `touch=${navigator.maxTouchPoints} ` +
+  // standalone=true means launched from the Home Screen as an installed PWA,
+  // which is the ONLY iOS mode that retains camera/mic permission across the
+  // periodic memory-reap reload. standalone=false → every reload re-prompts.
+  `standalone=${(navigator as unknown as { standalone?: boolean }).standalone} ` +
   `lang=${navigator.language}`
 );
 
