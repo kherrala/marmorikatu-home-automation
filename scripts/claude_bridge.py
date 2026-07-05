@@ -846,14 +846,98 @@ def _pcm_to_wav(pcm: bytes, sample_rate: int) -> bytes:
     return buf.getvalue()
 
 
+# Persistent piper subprocess (--json-input mode): loads the voice model once
+# and then synthesizes each stdin JSON line independently, printing the output
+# WAV path to stdout when the file is complete. Falls back to a one-shot
+# subprocess per sentence (model reload every call) if the process misbehaves.
+_piper_proc = None
+_piper_proc_lock = asyncio.Lock()
+_piper_req_seq = 0
+_piper_out_dir = os.environ.get("PIPER_OUT_DIR") or (
+    "/dev/shm" if os.path.isdir("/dev/shm") else "/tmp"
+)
+PIPER_TIMEOUT = float(os.environ.get("PIPER_TIMEOUT", "60"))  # per-sentence, seconds
+
+
+async def _ensure_piper_proc():
+    """Return the persistent piper process, starting or restarting it as needed."""
+    global _piper_proc
+    if _piper_proc is not None and _piper_proc.returncode is None:
+        return _piper_proc
+    _piper_proc = await asyncio.create_subprocess_exec(
+        PIPER_BINARY,
+        "--model", PIPER_MODEL,
+        "--json-input",
+        "--output_dir", _piper_out_dir,
+        "--length_scale", str(1.0 / PIPER_SPEED),
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.DEVNULL,
+        env={**os.environ, "LD_LIBRARY_PATH": "/usr/local/piper", "LANG": "C.UTF-8", "LC_ALL": "C.UTF-8"},
+    )
+    log.info("Started persistent piper process (pid %d)", _piper_proc.pid)
+    return _piper_proc
+
+
+async def _piper_synthesize_persistent(text: str) -> bytes:
+    """Synthesize via the persistent piper process (one request in flight).
+
+    Piper prints the output path line to stdout once the WAV is fully
+    written — that is the completion signal. Any protocol hiccup kills the
+    process so the next call starts a fresh one.
+    """
+    global _piper_proc, _piper_req_seq
+    async with _piper_proc_lock:
+        proc = await _ensure_piper_proc()
+        _piper_req_seq += 1
+        out_path = os.path.join(_piper_out_dir, f"piper-{os.getpid()}-{_piper_req_seq}.wav")
+        try:
+            req = json.dumps({"text": text, "output_file": out_path}, ensure_ascii=False)
+            proc.stdin.write(req.encode("utf-8") + b"\n")
+            await proc.stdin.drain()
+            line = await asyncio.wait_for(proc.stdout.readline(), timeout=PIPER_TIMEOUT)
+            if not line:
+                raise RuntimeError("persistent piper closed stdout")
+            done_path = line.decode("utf-8", "replace").strip()
+            with open(done_path, "rb") as f:
+                wav = f.read()
+            os.unlink(done_path)
+            if not wav:
+                raise RuntimeError("persistent piper produced an empty WAV")
+            return wav
+        except Exception:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+            _piper_proc = None
+            raise
+
+
 async def _piper_synthesize(text: str) -> bytes:
-    """Run piper TTS in a subprocess and return WAV bytes."""
+    """Synthesize text to WAV bytes: LRU cache → persistent piper → one-shot."""
     cache_key = hashlib.md5(text.encode()).hexdigest()
     if cache_key in _tts_cache:
         _tts_cache.move_to_end(cache_key)
         log.debug("TTS cache hit (%d chars)", len(text))
         return _tts_cache[cache_key]
 
+    try:
+        wav = await _piper_synthesize_persistent(text)
+    except Exception as e:
+        log.error("Persistent piper failed (%s); falling back to one-shot subprocess", e)
+        wav = await _piper_synthesize_subprocess(text)
+
+    _tts_cache[cache_key] = wav
+    _tts_cache.move_to_end(cache_key)
+    if len(_tts_cache) > TTS_CACHE_SIZE:
+        _tts_cache.popitem(last=False)
+
+    return wav
+
+
+async def _piper_synthesize_subprocess(text: str) -> bytes:
+    """Fallback: run the piper binary, which reloads the voice model per call."""
     cmd = [
         PIPER_BINARY,
         "--model", PIPER_MODEL,
@@ -871,15 +955,8 @@ async def _piper_synthesize(text: str) -> bytes:
     if proc.returncode != 0 or not raw_pcm:
         raise RuntimeError(f"piper exited with code {proc.returncode}")
 
-    # harri-medium outputs 22050 Hz mono 16-bit PCM
-    wav = _pcm_to_wav(raw_pcm, sample_rate=22050)
-
-    _tts_cache[cache_key] = wav
-    _tts_cache.move_to_end(cache_key)
-    if len(_tts_cache) > TTS_CACHE_SIZE:
-        _tts_cache.popitem(last=False)
-
-    return wav
+    # medium-quality piper voices output 22050 Hz mono 16-bit PCM
+    return _pcm_to_wav(raw_pcm, sample_rate=22050)
 
 
 def _split_sentences(text: str) -> list[str]:
