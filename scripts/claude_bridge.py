@@ -50,6 +50,12 @@ PIPER_BINARY = os.environ.get("PIPER_BINARY", "/usr/local/piper/piper")
 PIPER_MODEL  = os.environ.get("PIPER_MODEL",  "/models/fi_FI-asmo-medium.onnx")
 PIPER_SPEED  = float(os.environ.get("PIPER_SPEED", "1.0"))   # <1 = slower, >1 = faster
 TTS_CACHE_SIZE = int(os.environ.get("TTS_CACHE_SIZE", "64"))  # max cached audio entries
+# Remote GPU speech-to-text: full URL of an OpenAI-compatible transcription
+# endpoint (e.g. http://192.168.1.36:8971/v1/audio/transcriptions). Empty =
+# local faster-whisper only.
+WHISPER_URL = os.environ.get("WHISPER_URL", "")
+WHISPER_REMOTE_MODEL = os.environ.get("WHISPER_REMOTE_MODEL", "Systran/faster-whisper-large-v3-turbo")
+WHISPER_REMOTE_TIMEOUT = float(os.environ.get("WHISPER_REMOTE_TIMEOUT", "20"))
 
 # LRU audio cache: text-hash → WAV bytes
 _tts_cache: "OrderedDict[str, bytes]" = OrderedDict()
@@ -1042,6 +1048,34 @@ def _get_whisper_model():
         return _whisper_model
 
 
+async def _transcribe_remote(audio_path: str) -> "str | None":
+    """Transcribe via an OpenAI-compatible endpoint (speaches, whisper.cpp).
+
+    Returns the transcript — "" for silence is a valid result. Returns None
+    on any transport/HTTP failure so the caller falls back to the local
+    faster-whisper model and the kiosk keeps working if the GPU box is down.
+    """
+    import time
+    import httpx
+    try:
+        with open(audio_path, "rb") as f:
+            audio = f.read()
+        t0 = time.monotonic()
+        async with httpx.AsyncClient(timeout=WHISPER_REMOTE_TIMEOUT) as client:
+            resp = await client.post(
+                WHISPER_URL,
+                files={"file": (os.path.basename(audio_path), audio, "audio/wav")},
+                data={"model": WHISPER_REMOTE_MODEL, "language": "fi", "response_format": "json"},
+            )
+            resp.raise_for_status()
+        text = (resp.json().get("text") or "").strip()
+        log.info("Transcribe (remote, %.1fs): '%s'", time.monotonic() - t0, text)
+        return text
+    except Exception as e:
+        log.warning("Remote whisper failed (%s); using local model", e)
+        return None
+
+
 # Whisper has well-documented failure modes on quiet / noise-only input: it
 # emits common Finnish "stock phrases" or chains a short n-gram several times.
 # When face-detection false-positives keep the kiosk in GREETING with no one
@@ -1158,29 +1192,34 @@ async def transcribe_endpoint(request: Request) -> JSONResponse:
 
             transcribe_path = wav_path or src.name
 
-            loop = asyncio.get_event_loop()
-            model = await loop.run_in_executor(None, _get_whisper_model)
-            # vad_filter=True: faster-whisper runs Silero VAD and drops
-            #   non-speech chunks before they ever reach the model. Single
-            #   biggest mitigation against the "silence → stock phrase"
-            #   hallucination loop the kiosk used to fall into when face
-            #   detection false-positived on on-screen artwork.
-            # condition_on_previous_text=False: stops the model from being
-            #   primed on its own prior output within the same call — a
-            #   known cause of within-clip n-gram looping
-            #   ("X X X X X").
-            segments, _info = await loop.run_in_executor(
-                None,
-                lambda: model.transcribe(
-                    transcribe_path,
-                    language="fi",
-                    beam_size=3,
-                    vad_filter=True,
-                    vad_parameters={"min_silence_duration_ms": 500},
-                    condition_on_previous_text=False,
-                ),
-            )
-            text = " ".join(s.text.strip() for s in segments).strip()
+            # Remote GPU whisper first when configured; local model on failure.
+            text = None
+            if WHISPER_URL:
+                text = await _transcribe_remote(transcribe_path)
+            if text is None:
+                loop = asyncio.get_event_loop()
+                model = await loop.run_in_executor(None, _get_whisper_model)
+                # vad_filter=True: faster-whisper runs Silero VAD and drops
+                #   non-speech chunks before they ever reach the model. Single
+                #   biggest mitigation against the "silence → stock phrase"
+                #   hallucination loop the kiosk used to fall into when face
+                #   detection false-positived on on-screen artwork.
+                # condition_on_previous_text=False: stops the model from being
+                #   primed on its own prior output within the same call — a
+                #   known cause of within-clip n-gram looping
+                #   ("X X X X X").
+                segments, _info = await loop.run_in_executor(
+                    None,
+                    lambda: model.transcribe(
+                        transcribe_path,
+                        language="fi",
+                        beam_size=3,
+                        vad_filter=True,
+                        vad_parameters={"min_silence_duration_ms": 500},
+                        condition_on_previous_text=False,
+                    ),
+                )
+                text = " ".join(s.text.strip() for s in segments).strip()
             if text and _is_whisper_hallucination(text):
                 log.warning("Transcribe: dropping hallucination '%s'", text)
                 text = ""
