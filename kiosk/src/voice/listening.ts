@@ -22,8 +22,10 @@ import {
   setRestartHandler as setRecorderRestartHandler,
 } from './recorder.js';
 import { handleVoiceResult } from '../greeting/conversation.js';
+import { isSpeaking } from '../audio/tts.js';
 
 let _jingleHandler: (() => void) | null = null;
+let _speakingRetry: ReturnType<typeof setTimeout> | null = null;
 
 // Wire up callbacks from native-recognition and recorder to avoid circular deps
 setNativeVoiceHandler((text: string) => handleVoiceResult(text));
@@ -42,6 +44,16 @@ setRecorderRestartHandler(() => startRecording());
 export function startListening(): void {
   const s = getState();
   if (!s.micReady || s.phase !== KioskPhase.GREETING || s.processing) return;
+
+  // Never open the mic while the speaker is still talking — the recognizer
+  // transcribes the avatar's own speech and the conversation prompts itself.
+  // Retry shortly; guards above re-run on each attempt.
+  if (isSpeaking()) {
+    if (_speakingRetry === null) {
+      _speakingRetry = setTimeout(() => { _speakingRetry = null; startListening(); }, 400);
+    }
+    return;
+  }
 
   // Re-enable audio tracks so iOS shows mic indicator
   (videoEl.srcObject as MediaStream | null)?.getAudioTracks().forEach(t => { t.enabled = true; });

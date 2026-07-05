@@ -966,9 +966,23 @@ def _split_sentences(text: str) -> list[str]:
     uppercase letter (including Finnish Ä/Ö/Å).  This avoids splitting on
     Finnish ordinals ("1. tammikuuta") and common abbreviations, which are
     always followed by a lowercase letter or digit.
+
+    Overlong sentence-less runs (news headline lists strung with commas) are
+    further chunked at comma boundaries: one huge clip stalls the streaming
+    pipeline and starves the kiosk's playback safety margins.
     """
     parts = re.split(r'(?<=[.!?])\s+(?=[A-ZÄÖÅ])', text)
-    return [s.strip() for s in parts if s.strip()] or [text]
+    parts = [s.strip() for s in parts if s.strip()] or [text]
+    out: list[str] = []
+    for part in parts:
+        while len(part) > 180:
+            cut = part.rfind(", ", 40, 180)
+            if cut == -1:
+                break
+            out.append(part[:cut + 1])
+            part = part[cut + 2:]
+        out.append(part)
+    return out
 
 
 async def tts_endpoint(request: Request) -> Response:

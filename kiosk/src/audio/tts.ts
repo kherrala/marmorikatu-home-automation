@@ -6,9 +6,16 @@ import { showAudioHint, hideAudioHint } from './audio-unlock.js';
 const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
   || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
+/** PCM WAV duration in ms from header byte rate; null if not parseable. */
+function wavDurationMs(arr: Uint8Array): number | null {
+  if (arr.length < 44 || arr[0] !== 0x52 /* R */ || arr[8] !== 0x57 /* W */) return null;
+  const byteRate = arr[28]! | (arr[29]! << 8) | (arr[30]! << 16) | (arr[31]! << 24);
+  if (byteRate <= 0) return null;
+  return ((arr.length - 44) / byteRate) * 1000;
+}
+
 export function playSentence(b64wav: string): Promise<boolean> {
   return new Promise(resolve => {
-    resumeIfSuspended();
     const bytes = atob(b64wav);
     const arr = new Uint8Array(bytes.length);
     for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
@@ -22,15 +29,28 @@ export function playSentence(b64wav: string): Promise<boolean> {
     };
     ttsAudio.src = url;
     ttsAudio.currentTime = 0;
-    // A rejected play() here is iOS's autoplay block — audio re-locked since
-    // the last tap. Surface the hint so a single tap re-arms it.
-    ttsAudio.play()
-      .then(() => hideAudioHint())
-      .catch(() => { showAudioHint(); cleanup(); resolve(false); });
     setSpeaking(true);
-    safetyTimer = setTimeout(() => { cleanup(); resolve(false); }, 15_000);
+    // Safety timeout scales with the clip: a fixed cap resolved long clips
+    // (news headline runs) mid-playback, so the caller re-opened the mic
+    // while the speaker was still talking and the avatar prompted itself.
+    // If it ever fires, stop the runaway audio before resolving.
+    const durMs = wavDurationMs(arr) ?? 15_000;
+    safetyTimer = setTimeout(() => {
+      try { ttsAudio.pause(); } catch {}
+      cleanup();
+      resolve(false);
+    }, durMs + 5_000);
     ttsAudio.onended = () => { cleanup(); resolve(true); };
     ttsAudio.onerror = () => { cleanup(); resolve(false); };
+    // Await the AudioContext resume BEFORE play(): the element is routed
+    // through the context, and until resume completes it plays silently —
+    // audibly cutting the start of the clip.
+    // A rejected play() is iOS's autoplay block — audio re-locked since the
+    // last tap. Surface the hint so a single tap re-arms it.
+    resumeIfSuspended()
+      .then(() => ttsAudio.play())
+      .then(() => hideAudioHint())
+      .catch(() => { showAudioHint(); cleanup(); resolve(false); });
   });
 }
 

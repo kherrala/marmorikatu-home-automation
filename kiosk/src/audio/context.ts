@@ -11,8 +11,12 @@ export function setAudioContext(ctx: AudioContext): void {
   sharedContext = ctx;
 }
 
-export function resumeIfSuspended(): void {
+export function resumeIfSuspended(): Promise<void> {
   if (sharedContext?.state === 'suspended') {
-    sharedContext.resume();
+    // Must be awaited before starting playback: a media element routed
+    // through this context plays into a dead graph until resume completes,
+    // which audibly cuts the start of the clip on iOS.
+    return sharedContext.resume().catch(() => {});
   }
+  return Promise.resolve();
 }

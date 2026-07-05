@@ -58,6 +58,9 @@ export function startNativeListening(): void {
     activeRecognizer = null;
     if (hardTimer !== null) clearTimeout(hardTimer); // no-op with disabled hard timer
     if (pauseTimer !== null) clearTimeout(pauseTimer);
+    // Kill the session outright: with continuous=true a merely-orphaned
+    // recognizer keeps transcribing (mic hot) through the response playback.
+    try { recognizer.abort(); } catch {}
 
     if (text?.trim()) {
       dispatch({ type: 'NATIVE_SILENCE_RESET' });
