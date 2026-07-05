@@ -84,7 +84,13 @@ Examples:
 - measurement='hvac', fields=['Ulkolampotila', 'Tuloilma_ennen_lammitysta']
 - measurement='ruuvi', fields=['temperature', 'humidity'], sensor_name='Keittiö'
 - measurement='rooms', fields=['Keittio', 'Eteinen']
-- measurement='thermia', fields=['outdoor_temp', 'supply_temp', 'compressor']""",
+- measurement='thermia', fields=['outdoor_temp', 'supply_temp', 'compressor']
+
+The 'rooms' measurement (WAGO) has ONLY these temperature fields: Keittio,
+Eteinen, Ylakerran_aula, MH_Seela, MH_Aarni, MH_aikuiset, MH_alakerta,
+Kellari, Kellari_eteinen. There is NO living room field in 'rooms' —
+for the living room use measurement='ruuvi', fields=['temperature'],
+sensor_name='Olohuone'.""",
         inputSchema={
             "type": "object",
             "properties": {
