@@ -194,6 +194,11 @@ _OLLAMA_ALLOWED_TOOLS = {
     # (room temps / air quality / heat pump / heating / energy) so we can
     # keep the local tool set small without losing "how's the house?".
     "get_daily_report",
+    # Direct sensor reads — added with the qwen3.6:35b switch: the bigger
+    # model keeps tool-selection accuracy at this list size, and "mikä on
+    # olohuoneen lämpötila" deserves a direct answer instead of a full
+    # daily-report round-trip.
+    "get_latest",
     # Memory
     "remember", "recall",
 }
