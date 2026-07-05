@@ -45,6 +45,9 @@ OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen3.5:9b")
 MAX_TOOL_ITERATIONS = int(os.environ.get("MAX_TOOL_ITERATIONS", "10"))
 MAX_TOKENS = int(os.environ.get("MAX_TOKENS", "300"))
 OLLAMA_NUM_CTX = int(os.environ.get("OLLAMA_NUM_CTX", "16384"))
+# Keep the model resident on the Ollama box between conversations — a 35B MoE
+# takes ~30s to cold-load, which a fresh greeting must never pay.
+OLLAMA_KEEP_ALIVE = os.environ.get("OLLAMA_KEEP_ALIVE", "24h")
 BRIDGE_PORT = int(os.environ.get("BRIDGE_PORT", "3002"))
 PIPER_BINARY = os.environ.get("PIPER_BINARY", "/usr/local/piper/piper")
 PIPER_MODEL  = os.environ.get("PIPER_MODEL",  "/models/fi_FI-asmo-medium.onnx")
@@ -420,6 +423,7 @@ async def run_ollama_agentic_loop(messages: list[dict], tools: list[dict]) -> di
                     "tools": openai_tools,
                     "stream": False,
                     "think": False,
+                    "keep_alive": OLLAMA_KEEP_ALIVE,
                     "options": {
                         "num_ctx": OLLAMA_NUM_CTX,
                         "temperature": 0.3,
@@ -635,6 +639,7 @@ async def chat_stream_endpoint(request: Request) -> Response:
                         "tools": openai_tools,
                         "stream": False,
                         "think": False,
+                        "keep_alive": OLLAMA_KEEP_ALIVE,
                         "options": {"num_ctx": OLLAMA_NUM_CTX, "num_predict": 500, "temperature": 0.3, "repeat_penalty": 1.0},
                     },
                 )
@@ -740,6 +745,7 @@ async def chat_stream_endpoint(request: Request) -> Response:
                         "tools": openai_tools,
                         "stream": True,
                         "think": False,
+                        "keep_alive": OLLAMA_KEEP_ALIVE,
                         "options": {"num_ctx": OLLAMA_NUM_CTX, "num_predict": 500, "temperature": 0.3, "repeat_penalty": 1.0},
                     },
                 ) as resp:
