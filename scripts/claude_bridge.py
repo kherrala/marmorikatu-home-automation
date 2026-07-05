@@ -1072,7 +1072,10 @@ async def _transcribe_remote(audio_path: str) -> "str | None":
         with open(audio_path, "rb") as f:
             audio = f.read()
         t0 = time.monotonic()
-        async with httpx.AsyncClient(timeout=WHISPER_REMOTE_TIMEOUT) as client:
+        # Short connect timeout: an unreachable GPU box must cost ~2s, not the
+        # full read timeout, before we fall back to the local model.
+        timeout = httpx.Timeout(WHISPER_REMOTE_TIMEOUT, connect=2.0)
+        async with httpx.AsyncClient(timeout=timeout) as client:
             resp = await client.post(
                 WHISPER_URL,
                 files={"file": (os.path.basename(audio_path), audio, "audio/wav")},

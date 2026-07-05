@@ -194,8 +194,10 @@ services:
       - OLLAMA_NUM_CTX=65536
       - WHISPER_MODEL=base
       # Remote GPU whisper: OpenAI-compatible endpoint (speaches on the Ollama
-      # box). Empty = local CPU whisper only.
-      - WHISPER_URL=${WHISPER_URL:-}
+      # box). Self-activating — while the endpoint is down, every request
+      # falls back to the local CPU whisper after an instant refusal.
+      # Set WHISPER_URL= (empty) to disable entirely.
+      - WHISPER_URL=${WHISPER_URL-http://192.168.1.36:8971/v1/audio/transcriptions}
       - WHISPER_REMOTE_MODEL=${WHISPER_REMOTE_MODEL:-Systran/faster-whisper-large-v3-turbo}
       - BRIDGE_PORT=3002
     extra_hosts:
