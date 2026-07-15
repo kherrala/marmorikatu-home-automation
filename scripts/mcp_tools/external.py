@@ -151,6 +151,10 @@ async def handle_get_weather_forecast(arguments):
                 "precipitation_probability": d_precip[i] if i < len(d_precip) else None,
             })
 
+        # Deduced weather warnings (helle / myrsky), computed by the weather
+        # service — passed straight through for the kiosk weather card.
+        result["warnings"] = data.get("warnings", [])
+
         return [TextContent(type="text", text=json.dumps(result, indent=2, ensure_ascii=False, default=str))]
     except Exception as e:
         log.error("get_weather_forecast error: %s\n%s", e, traceback.format_exc())

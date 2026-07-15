@@ -24,6 +24,13 @@ LON = os.environ.get("WEATHER_LON", "23.7610")
 CACHE_TTL = int(os.environ.get("WEATHER_CACHE_TTL", "600"))
 PORT = int(os.environ.get("WEATHER_PORT", "3020"))
 
+# Deduced weather warnings for today (helle / myrsky) — we derive them from the
+# forecast rather than fetching FMI's official bulletins. Heat: today's forecast
+# max at/above WARN_HEAT_C. Storm: today's max sustained wind at/above
+# WARN_STORM_KMH (Open-Meteo reports wind in km/h) or a thunderstorm WMO code.
+WARN_HEAT_C    = float(os.environ.get("WEATHER_WARN_HEAT_C", "25.0"))
+WARN_STORM_KMH = float(os.environ.get("WEATHER_WARN_STORM_KMH", "60.0"))
+
 OPEN_METEO_URL = (
     f"https://api.open-meteo.com/v1/forecast?"
     f"latitude={LAT}&longitude={LON}"
@@ -40,6 +47,32 @@ OPEN_METEO_URL = (
 _cache: dict = {"data": None, "ts": 0}
 
 
+def _compute_warnings(data: dict) -> list[dict]:
+    """Deduced heat / storm warnings for today from the forecast. Empty if none."""
+    daily = data.get("daily") or {}
+
+    def first(key):
+        vals = daily.get(key) or []
+        return vals[0] if vals else None
+
+    tmax = first("temperature_2m_max")
+    wmax = first("wind_speed_10m_max")   # km/h (Open-Meteo default unit)
+    code = first("weather_code")
+    out: list[dict] = []
+    if tmax is not None and tmax >= WARN_HEAT_C:
+        out.append({
+            "kind": "helle", "title": "Hellevaroitus",
+            "detail": f"Päivän lämpötila nousee {tmax:.0f} asteeseen.",
+        })
+    thunder = code in (95, 96, 99)
+    if (wmax is not None and wmax >= WARN_STORM_KMH) or thunder:
+        detail = (f"Tuulta jopa {wmax:.0f} km/h."
+                  if (wmax is not None and wmax >= WARN_STORM_KMH)
+                  else "Ukkosmyrsky ennustettu.")
+        out.append({"kind": "myrsky", "title": "Myrskyvaroitus", "detail": detail})
+    return out
+
+
 async def fetch_weather() -> dict:
     """Fetch from Open-Meteo, update cache."""
     now = time.time()
@@ -51,6 +84,9 @@ async def fetch_weather() -> dict:
             resp = await client.get(OPEN_METEO_URL)
             resp.raise_for_status()
             data = resp.json()
+        # Deduced warnings travel with the forecast so every consumer (kiosk
+        # weather card via MCP, announcer) sees the same verdict.
+        data["warnings"] = _compute_warnings(data)
         _cache["data"] = data
         _cache["ts"] = now
         log.info("Weather data refreshed")

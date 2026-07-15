@@ -128,17 +128,13 @@ OUTDOOR_THAW_C   = float(os.environ.get("ANNOUNCE_OUTDOOR_THAW_C",   "5"))
 FLOOR_HOT_C      = float(os.environ.get("ANNOUNCE_FLOOR_HOT_C", "25.0"))
 FLOOR_HOT_HYST_C = float(os.environ.get("ANNOUNCE_FLOOR_HOT_HYST_C", "0.5"))
 
-# Deduced weather warnings from the Open-Meteo forecast (we don't fetch FMI's
-# official bulletins — they aren't cheaply available). Heat: today's forecast max
-# at/above HEAT_C. Storm: today's max *sustained* wind at/above STORM_KMH
-# (Open-Meteo reports wind in km/h) or a thunderstorm WMO code (95/96/99).
-WEATHER_API_URL    = os.environ.get("WEATHER_API_URL", "http://weather:3020/api/weather")
-WEATHER_TIMEOUT_S  = float(os.environ.get("ANNOUNCE_WEATHER_TIMEOUT", "6"))
-WEATHER_CHECK_S    = int(os.environ.get("ANNOUNCE_WEATHER_CHECK_S", "600"))
-WEATHER_HEAT_C     = float(os.environ.get("ANNOUNCE_WEATHER_HEAT_C", "27.0"))
-WEATHER_HEAT_HYST  = float(os.environ.get("ANNOUNCE_WEATHER_HEAT_HYST", "1.5"))
-WEATHER_STORM_KMH  = float(os.environ.get("ANNOUNCE_WEATHER_STORM_KMH", "60.0"))
-WEATHER_STORM_HYST = float(os.environ.get("ANNOUNCE_WEATHER_STORM_HYST", "10.0"))
+# Weather warnings (helle / myrsky) are deduced by the weather service, which is
+# the single source of the verdict (the threshold lives there, shared with the
+# kiosk weather card). The announcer just polls the forecast endpoint and speaks
+# the warnings it carries — see _weather_warnings.
+WEATHER_API_URL   = os.environ.get("WEATHER_API_URL", "http://weather:3020/api/weather")
+WEATHER_TIMEOUT_S = float(os.environ.get("ANNOUNCE_WEATHER_TIMEOUT", "6"))
+WEATHER_CHECK_S   = int(os.environ.get("ANNOUNCE_WEATHER_CHECK_S", "600"))
 
 # PLC heartbeat: alarm if no plc_publisher write seen in N seconds.
 PLC_HEARTBEAT_LOSS_S = int(os.environ.get("ANNOUNCE_PLC_HEARTBEAT_LOSS_S", "180"))
@@ -753,58 +749,28 @@ def _fetch_forecast() -> dict | None:
 
 
 def _weather_warnings(fc, st, emit, bootstrap) -> None:
-    """Derive heat / storm warnings from the forecast and announce transitions.
+    """Announce transitions of the weather service's deduced warnings.
 
-    Each warning is a hysteretic on/off so a value hovering at the threshold
-    doesn't flap. `emit` is tick()'s deferred emitter; on bootstrap we only seed
-    the baseline class so a service reload doesn't re-declare a standing warning.
+    The weather service is the single source of the helle/myrsky verdict (so the
+    threshold lives in one place, shared with the kiosk weather card); here we
+    only track which are active and speak the edges. On bootstrap we seed the
+    state without announcing so a reload doesn't re-declare a standing warning.
     """
-    daily = fc.get("daily") or {}
-
-    def first(key):
-        vals = daily.get(key) or []
-        return vals[0] if vals else None
-
-    tmax = first("temperature_2m_max")
-    wmax = first("wind_speed_10m_max")   # km/h (Open-Meteo default unit)
-    code = first("weather_code")
-    thunder = code in (95, 96, 99)
-
-    def transition(key, *, active, clear, on_text, off_text):
-        prev = st.weather_class.get(key, "off")
-        if prev == "on":
-            new = "off" if clear else "on"
-        else:
-            new = "on" if active else "off"
-        st.weather_class[key] = new
+    active = {w.get("kind"): w for w in (fc.get("warnings") or []) if w.get("kind")}
+    for kind, off_text in (("helle", "Helle on hellittämässä."),
+                           ("myrsky", "Myrsky on ohi.")):
+        prev = st.weather_class.get(kind, "off")
+        new = "on" if kind in active else "off"
+        st.weather_class[kind] = new
         if bootstrap or new == prev:
-            return
-        text = on_text if new == "on" else off_text
-        if text:
-            emit(Event(text, f"weather_{key}_{new}", 1, f"weather:{key}",
-                       time.time()), min_gap_s=3600)
-
-    if tmax is not None:
-        transition(
-            "helle",
-            active=tmax >= WEATHER_HEAT_C,
-            clear=tmax < WEATHER_HEAT_C - WEATHER_HEAT_HYST,
-            on_text=f"Hellevaroitus: päivän lämpötila nousee {tmax:.0f} asteeseen.",
-            off_text="Helle on hellittämässä.",
-        )
-
-    if wmax is not None or thunder:
-        strong = wmax is not None and wmax >= WEATHER_STORM_KMH
-        on_text = (f"Myrskyvaroitus: tuulta jopa {wmax:.0f} km/h."
-                   if strong else "Myrskyvaroitus: ukkosmyrsky ennustettu.")
-        transition(
-            "myrsky",
-            active=strong or thunder,
-            clear=(wmax is None or wmax < WEATHER_STORM_KMH - WEATHER_STORM_HYST)
-                  and not thunder,
-            on_text=on_text,
-            off_text="Myrsky on ohi.",
-        )
+            continue
+        if new == "on":
+            w = active[kind]
+            text = f"{w.get('title', 'Säävaroitus')}. {w.get('detail', '')}".strip()
+        else:
+            text = off_text
+        emit(Event(text, f"weather_{kind}_{new}", 1, f"weather:{kind}",
+                   time.time()), min_gap_s=3600)
 
 
 def tick(infl: Influx, st: TickState, *, bootstrap: bool = False) -> None:

@@ -279,6 +279,10 @@ services:
       - WEATHER_LON=23.7610
       - WEATHER_CACHE_TTL=600
       - WEATHER_PORT=3020
+      # Deduced weather-warning thresholds (single source; the announcer speaks
+      # these and the kiosk weather card shows them). Helle = FMI's ≥25 °C day.
+      - WEATHER_WARN_HEAT_C=25.0
+      - WEATHER_WARN_STORM_KMH=60.0
     restart: unless-stopped
 
   calendar:
@@ -464,13 +468,11 @@ services:
       - NEWS_ANNOUNCE_END_HOUR=20
       - NEWS_ANNOUNCE_NATIONAL_COUNT=3
       - NEWS_ANNOUNCE_REGIONAL_COUNT=1
-      # Per-floor indoor heat warning (names the floor, suggests its cooler) and
-      # weather warnings deduced from the forecast (helle from temp, myrsky from
-      # wind/gusts). Thresholds are tunable here without a code change.
+      # Per-floor indoor heat warning (names the floor, suggests its cooler).
+      # Weather warnings (helle/myrsky) are deduced by the weather service and
+      # merely spoken here; their thresholds live on that service, not here.
       - WEATHER_API_URL=http://weather:3020/api/weather
       - ANNOUNCE_FLOOR_HOT_C=25.0
-      - ANNOUNCE_WEATHER_HEAT_C=27.0
-      - ANNOUNCE_WEATHER_STORM_KMH=60.0
     depends_on:
       influxdb:
         condition: service_healthy
