@@ -1534,6 +1534,15 @@ _announce_ring: deque = deque(maxlen=_ANNOUNCE_RING_SIZE)
 _announce_seq: int = 0
 _announce_lock = asyncio.Lock()
 
+# The most recent announcement that carried a camera image, kept in full (with
+# the image) so a kiosk that connects *after* the person-detection — a cold
+# start, a reconnect, or any client that simply wasn't subscribed at that
+# instant — can still show the last front-yard snapshot instead of a black box.
+# Exactly one image is retained, so this can't balloon memory the way keeping
+# images in the whole history ring would. Replaced by the next image event;
+# lost on restart, like the ring.
+_last_camera_snapshot: dict | None = None
+
 
 async def _broadcast_announcement(event: dict) -> None:
     """Append to ring buffer and fan out to every connected SSE subscriber.
@@ -1551,12 +1560,16 @@ async def _broadcast_announcement(event: dict) -> None:
     the event is fresh; keeping 50–100 KB payloads in the history ring would
     balloon memory and slow every /announcements/history fetch.
     """
-    global _announce_seq
+    global _announce_seq, _last_camera_snapshot
     async with _announce_lock:
         _announce_seq += 1
         event = {**event, "id": _announce_seq}
         ring_event = {k: v for k, v in event.items() if k != "image"}
         _announce_ring.append(ring_event)
+        # Retain the newest image-bearing event in full (see _last_camera_snapshot)
+        # so a kiosk that wasn't subscribed at push time can still fetch it.
+        if "image" in event:
+            _last_camera_snapshot = event
         targets = list(_announce_subscribers)
     dead: list[asyncio.Queue] = []
     for q in targets:
@@ -1637,6 +1650,22 @@ async def announce_history_endpoint(request: Request) -> JSONResponse:
     async with _announce_lock:
         events = list(_announce_ring)[-limit:]
     return JSONResponse({"events": events, "ring_size": _ANNOUNCE_RING_SIZE})
+
+
+async def announce_camera_endpoint(request: Request) -> JSONResponse:
+    """GET /announcements/camera — the last announcement that carried a camera
+    image, in full (including the `image` data URI), or `{"snapshot": null}`.
+
+    /stream broadcasts images live but /history strips them to keep the ring
+    lean, so a kiosk that wasn't subscribed at the instant of a person-detection
+    has no way to show the front-yard snapshot and falls back to a black
+    placeholder. This hands it the last frame on demand — polled on the kiosk's
+    normal refresh cadence — decoupled from the event feed so it never speaks or
+    re-lists a stale alert. Survives only as long as the bridge process.
+    """
+    async with _announce_lock:
+        snapshot = _last_camera_snapshot
+    return JSONResponse({"snapshot": snapshot})
 
 
 async def announce_stream_endpoint(request: Request) -> Response:
@@ -1727,6 +1756,7 @@ app = Starlette(
         Route("/cached/report", cached_report_endpoint),
         Route("/announcements/stream", announce_stream_endpoint),
         Route("/announcements/history", announce_history_endpoint),
+        Route("/announcements/camera", announce_camera_endpoint),
         Route("/announcements/push", announce_push_endpoint, methods=["POST"]),
         Route("/debug", debug_endpoint, methods=["GET", "POST"]),
         Route("/health", health_endpoint),
