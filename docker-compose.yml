@@ -464,6 +464,13 @@ services:
       - NEWS_ANNOUNCE_END_HOUR=20
       - NEWS_ANNOUNCE_NATIONAL_COUNT=3
       - NEWS_ANNOUNCE_REGIONAL_COUNT=1
+      # Per-floor indoor heat warning (names the floor, suggests its cooler) and
+      # weather warnings deduced from the forecast (helle from temp, myrsky from
+      # wind/gusts). Thresholds are tunable here without a code change.
+      - WEATHER_API_URL=http://weather:3020/api/weather
+      - ANNOUNCE_FLOOR_HOT_C=25.0
+      - ANNOUNCE_WEATHER_HEAT_C=27.0
+      - ANNOUNCE_WEATHER_STORM_KMH=60.0
     depends_on:
       influxdb:
         condition: service_healthy

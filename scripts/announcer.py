@@ -121,6 +121,25 @@ OUTDOOR_FREEZE_C = float(os.environ.get("ANNOUNCE_OUTDOOR_FREEZE_C", "-5"))
 OUTDOOR_DEEP_C   = float(os.environ.get("ANNOUNCE_OUTDOOR_DEEP_C",   "-15"))
 OUTDOOR_THAW_C   = float(os.environ.get("ANNOUNCE_OUTDOOR_THAW_C",   "5"))
 
+# Per-floor "too hot" warning: the upstairs and downstairs each have their own
+# cooling HVAC, so warn per floor (its hottest room) and point at that floor's
+# cooler — the basement has none and runs cool, so it's excluded (see ROOM_FLOOR
+# / COOLED_FLOORS). Hysteresis prevents flapping around the threshold.
+FLOOR_HOT_C      = float(os.environ.get("ANNOUNCE_FLOOR_HOT_C", "25.0"))
+FLOOR_HOT_HYST_C = float(os.environ.get("ANNOUNCE_FLOOR_HOT_HYST_C", "0.5"))
+
+# Deduced weather warnings from the Open-Meteo forecast (we don't fetch FMI's
+# official bulletins — they aren't cheaply available). Heat: today's forecast max
+# at/above HEAT_C. Storm: today's max *sustained* wind at/above STORM_KMH
+# (Open-Meteo reports wind in km/h) or a thunderstorm WMO code (95/96/99).
+WEATHER_API_URL    = os.environ.get("WEATHER_API_URL", "http://weather:3020/api/weather")
+WEATHER_TIMEOUT_S  = float(os.environ.get("ANNOUNCE_WEATHER_TIMEOUT", "6"))
+WEATHER_CHECK_S    = int(os.environ.get("ANNOUNCE_WEATHER_CHECK_S", "600"))
+WEATHER_HEAT_C     = float(os.environ.get("ANNOUNCE_WEATHER_HEAT_C", "27.0"))
+WEATHER_HEAT_HYST  = float(os.environ.get("ANNOUNCE_WEATHER_HEAT_HYST", "1.5"))
+WEATHER_STORM_KMH  = float(os.environ.get("ANNOUNCE_WEATHER_STORM_KMH", "60.0"))
+WEATHER_STORM_HYST = float(os.environ.get("ANNOUNCE_WEATHER_STORM_HYST", "10.0"))
+
 # PLC heartbeat: alarm if no plc_publisher write seen in N seconds.
 PLC_HEARTBEAT_LOSS_S = int(os.environ.get("ANNOUNCE_PLC_HEARTBEAT_LOSS_S", "180"))
 
@@ -577,6 +596,24 @@ ROOM_LABELS_FI = {
     "Ylakerran_aula": "Yläkerran aula",
 }
 
+# Which floor each monitored room sensor sits on, for the per-floor heat warning.
+# Mirrors the mobile Rooms model. Basement sensors are omitted — no cooler there.
+# Legacy keys (Aatu/Onni/Essi) map to the upstairs bedrooms they used to be.
+ROOM_FLOOR = {
+    "MH_Aarni": "ylakerta", "MH_Seela": "ylakerta", "MH_aikuiset": "ylakerta",
+    "Aatu": "ylakerta", "Onni": "ylakerta", "Essi": "ylakerta",
+    "Ylakerran_aula": "ylakerta",
+    "MH_alakerta": "alakerta", "Eteinen": "alakerta",
+    "Olohuone": "alakerta", "Keittio": "alakerta",
+}
+
+# Each cooled floor → (spoken floor name, spoken cooler name). The basement is
+# deliberately absent: it has no cooling HVAC and runs cool on its own.
+COOLED_FLOORS = {
+    "ylakerta": ("Yläkerta", "yläkerran jäähdytys"),
+    "alakerta": ("Alakerta", "alakerran jäähdytys"),
+}
+
 # Map raw lights_optimizer reason strings → spoken description + priority.
 # Many reasons are diagnostic-only ("hold", "manual_only") — only call out the
 # user-relevant transitions (auto-off fired, sauna laude on/off, CO2 auto-on/off,
@@ -670,6 +707,12 @@ class TickState:
         self.outdoor_class: str = ""
         # Indoor room temperature class per sensor (low / normal / high).
         self.room_temp_class: dict[str, str] = {}
+        # Per-floor heat class (hot / normal) for the cooled floors.
+        self.floor_heat_class: dict[str, str] = {}
+        # Deduced weather-warning classes (helle / myrsky) → "on" / "off".
+        self.weather_class: dict[str, str] = {}
+        # Monotonic time of the last forecast check, to throttle the fetch.
+        self.weather_checked: float = 0.0
         # PLC liveness — true when we've already announced a heartbeat loss.
         self.plc_lost: bool = False
         # LTO efficiency: tracks how long we've been below the threshold and
@@ -696,6 +739,73 @@ class TickState:
 
 
 # ── Tick: detect transitions and push events ─────────────────────────────────
+
+def _fetch_forecast() -> dict | None:
+    """Latest Open-Meteo forecast via the weather service; None on any failure."""
+    try:
+        req = urllib.request.Request(
+            WEATHER_API_URL, headers={"Accept": "application/json"})
+        with urllib.request.urlopen(req, timeout=WEATHER_TIMEOUT_S) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except Exception as e:
+        log.warning("weather forecast fetch failed: %s", e)
+        return None
+
+
+def _weather_warnings(fc, st, emit, bootstrap) -> None:
+    """Derive heat / storm warnings from the forecast and announce transitions.
+
+    Each warning is a hysteretic on/off so a value hovering at the threshold
+    doesn't flap. `emit` is tick()'s deferred emitter; on bootstrap we only seed
+    the baseline class so a service reload doesn't re-declare a standing warning.
+    """
+    daily = fc.get("daily") or {}
+
+    def first(key):
+        vals = daily.get(key) or []
+        return vals[0] if vals else None
+
+    tmax = first("temperature_2m_max")
+    wmax = first("wind_speed_10m_max")   # km/h (Open-Meteo default unit)
+    code = first("weather_code")
+    thunder = code in (95, 96, 99)
+
+    def transition(key, *, active, clear, on_text, off_text):
+        prev = st.weather_class.get(key, "off")
+        if prev == "on":
+            new = "off" if clear else "on"
+        else:
+            new = "on" if active else "off"
+        st.weather_class[key] = new
+        if bootstrap or new == prev:
+            return
+        text = on_text if new == "on" else off_text
+        if text:
+            emit(Event(text, f"weather_{key}_{new}", 1, f"weather:{key}",
+                       time.time()), min_gap_s=3600)
+
+    if tmax is not None:
+        transition(
+            "helle",
+            active=tmax >= WEATHER_HEAT_C,
+            clear=tmax < WEATHER_HEAT_C - WEATHER_HEAT_HYST,
+            on_text=f"Hellevaroitus: päivän lämpötila nousee {tmax:.0f} asteeseen.",
+            off_text="Helle on hellittämässä.",
+        )
+
+    if wmax is not None or thunder:
+        strong = wmax is not None and wmax >= WEATHER_STORM_KMH
+        on_text = (f"Myrskyvaroitus: tuulta jopa {wmax:.0f} km/h."
+                   if strong else "Myrskyvaroitus: ukkosmyrsky ennustettu.")
+        transition(
+            "myrsky",
+            active=strong or thunder,
+            clear=(wmax is None or wmax < WEATHER_STORM_KMH - WEATHER_STORM_HYST)
+                  and not thunder,
+            on_text=on_text,
+            off_text="Myrsky on ohi.",
+        )
+
 
 def tick(infl: Influx, st: TickState, *, bootstrap: bool = False) -> None:
     pushed = 0
@@ -891,6 +1001,11 @@ def tick(infl: Influx, st: TickState, *, bootstrap: bool = False) -> None:
         st.room_temp_class[room] = cls
         if bootstrap or cls == prev or not prev:
             continue
+        # Heat is announced per floor now (below), tied to that floor's cooler, so
+        # don't also name a single hot room. The cold path stays per room — one
+        # chilly room is worth calling out and isn't a floor-cooler concern.
+        if cls == "high" or prev == "high":
+            continue
         label = ROOM_LABELS_FI.get(room, room)
         if cls == "low":
             text = (f"{label} on viilentynyt alle {INDOOR_TEMP_LOW_C:.0f} asteen, "
@@ -905,6 +1020,40 @@ def tick(infl: Influx, st: TickState, *, bootstrap: bool = False) -> None:
                 text = f"{label} on viilentynyt taas, nyt {temp:.1f} astetta."
         emit(Event(text, f"room_temp_{cls}", 1, f"room_temp:{room}",
                    ts.timestamp()), min_gap_s=1800)
+
+    # --- Per-floor heat: warn per cooled floor (its hottest room) and point at
+    # that floor's cooler. Only floors with cooling HVAC — basement excluded.
+    for floor_key, (floor_label, cooler_label) in COOLED_FLOORS.items():
+        floor_readings = [(t, ts) for f, (t, ts) in rooms_temps.items()
+                          if ROOM_FLOOR.get(f) == floor_key]
+        if not floor_readings:
+            continue
+        hottest, hot_ts = max(floor_readings, key=lambda x: x[0])
+        prev = st.floor_heat_class.get(floor_key, "")
+        # Hysteresis: once "hot", stay hot until it drops a clear margin below.
+        hot = (hottest >= FLOOR_HOT_C - FLOOR_HOT_HYST_C) if prev == "hot" \
+            else (hottest >= FLOOR_HOT_C)
+        cls = "hot" if hot else "normal"
+        st.floor_heat_class[floor_key] = cls
+        if bootstrap or cls == prev or not prev:
+            continue
+        if cls == "hot":
+            text = (f"{floor_label} on lämmennyt yli {FLOOR_HOT_C:.0f} asteen, "
+                    f"nyt {hottest:.1f} astetta — laita {cooler_label} päälle.")
+        else:
+            text = f"{floor_label} on viilentynyt taas, nyt {hottest:.1f} astetta."
+        emit(Event(text, f"floor_heat_{cls}", 1, f"floor_heat:{floor_key}",
+                   hot_ts.timestamp()), min_gap_s=1800)
+
+    # --- Deduced weather warnings (heat / storm) from the forecast, throttled so
+    # we don't hit the weather service every tick. On bootstrap it only seeds the
+    # baseline class (no announcement) so a reload doesn't re-declare a warning.
+    now_mono = time.monotonic()
+    if now_mono - st.weather_checked >= WEATHER_CHECK_S:
+        st.weather_checked = now_mono
+        fc = _fetch_forecast()
+        if fc:
+            _weather_warnings(fc, st, emit, bootstrap)
 
     # --- PLC heartbeat — alarm if no fresh plc_publisher write.
     hb_ts = infl.latest_plc_heartbeat()
