@@ -4,6 +4,7 @@ import json
 import logging
 import traceback
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 from typing import Any
 
 import httpx
@@ -125,17 +126,20 @@ async def handle_get_weather_forecast(arguments):
         temps = hourly.get("temperature_2m", [])
         codes = hourly.get("weather_code", [])
         precip = hourly.get("precipitation_probability", [])
-        now = datetime.now(timezone.utc).isoformat()
-        count = 0
-        for i, t in enumerate(times):
-            if t >= now and count < 4:
-                result["hourly_next_4h"].append({
-                    "time": t,
-                    "temperature": temps[i] if i < len(temps) else None,
-                    "condition": WMO_CODES.get(codes[i] if i < len(codes) else -1, "?"),
-                    "precipitation_probability": precip[i] if i < len(precip) else None,
-                })
-                count += 1
+        # Open-Meteo returns times in the requested local zone (Europe/Helsinki) as
+        # naive ISO strings ("2026-07-16T21:00"); compare against local-now in the
+        # same shape. Comparing against a UTC timestamp silently kept past local
+        # hours ("old entries") and never advanced the window.
+        now = datetime.now(ZoneInfo("Europe/Helsinki")).strftime("%Y-%m-%dT%H:%M")
+        future = [i for i, t in enumerate(times) if t and t >= now]
+        # A sparse next-~12 h view: every 3rd future hour, up to 5 points.
+        for i in future[::3][:5]:
+            result["hourly_next_4h"].append({
+                "time": times[i],
+                "temperature": temps[i] if i < len(temps) else None,
+                "condition": WMO_CODES.get(codes[i] if i < len(codes) else -1, "?"),
+                "precipitation_probability": precip[i] if i < len(precip) else None,
+            })
 
         d_times = daily.get("time", [])
         d_codes = daily.get("weather_code", [])
