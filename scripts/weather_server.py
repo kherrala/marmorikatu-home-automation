@@ -40,7 +40,7 @@ OPEN_METEO_URL = (
     f"&daily=weather_code,temperature_2m_max,temperature_2m_min,"
     f"sunrise,sunset,precipitation_probability_max,"
     f"precipitation_sum,wind_speed_10m_max,sunshine_duration"
-    f"&timezone=Europe%2FHelsinki&forecast_days=5"
+    f"&timezone=Europe%2FHelsinki&forecast_days=7"
 )
 
 # -- Cache --------------------------------------------------------------------

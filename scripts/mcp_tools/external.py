@@ -132,8 +132,8 @@ async def handle_get_weather_forecast(arguments):
         # hours ("old entries") and never advanced the window.
         now = datetime.now(ZoneInfo("Europe/Helsinki")).strftime("%Y-%m-%dT%H:%M")
         future = [i for i, t in enumerate(times) if t and t >= now]
-        # A sparse next-~12 h view: every 3rd future hour, up to 5 points.
-        for i in future[::3][:5]:
+        # The next 8 hours, hourly, for the weather widget's timeline.
+        for i in future[:8]:
             result["hourly_next_4h"].append({
                 "time": times[i],
                 "temperature": temps[i] if i < len(temps) else None,
@@ -146,7 +146,7 @@ async def handle_get_weather_forecast(arguments):
         d_max = daily.get("temperature_2m_max", [])
         d_min = daily.get("temperature_2m_min", [])
         d_precip = daily.get("precipitation_probability_max", [])
-        for i in range(min(4, len(d_times))):
+        for i in range(min(7, len(d_times))):
             result["daily_forecast"].append({
                 "date": d_times[i],
                 "condition": WMO_CODES.get(d_codes[i] if i < len(d_codes) else -1, "?"),
