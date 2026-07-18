@@ -331,6 +331,10 @@ def test_co2_after_midnight_turns_off_running_light(co2_harness):
     state["kitchen_on"] = True
     state["livingroom_on"] = True
     state["co2"] = "BASELINE"
+    # These are OUR auto-ons that lingered past midnight (they carry an
+    # auto_on_t); the after-midnight rule only offs lights we switched on.
+    lo._co2_auto_on_at[lo.CO2_AUTO_KITCHEN_IDX] = _local(2026, 5, 17, 1, 30)
+    lo._co2_auto_on_at[lo.CO2_AUTO_LIVINGROOM_IDX] = _local(2026, 5, 17, 1, 30)
 
     lo.check_and_control()
 
@@ -352,6 +356,9 @@ def test_co2_after_midnight_quench_prevents_reflapping(co2_harness):
     state["kitchen_on"] = True
     state["livingroom_on"] = True
     state["co2"] = "ELEVATED"
+    # Our own auto-ons (carry auto_on_t) so the after-midnight rule offs them.
+    lo._co2_auto_on_at[lo.CO2_AUTO_KITCHEN_IDX] = _local(2026, 5, 23, 0, 15)
+    lo._co2_auto_on_at[lo.CO2_AUTO_LIVINGROOM_IDX] = _local(2026, 5, 23, 0, 15)
     lo.check_and_control()
 
     offs = [p for p in _co2_pubs(published) if p[1] is False]
@@ -386,6 +393,9 @@ def test_co2_after_midnight_quench_releases_outside_window(co2_harness):
     state["kitchen_on"] = True
     state["livingroom_on"] = True
     state["co2"] = "ELEVATED"
+    # Our own auto-ons (carry auto_on_t) so the after-midnight rule offs them.
+    lo._co2_auto_on_at[lo.CO2_AUTO_KITCHEN_IDX] = _local(2026, 5, 23, 0, 30)
+    lo._co2_auto_on_at[lo.CO2_AUTO_LIVINGROOM_IDX] = _local(2026, 5, 23, 0, 30)
     lo.check_and_control()
 
     today = state["now"].date()
@@ -445,6 +455,26 @@ def test_co2_manual_on_not_auto_offed_when_dropped(co2_harness):
     assert (lo.CO2_AUTO_LIVINGROOM_IDX, False, "co2_no_occupancy") not in offs
     reasons = {(idx, reason) for idx, _, reason, _ in decisions}
     assert (lo.CO2_AUTO_LIVINGROOM_IDX, "manual_on") in reasons
+
+
+def test_co2_manual_on_survives_after_midnight(co2_harness):
+    """Regression: a light the USER switched on after midnight (no auto_on_t)
+    must NOT be killed by the after-midnight rule, nor set a quench. Only our
+    own lingering auto-ons get the after-midnight off."""
+    state, published, decisions = co2_harness
+    state["now"] = _local(2026, 5, 17, 1, 0)   # inside the after-midnight window
+    state["livingroom_on"] = True
+    state["co2"] = "ELEVATED"
+    assert lo.CO2_AUTO_LIVINGROOM_IDX not in lo._co2_auto_on_at
+
+    lo.check_and_control()
+
+    offs = [p for p in _co2_pubs(published) if p[1] is False]
+    assert (lo.CO2_AUTO_LIVINGROOM_IDX, False, "co2_auto_after_midnight") not in offs
+    reasons = {(idx, reason) for idx, _, reason, _ in decisions}
+    assert (lo.CO2_AUTO_LIVINGROOM_IDX, "manual_on") in reasons
+    # No quench set → it won't be blocked from staying on.
+    assert lo.CO2_AUTO_LIVINGROOM_IDX not in lo._co2_after_midnight_quenched
 
 
 def test_post_sauna_skips_freshly_pressed_light(monkeypatch):
