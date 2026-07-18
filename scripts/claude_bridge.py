@@ -633,6 +633,44 @@ async def chat_stream_endpoint(request: Request) -> Response:
         sentence_buf = ""
         full_text = ""
 
+        # Claude fallback, streamed as TTS sentences. Used both when the local
+        # model narrates a control action without calling a tool, and — via the
+        # reachability probe below — when the Ollama GPU box is unreachable, so a
+        # GPU-box outage degrades to the cloud model instead of a dead voice.
+        async def _stream_via_claude(reason: str):
+            log.warning("Stream: Claude fallback (%s)", reason)
+            try:
+                claude_result = await run_claude_agentic_loop(messages, all_tools)
+            except Exception as e:
+                log.error("Stream: Claude fallback failed: %s", e)
+                yield f"data: {json.dumps({'done': True, 'response': '', 'tool_calls': all_tool_calls, 'error': str(e)})}\n\n"
+                return
+            text = claude_result.get("response", "") or ""
+            for tc in claude_result.get("tool_calls", []):
+                all_tool_calls.append(tc)
+                yield f"data: {json.dumps({'tool_use': tc.get('tool', '')})}\n\n"
+            for sentence in re.split(r'(?<=[.!?])\s+(?=[A-ZÄÖÅ])', text):
+                sentence = sentence.strip()
+                if not sentence:
+                    continue
+                try:
+                    wav = await _piper_synthesize(sentence)
+                    yield f"data: {json.dumps({'audio': base64.b64encode(wav).decode(), 'text': sentence})}\n\n"
+                except Exception as e:
+                    log.error("Stream Claude TTS error: %s", e)
+            yield f"data: {json.dumps({'done': True, 'response': text, 'tool_calls': all_tool_calls})}\n\n"
+
+        # If the Ollama GPU box is unreachable, fall back to Claude at once rather
+        # than hanging the SSE stream on a 120s connect. A pingable-but-dead box
+        # (filtered :11434) would otherwise stall every voice turn for minutes.
+        try:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(10.0, connect=2.5)) as _probe:
+                await _probe.get(f"{OLLAMA_URL}/api/tags")
+        except Exception as e:
+            async for _ev in _stream_via_claude(f"ollama unreachable: {e}"):
+                yield _ev
+            return
+
         # Phase 1: Tool calls (non-streamed LLM, but progress events stream to client)
         async with httpx.AsyncClient(timeout=120) as client:
             for iteration in range(MAX_TOOL_ITERATIONS):
@@ -707,30 +745,10 @@ async def chat_stream_endpoint(request: Request) -> Response:
         # it. Hand off to Claude and stream Claude's text as TTS sentences.
         last_user_content = messages[-1].get("content", "") if messages else ""
         if not all_tool_calls and _has_control_intent(last_user_content):
-            log.warning(
-                "Stream: no tool_calls for control intent — switching to Claude. user=%r",
-                last_user_content[:120],
-            )
-            try:
-                claude_result = await run_claude_agentic_loop(messages, all_tools)
-            except Exception as e:
-                log.error("Stream: Claude fallback failed: %s", e)
-                yield f"data: {json.dumps({'done': True, 'response': '', 'tool_calls': all_tool_calls, 'error': str(e)})}\n\n"
-                return
-            full_text = claude_result.get("response", "") or ""
-            for tc in claude_result.get("tool_calls", []):
-                all_tool_calls.append(tc)
-                yield f"data: {json.dumps({'tool_use': tc.get('tool', '')})}\n\n"
-            for sentence in re.split(r'(?<=[.!?])\s+(?=[A-ZÄÖÅ])', full_text):
-                sentence = sentence.strip()
-                if not sentence:
-                    continue
-                try:
-                    wav = await _piper_synthesize(sentence)
-                    yield f"data: {json.dumps({'audio': base64.b64encode(wav).decode(), 'text': sentence})}\n\n"
-                except Exception as e:
-                    log.error("Stream Claude TTS error: %s", e)
-            yield f"data: {json.dumps({'done': True, 'response': full_text, 'tool_calls': all_tool_calls})}\n\n"
+            async for _ev in _stream_via_claude(
+                f"no tool_calls for control intent: {last_user_content[:120]!r}"
+            ):
+                yield _ev
             return
 
         # Phase 2: Stream text response with TTS. If the model makes tool calls
