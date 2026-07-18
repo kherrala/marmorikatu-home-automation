@@ -112,6 +112,11 @@ def _strip_markdown(text: str) -> str:
     t = re.sub(r"(?m)^\s{0,3}[-*+]\s+", "", t)       # bullet lists
     t = re.sub(r"(?m)^\s{0,3}\d+\.\s+", "", t)       # numbered lists
     t = t.replace("**", "").replace("__", "")         # any stray markers
+    # Newlines don't survive as speech; a blank line is a paragraph/heading
+    # break (→ sentence boundary so TTS pauses), a single newline just a wrap.
+    t = re.sub(r"[ \t]*\n[ \t]*\n[\s]*", ". ", t)
+    t = re.sub(r"[ \t]*\n[ \t]*", " ", t)
+    t = re.sub(r"\.\s*\.", ".", t)                    # collapse accidental ". ."
     t = re.sub(r"[ \t]+", " ", t)
     return t.strip()
 
