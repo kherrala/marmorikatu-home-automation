@@ -424,6 +424,29 @@ def test_co2_publish_failure_does_not_record_auto_on(co2_harness, monkeypatch):
     assert (lo.CO2_AUTO_KITCHEN_IDX, "mqtt_publish_failed") in reasons
 
 
+def test_co2_manual_on_not_auto_offed_when_dropped(co2_harness):
+    """Regression: a user who manually switches on a CO₂-managed ceiling
+    light (no `_co2_auto_on_at` record) must NOT get it killed on the next
+    tick just because indoor CO₂ reads low. The min-on protection only ever
+    applied to our own auto-ons; a manual on has no auto_on_t and used to
+    fall straight through to `co2_no_occupancy` off."""
+    state, published, decisions = co2_harness
+
+    # User manually flips the living-room ceiling on; CO₂ is low (they just
+    # walked into a well-ventilated room). No auto_on_t exists for it.
+    state["livingroom_on"] = True
+    state["co2"] = "DROPPED"
+    assert lo.CO2_AUTO_LIVINGROOM_IDX not in lo._co2_auto_on_at
+
+    lo.check_and_control()
+
+    # It must be held, not turned off.
+    offs = [p for p in _co2_pubs(published) if p[1] is False]
+    assert (lo.CO2_AUTO_LIVINGROOM_IDX, False, "co2_no_occupancy") not in offs
+    reasons = {(idx, reason) for idx, _, reason, _ in decisions}
+    assert (lo.CO2_AUTO_LIVINGROOM_IDX, "manual_on") in reasons
+
+
 def test_post_sauna_skips_freshly_pressed_light(monkeypatch):
     """A bathroom press inside the post-sauna lookback window must NOT
     be auto-offed by the cooldown rule — these lights are manual_only

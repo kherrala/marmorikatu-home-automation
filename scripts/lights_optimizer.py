@@ -848,19 +848,23 @@ def check_and_control():
                     log_decision(idx_co2, "hold", "mqtt_publish_failed",
                                  category="co2_auto")
             elif co2 == "DROPPED":
-                # Don't auto-off too soon after our own auto-on — prevents
-                # flapping when CO₂ wanders through the dead-band.
-                seconds_since_on = (
-                    (now - auto_on_t).total_seconds() if auto_on_t else float("inf")
-                )
-                if seconds_since_on < CO2_AUTO_MIN_ON_SECONDS:
-                    log_decision(
-                        idx_co2, "hold",
-                        f"min_on_time_remaining_{int(CO2_AUTO_MIN_ON_SECONDS - seconds_since_on)}s",
-                        category="co2_auto",
-                    )
+                # Only auto-off a light WE turned on for occupancy. If
+                # auto_on_t is None the user flipped it on manually — respect
+                # that and hold, otherwise a manual switch-on gets killed on
+                # the very next tick as soon as indoor CO₂ reads low.
+                if auto_on_t is None:
+                    log_decision(idx_co2, "hold", "manual_on", category="co2_auto")
                 else:
-                    if publish_state(idx_co2, False, "co2_no_occupancy"):
+                    # Don't auto-off too soon after our own auto-on — prevents
+                    # flapping when CO₂ wanders through the dead-band.
+                    seconds_since_on = (now - auto_on_t).total_seconds()
+                    if seconds_since_on < CO2_AUTO_MIN_ON_SECONDS:
+                        log_decision(
+                            idx_co2, "hold",
+                            f"min_on_time_remaining_{int(CO2_AUTO_MIN_ON_SECONDS - seconds_since_on)}s",
+                            category="co2_auto",
+                        )
+                    elif publish_state(idx_co2, False, "co2_no_occupancy"):
                         log_decision(idx_co2, "off", "co2_no_occupancy", category="co2_auto")
                         _co2_auto_on_at.pop(idx_co2, None)
                         _co2_auto_on_confirmed.pop(idx_co2, None)
