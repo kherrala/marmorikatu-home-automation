@@ -89,6 +89,33 @@ def _has_control_intent(user_text: str) -> bool:
     return bool(_CONTROL_ACTION_RE.search(user_text) and _CONTROL_TARGET_RE.search(user_text))
 
 
+def _strip_markdown(text: str) -> str:
+    """Flatten Markdown to plain text for speech + the app's text stream.
+
+    The models — Claude especially — like to emit **bold**, headings and bullet
+    lists, which the on-device TTS would otherwise read out as 'asterisk
+    asterisk ...'. The system prompts ask for plain text; this is the belt to
+    that suspenders, so a stray marker never becomes a spoken artifact.
+    """
+    if not text:
+        return text
+    t = text
+    t = re.sub(r"```[\s\S]*?```", " ", t)          # fenced code blocks
+    t = re.sub(r"`([^`]*)`", r"\1", t)               # inline code
+    t = re.sub(r"!\[[^\]]*\]\([^)]*\)", " ", t)      # images
+    t = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", t)   # links → visible text
+    t = re.sub(r"(\*\*|__)(.+?)\1", r"\2", t)         # bold
+    t = re.sub(r"(?<![\w*])[*_](?!\s)(.+?)(?<!\s)[*_](?![\w*])", r"\1", t)  # italic
+    t = re.sub(r"~~(.+?)~~", r"\1", t)               # strikethrough
+    t = re.sub(r"(?m)^\s{0,3}#{1,6}\s+", "", t)      # headings
+    t = re.sub(r"(?m)^\s{0,3}>\s?", "", t)           # blockquotes
+    t = re.sub(r"(?m)^\s{0,3}[-*+]\s+", "", t)       # bullet lists
+    t = re.sub(r"(?m)^\s{0,3}\d+\.\s+", "", t)       # numbered lists
+    t = t.replace("**", "").replace("__", "")         # any stray markers
+    t = re.sub(r"[ \t]+", " ", t)
+    return t.strip()
+
+
 def _now_helsinki_str() -> tuple[str, str]:
     from datetime import datetime
     from zoneinfo import ZoneInfo
@@ -112,8 +139,10 @@ def get_system_prompt() -> str:
         f"- ÄLÄ keksi säätietoja, uutisia, lämpötiloja tai kalenterimerkintöjä.\n"
         f"- Kerro vain se mitä työkalut palauttavat.\n"
         f"\n"
-        f"Vastaa 1-3 lauseella suomeksi. ÄLÄ käytä markdown-muotoilua (ei **tähtiä**, ei #otsikoita, ei -listoja).\n"
-        f"Vastauksesi luetaan ääneen — pidä ne lyhyinä ja selkeinä.\n"
+        f"Vastauksesi luetaan ääneen puhuen — kirjoita PELKKÄÄ puhuttua tekstiä.\n"
+        f"ÄLÄ käytä markdown-muotoilua äläkä mitään erikoismerkkejä: ei **tähtiä**, ei #otsikoita, "
+        f"ei -listoja, ei `koodia`. Kirjoita otsikot ja korostukset tavallisina sanoina.\n"
+        f"Vastaa 1-3 lauseella suomeksi, lyhyesti ja selkeästi.\n"
         f"Käyttäjä on kotona.\n"
         f"Kellarin lämpötila on tarkoituksella alempi kuin muissa kerroksissa — se ei ole ongelma.\n"
         f"\n"
@@ -613,249 +642,62 @@ async def chat_stream_endpoint(request: Request) -> Response:
     if not messages:
         return JSONResponse({"error": "No messages provided"}, status_code=400)
 
-    openai_tools = _tools_to_openai(ollama_tools)
-    # Send full conversation history — images only on the last message
-    ollama_messages = [{"role": "system", "content": get_ollama_system_prompt()}]
-    for i, m in enumerate(messages):
-        msg = {"role": m["role"], "content": m["content"]}
-        # Only include images on the last message (current request)
-        if m.get("images") and i == len(messages) - 1:
-            msg["images"] = m["images"]
-        ollama_messages.append(msg)
+    # No auto-injected browser context — the model calls browser_snapshot when
+    # it needs page content.
 
-    # No auto-injected browser context — the model calls browser_snapshot
-    # when it needs page content. Auto-injection was confusing the model
-    # into thinking it already had the data and skipping navigation/clicks.
-
-    # Everything inside the generator so tool progress streams immediately
     async def generate():
         all_tool_calls: list[dict] = []
-        sentence_buf = ""
-        full_text = ""
 
-        # Claude fallback, streamed as TTS sentences. Used both when the local
-        # model narrates a control action without calling a tool, and — via the
-        # reachability probe below — when the Ollama GPU box is unreachable, so a
-        # GPU-box outage degrades to the cloud model instead of a dead voice.
-        async def _stream_via_claude(reason: str):
-            log.warning("Stream: Claude fallback (%s)", reason)
-            try:
-                claude_result = await run_claude_agentic_loop(messages, all_tools)
-            except Exception as e:
-                log.error("Stream: Claude fallback failed: %s", e)
-                yield f"data: {json.dumps({'done': True, 'response': '', 'tool_calls': all_tool_calls, 'error': str(e)})}\n\n"
-                return
-            text = claude_result.get("response", "") or ""
-            for tc in claude_result.get("tool_calls", []):
+        async def _emit(result: dict):
+            """Stream a completed agentic result as tool progress + TTS sentences.
+            Markdown is flattened first so the on-device TTS never reads '**',
+            '#' or list bullets aloud."""
+            for tc in result.get("tool_calls", []):
                 all_tool_calls.append(tc)
                 yield f"data: {json.dumps({'tool_use': tc.get('tool', '')})}\n\n"
+            text = _strip_markdown((result.get("response") or "").strip())
             for sentence in re.split(r'(?<=[.!?])\s+(?=[A-ZÄÖÅ])', text):
-                sentence = sentence.strip()
-                if not sentence:
+                s = sentence.strip()
+                if not s:
                     continue
                 try:
-                    wav = await _piper_synthesize(sentence)
-                    yield f"data: {json.dumps({'audio': base64.b64encode(wav).decode(), 'text': sentence})}\n\n"
+                    wav = await _piper_synthesize(s)
+                    yield f"data: {json.dumps({'audio': base64.b64encode(wav).decode(), 'text': s})}\n\n"
                 except Exception as e:
-                    log.error("Stream Claude TTS error: %s", e)
+                    log.error("Stream TTS error: %s", e)
             yield f"data: {json.dumps({'done': True, 'response': text, 'tool_calls': all_tool_calls})}\n\n"
 
-        # If the Ollama GPU box is unreachable, fall back to Claude at once rather
-        # than hanging the SSE stream on a 120s connect. A pingable-but-dead box
-        # (filtered :11434) would otherwise stall every voice turn for minutes.
+        # Claude/Haiku is the primary model — faster and with the full tool set.
+        # Fall back to the local Ollama model only when Anthropic can't serve
+        # (credits exhausted, rate-limited, overloaded, or a connection error),
+        # so the house keeps talking when the cloud account is out.
+        result = None
         try:
-            async with httpx.AsyncClient(timeout=httpx.Timeout(10.0, connect=2.5)) as _probe:
-                await _probe.get(f"{OLLAMA_URL}/api/tags")
-        except Exception as e:
-            async for _ev in _stream_via_claude(f"ollama unreachable: {e}"):
-                yield _ev
-            return
-
-        # Phase 1: Tool calls (non-streamed LLM, but progress events stream to client)
-        async with httpx.AsyncClient(timeout=120) as client:
-            for iteration in range(MAX_TOOL_ITERATIONS):
-                resp = await client.post(
-                    f"{OLLAMA_URL}/api/chat",
-                    json={
-                        "model": OLLAMA_MODEL,
-                        "messages": ollama_messages,
-                        "tools": openai_tools,
-                        "stream": False,
-                        "think": False,
-                        "keep_alive": OLLAMA_KEEP_ALIVE,
-                        "options": {"num_ctx": OLLAMA_NUM_CTX, "num_predict": 500, "temperature": 0.3, "repeat_penalty": 1.0},
-                    },
-                )
-                resp.raise_for_status()
-                data = resp.json()
-                msg = data["message"]
-                tool_calls_raw = msg.get("tool_calls") or []
-
-                if not tool_calls_raw:
-                    break
-
-                ollama_messages.append(msg)
-                for tc in tool_calls_raw:
-                    tool_name = tc["function"]["name"]
-                    tool_input = tc["function"].get("arguments") or {}
-                    if isinstance(tool_input, str):
-                        try:
-                            tool_input = json.loads(tool_input)
-                        except (json.JSONDecodeError, TypeError):
-                            tool_input = {}
-                    log.info("Stream tool call [%d]: %s args=%s", iteration + 1,
-                             tool_name, json.dumps(tool_input, ensure_ascii=False)[:300])
-                    all_tool_calls.append({"tool": tool_name, "input": tool_input})
-                    # Stream tool progress to client immediately
-                    yield f"data: {json.dumps({'tool_use': tool_name})}\n\n"
-                    guard = _ollama_tool_guard(tool_name)
-                    if guard is not None:
-                        log.warning("Stream: rejected unadvertised tool %r", tool_name)
-                        ollama_messages.append({"role": "tool", "content": guard})
-                        continue
-                    result_text = await _call_tool_safe(tool_name, tool_input, iteration + 1, "Stream")
-                    # Extract and stream screenshot image if present
-                    img_match = re.search(r'\[IMAGE:(data:image/[^;]+;base64,[A-Za-z0-9+/=]+)\]', result_text)
-                    if img_match:
-                        yield f"data: {json.dumps({'screenshot': img_match.group(1)})}\n\n"
-                        result_text = re.sub(r'\n?\[IMAGE:data:image/[^\]]+\]', '', result_text)
-                    # Truncate all PREVIOUS snapshot results (keep only the latest one full)
-                    if tool_name == "browser_snapshot" and len(result_text) > 500:
-                        for j, m in enumerate(ollama_messages[:-1]):  # skip last (current snapshot not appended yet)
-                            if (m.get("role") == "tool"
-                                    and isinstance(m.get("content"), str)
-                                    and len(m["content"]) > 500
-                                    and "Page URL:" in m["content"]
-                                    and "ref=" in m["content"]):
-                                url_line = next((l for l in m["content"].split("\n") if "Page URL:" in l), "")
-                                ollama_messages[j] = {"role": "tool", "content": f"[Aiempi sivu: {url_line}]"}
-                    ollama_messages.append({"role": "tool", "content": result_text})
-
-                    # Auto-screenshot after page-changing browser actions only
-                    if tool_name in ("browser_navigate", "browser_click", "browser_hover"):
-                        log.info("Stream: auto-screenshot after %s", tool_name)
-                        yield f"data: {json.dumps({'tool_use': 'browser_take_screenshot'})}\n\n"
-                        ss_result = await _call_tool_safe("browser_take_screenshot", {}, iteration + 1, "Stream")
-                        ss_match = re.search(r'\[IMAGE:(data:image/[^;]+;base64,[A-Za-z0-9+/=]+)\]', ss_result)
-                        if ss_match:
-                            yield f"data: {json.dumps({'screenshot': ss_match.group(1)})}\n\n"
-
-        # Bridge: if user wanted a control action but Phase 1 produced no tool
-        # calls, gemma is about to narrate the action in Phase 2 without doing
-        # it. Hand off to Claude and stream Claude's text as TTS sentences.
-        last_user_content = messages[-1].get("content", "") if messages else ""
-        if not all_tool_calls and _has_control_intent(last_user_content):
-            async for _ev in _stream_via_claude(
-                f"no tool_calls for control intent: {last_user_content[:120]!r}"
-            ):
-                yield _ev
-            return
-
-        # Phase 2: Stream text response with TTS. If the model makes tool calls
-        # during streaming, execute them and go back to Phase 1 for the next round.
-        keep_going = True
-        while keep_going:
-            log.info("Stream Phase 2: %d messages", len(ollama_messages))
-            stream_tool_calls = []
-
-            async with httpx.AsyncClient(timeout=120) as client:
-                async with client.stream(
-                    "POST",
-                    f"{OLLAMA_URL}/api/chat",
-                    json={
-                        "model": OLLAMA_MODEL,
-                        "messages": ollama_messages,
-                        "tools": openai_tools,
-                        "stream": True,
-                        "think": False,
-                        "keep_alive": OLLAMA_KEEP_ALIVE,
-                        "options": {"num_ctx": OLLAMA_NUM_CTX, "num_predict": 500, "temperature": 0.3, "repeat_penalty": 1.0},
-                    },
-                ) as resp:
-                    async for line in resp.aiter_lines():
-                        if not line.strip():
-                            continue
-                        chunk = json.loads(line)
-                        msg = chunk.get("message", {})
-
-                        if msg.get("tool_calls"):
-                            stream_tool_calls.extend(msg["tool_calls"])
-
-                        token = msg.get("content", "")
-                        if not token:
-                            continue
-
-                        sentence_buf += token
-                        full_text += token
-
-                        parts = re.split(r'(?<=[.!?])\s+(?=[A-ZÄÖÅ])', sentence_buf)
-                        while len(parts) > 1:
-                            sentence = parts.pop(0).strip()
-                            if not sentence or re.search(r'browser_\w+\(', sentence):
-                                continue
-                            try:
-                                wav = await _piper_synthesize(sentence)
-                                log.info("Stream sentence: %s", sentence[:60])
-                                yield f"data: {json.dumps({'audio': base64.b64encode(wav).decode(), 'text': sentence})}\n\n"
-                            except Exception as e:
-                                log.error("Stream TTS error: %s", e)
-                        sentence_buf = parts[0] if parts else ""
-
-            if not stream_tool_calls:
-                keep_going = False
-                continue
-
-            # Tool calls detected — execute them (same as Phase 1) then loop back
-            ollama_messages.append({"role": "assistant", "content": full_text or "", "tool_calls": stream_tool_calls})
-            sentence_buf = ""
-            for tc in stream_tool_calls:
-                tool_name = tc["function"]["name"]
-                tool_input = tc["function"].get("arguments") or {}
-                if isinstance(tool_input, str):
-                    try: tool_input = json.loads(tool_input)
-                    except: tool_input = {}
-                log.info("Stream tool call (from Phase 2): %s", tool_name)
-                all_tool_calls.append({"tool": tool_name, "input": tool_input})
-                yield f"data: {json.dumps({'tool_use': tool_name})}\n\n"
-                result_text = await _call_tool_safe(tool_name, tool_input, 0, "Stream")
-                img_match = re.search(r'\[IMAGE:(data:image/[^;]+;base64,[A-Za-z0-9+/=]+)\]', result_text)
-                if img_match:
-                    yield f"data: {json.dumps({'screenshot': img_match.group(1)})}\n\n"
-                    result_text = re.sub(r'\n?\[IMAGE:data:image/[^\]]+\]', '', result_text)
-                if tool_name == "browser_snapshot" and len(result_text) > 500:
-                    for j, m in enumerate(ollama_messages):
-                        if (m.get("role") == "tool" and isinstance(m.get("content"), str)
-                                and len(m["content"]) > 500 and "Page URL:" in m["content"]):
-                            url_line = next((l for l in m["content"].split("\n") if "Page URL:" in l), "")
-                            ollama_messages[j] = {"role": "tool", "content": f"[Aiempi sivu: {url_line}]"}
-                ollama_messages.append({"role": "tool", "content": result_text})
-                if tool_name in ("browser_navigate", "browser_click", "browser_hover"):
-                    ss_result = await _call_tool_safe("browser_take_screenshot", {}, 0, "Stream")
-                    ss_match = re.search(r'\[IMAGE:(data:image/[^;]+;base64,[A-Za-z0-9+/=]+)\]', ss_result)
-                    if ss_match:
-                        yield f"data: {json.dumps({'screenshot': ss_match.group(1)})}\n\n"
-
-        # Flush remaining text
-        flush_text = sentence_buf.strip()
-        if flush_text and not re.search(r'browser_\w+\(', flush_text):
+            result = await run_claude_agentic_loop(messages, all_tools)
+        except anthropic.APIError as e:
+            log.warning("Claude unavailable (%s) — falling back to local Ollama", e)
             try:
-                wav = await _piper_synthesize(flush_text)
-                yield f"data: {json.dumps({'audio': base64.b64encode(wav).decode(), 'text': flush_text})}\n\n"
-            except Exception as e:
-                log.error("Stream TTS flush error: %s", e)
-        full_text_final = full_text.strip()
+                result = await run_ollama_agentic_loop(messages, ollama_tools)
+            except Exception as e2:
+                log.error("Ollama fallback failed: %s", e2)
+        except Exception as e:
+            log.error("Stream Claude primary failed: %s", e)
 
-        # Final metadata line
-        yield f"data: {json.dumps({'done': True, 'response': full_text_final, 'tool_calls': all_tool_calls})}\n\n"
+        if result is None:
+            yield f"data: {json.dumps({'done': True, 'response': '', 'tool_calls': all_tool_calls, 'error': 'llm_unavailable'})}\n\n"
+            return
 
-        # Auto-remember: if user said "muista" but model didn't call remember
+        async for ev in _emit(result):
+            yield ev
+
+        # Auto-remember: if the user said "muista" but the model didn't call the
+        # remember tool, persist their message anyway.
         last_msg = messages[-1].get("content", "") if messages else ""
         called_remember = any(tc.get("tool") == "remember" for tc in all_tool_calls)
         if not called_remember and re.search(r'\bmuista\b', last_msg, re.IGNORECASE):
             log.info("Stream auto-remember: user said 'muista'")
             await _call_tool_safe("remember", {"content": last_msg}, 0, "auto-remember")
             all_tool_calls.append({"tool": "remember", "input": {"content": last_msg}})
-
         if any(tc.get("tool") == "remember" for tc in all_tool_calls):
             asyncio.create_task(_consolidate_memory())
 
