@@ -125,8 +125,20 @@ without needing a baseline (also handles cold-start after restart when the
 
 - **Auto-on**: dark + eligible + ELEVATED + not dismissed today →
   publish ON. Reason: `co2_occupancy_morning` or `co2_occupancy_evening`.
-- **Auto-off**: light is on AND (DROPPED OR `in_after_midnight_window`).
-  Reason: `co2_no_occupancy` or `after_midnight`.
+- **Auto-off**: only ever fires for a light **the optimizer switched on
+  itself** (it has a live `_co2_auto_on_at[idx]`). Fires when that light is
+  on AND (DROPPED OR `in_after_midnight_window`). Reason: `co2_no_occupancy`
+  or `after_midnight`.
+- **Manual on always wins**: if a CO₂-managed light is on but has **no**
+  `_co2_auto_on_at` record, the user switched it on manually — the optimizer
+  holds it (reason `manual_on`) and never auto-offs it (no `co2_no_occupancy`,
+  no `after_midnight`, no quench). It stays on until the user turns it off.
+  This is why switching the living-room ceiling on used to get killed on the
+  next tick / instantly after midnight: the no-occupancy path treated a
+  missing `auto_on_t` as "on forever ago" and the after-midnight rule fired
+  on any on light regardless of origin. Our own auto-ons keep their
+  `auto_on_t` across midnight, so a lingering auto-on still gets the
+  after-midnight off.
 - **Dismissal detection**: only fires after the publish has been
   *confirmed* by the relay. Tracked via `_co2_auto_on_confirmed[idx]`,
   set true once `is_on=1` is observed within the
