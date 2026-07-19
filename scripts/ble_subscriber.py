@@ -134,10 +134,16 @@ def on_message(client, userdata, msg):
     except (TypeError, ValueError):
         return
 
+    device_class = _classify(d.get("data", ""))
+    # Our own Ruuvi sensors advertise on BLE too, but they're stationary and
+    # already ingested as the `ruuvi` measurement — they add no value here and
+    # only inflate any presence count, so drop them.
+    if device_class == "ruuvi":
+        return
     p = (
         Point("ble")
         .tag("mac", mac)
-        .tag("device_class", _classify(d.get("data", "")))
+        .tag("device_class", device_class)
         .field("rssi", rssi)
         .time(datetime.now(timezone.utc), WritePrecision.S)
     )

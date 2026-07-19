@@ -188,15 +188,17 @@ def on_message(client, userdata, msg):
         payload = json.loads(msg.payload.decode('utf-8'))
         if not isinstance(payload, dict):
             return
-        # Raw BLE advertisement envelope from the gateway ({gw_mac, rssi, data,
-        # …}) — not a decoded Ruuvi tag. These are handled by the separate `ble`
-        # subscriber; skip silently here so they don't spam "Unknown data
-        # format" and attempt fieldless writes. Also skip the gw_status heartbeat.
-        if ("data" in payload and "gw_mac" in payload) or "state" in payload:
+        # Only decoded Ruuvi tag advertisements carry a known dataFormat (5 or
+        # 225). Raw BLE envelopes from other devices (handled by the `ble`
+        # subscriber) and the gw_status heartbeat have none — skip them silently.
+        # NOTE: this gateway's DECODED Ruuvi JSON also carries gw_mac/data
+        # alongside the decoded fields, so we must NOT skip on those keys (doing
+        # so dropped all Ruuvi temperature/CO₂ data).
+        data_format = payload.get("dataFormat")
+        if data_format not in (5, 225):
             return
         sensor_id = payload.get("id", "unknown")
         sensor_name = get_sensor_name(sensor_id)
-        data_format = payload.get("dataFormat")
 
         # Get timestamp from message or use current time
         ts = payload.get("ts")
@@ -208,12 +210,8 @@ def on_message(client, userdata, msg):
         # Process based on data format
         if data_format == 5:
             point = process_basic_ruuvi(payload, sensor_id, sensor_name)
-        elif data_format == 225:
+        else:  # 225 (air quality)
             point = process_advanced_ruuvi(payload, sensor_id, sensor_name)
-        else:
-            # Unknown format, try basic processing
-            print(f"Unknown data format {data_format} for sensor {sensor_id}")
-            point = process_basic_ruuvi(payload, sensor_id, sensor_name)
 
         # Set timestamp
         point = point.time(timestamp, WritePrecision.S)
