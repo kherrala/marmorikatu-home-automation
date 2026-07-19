@@ -518,6 +518,13 @@ async def run_claude_agentic_loop(messages: list[dict], tools: list[dict]) -> di
     """Run Claude agentic loop with tool execution against MCP servers."""
     all_tool_calls = []
 
+    # Work on our own copy: the loop appends assistant tool-use blocks and
+    # {"role":"user","content":[...tool_results]} entries as it iterates. Mutating
+    # the caller's list would leave messages[-1] a list (not the user's text),
+    # which then crashes the endpoints' auto-remember re.search, and would feed
+    # Claude's half-written tool artifacts to Ollama on mid-loop fallback.
+    messages = list(messages)
+
     for iteration in range(MAX_TOOL_ITERATIONS):
         response = await claude_client.messages.create(
             model=CLAUDE_MODEL,
