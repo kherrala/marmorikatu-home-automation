@@ -114,6 +114,10 @@ def on_disconnect(client, userdata, rc, properties=None, reason_code=None):
 
 
 def on_message(client, userdata, msg):
+    # Any received message (even the gw_status heartbeat) proves we're connected
+    # and the feed is alive — BLE arrives in bursts, so tie liveness to receipt,
+    # not to writes, or the container falsely goes unhealthy during quiet spells.
+    touch_health()
     try:
         d = json.loads(msg.payload.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError):
