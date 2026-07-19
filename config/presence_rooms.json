@@ -1,0 +1,27 @@
+{
+  "_comment": "Presence Engine room mapping. 'rooms' defines each room's sensor type + linger (how long the room stays 'occupied' after the last positive signal). 'devices' maps each Zigbee2MQTT friendly_name to a room — fill these in with the ACTUAL friendly names you give each sensor when pairing (see docs/presence-setup.md). Hot-reloaded on save. mmwave (FP300) reports stillness so uses a short linger; pir (SNZB-03PR2) uses a longer one so lights don't drop between re-triggers. Room names must match LIGHT_ROOM in scripts/lights_optimizer.py.",
+
+  "rooms": {
+    "living_room": { "type": "mmwave", "linger_s": 30,  "confidence": 0.95 },
+    "office":      { "type": "mmwave", "linger_s": 30,  "confidence": 0.95 },
+    "theater":     { "type": "mmwave", "linger_s": 45,  "confidence": 0.95 },
+    "hall_down":   { "type": "pir",    "linger_s": 90,  "confidence": 0.85 },
+    "hall_up":     { "type": "pir",    "linger_s": 90,  "confidence": 0.85 },
+    "wc_down":     { "type": "pir",    "linger_s": 90,  "confidence": 0.85 },
+    "wc_basement": { "type": "pir",    "linger_s": 90,  "confidence": 0.85 },
+    "bath_up":     { "type": "pir",    "linger_s": 600, "confidence": 0.85 },
+    "bedroom_seela":  { "type": "pir", "linger_s": 120, "confidence": 0.85 },
+    "bedroom_aarni":  { "type": "pir", "linger_s": 120, "confidence": 0.85 },
+    "bedroom_adults": { "type": "pir", "linger_s": 120, "confidence": 0.85 }
+  },
+
+  "devices": {
+    "_example_fp300_living": "living_room",
+    "_example_snzb_hall_down": "hall_down",
+    "_example_snzb_wc_down": "wc_down",
+    "_example_snzb_bath_up": "bath_up",
+    "_example_snzb_bedroom_seela": "bedroom_seela",
+    "_example_snzb_bedroom_aarni": "bedroom_aarni",
+    "_example_snzb_bedroom_adults": "bedroom_adults"
+  }
+}

@@ -1,0 +1,4 @@
+# Zigbee2MQTT runtime state (generated at first start) — do not track.
+*
+!.gitignore
+!configuration.yaml

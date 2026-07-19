@@ -150,6 +150,53 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # ── Presence platform (Zigbee) ──────────────────────────────────────────────
+  # Both services are under the `presence` compose profile so a normal
+  # `docker compose up -d` does NOT start them (zigbee2mqtt would crash-loop
+  # before the coordinator exists). When the SLZB-06U is on the network:
+  #   SLZB_HOST=<coordinator-ip> docker compose --profile presence up -d
+  # See docs/presence-setup.md.
+  zigbee2mqtt:
+    image: koenkk/zigbee2mqtt:latest
+    container_name: marmorikatu-zigbee2mqtt
+    profiles: ["presence"]
+    volumes:
+      - ./zigbee2mqtt:/app/data
+    ports:
+      - "8080:8080"      # web frontend for pairing devices
+    environment:
+      - TZ=Europe/Helsinki
+      - ZIGBEE2MQTT_CONFIG_MQTT_SERVER=mqtt://freenas.kherrala.fi:1883
+      # SLZB-06U (CC2652P) over the network. Set SLZB_HOST to its IP.
+      - ZIGBEE2MQTT_CONFIG_SERIAL_PORT=tcp://${SLZB_HOST:-192.168.1.50}:6638
+      - ZIGBEE2MQTT_CONFIG_SERIAL_ADAPTER=zstack
+    restart: unless-stopped
+
+  # Presence Engine: normalizes Zigbee occupancy (Aqara FP300 mmWave, SONOFF
+  # SNZB-03PR2 PIR) → per-room presence on presence/<room> + `presence`
+  # InfluxDB measurement — the contract the lights-optimizer consumes.
+  presence:
+    build:
+      context: .
+      dockerfile: Dockerfile.presence
+    container_name: marmorikatu-presence
+    profiles: ["presence"]
+    environment:
+      - MQTT_BROKER=freenas.kherrala.fi
+      - MQTT_PORT=1883
+      - Z2M_BASE_TOPIC=zigbee2mqtt
+      - INFLUXDB_URL=http://influxdb:8086
+      - INFLUXDB_TOKEN=wago-secret-token
+      - INFLUXDB_ORG=wago
+      - INFLUXDB_BUCKET=building_automation
+      - PRESENCE_ROOMS_FILE=/app/config/presence_rooms.json
+    volumes:
+      - ./config/presence_rooms.json:/app/config/presence_rooms.json:ro
+    depends_on:
+      influxdb:
+        condition: service_healthy
+    restart: unless-stopped
+
   thermia:
     build:
       context: .

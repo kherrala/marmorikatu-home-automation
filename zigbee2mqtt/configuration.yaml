@@ -1,0 +1,28 @@
+# Zigbee2MQTT configuration.
+# The MQTT server and the SLZB-06U coordinator address are supplied via
+# environment-variable overrides in docker-compose.yml (ZIGBEE2MQTT_CONFIG_*),
+# so this file has no host-specific values hard-coded. See docs/presence-setup.md.
+
+homeassistant: false        # we consume via the Presence Engine, not HA
+permit_join: false          # pair devices from the web frontend, one at a time
+
+mqtt:
+  base_topic: zigbee2mqtt
+  # server + user/password come from ZIGBEE2MQTT_CONFIG_MQTT_* env vars
+
+serial:
+  # port + adapter come from ZIGBEE2MQTT_CONFIG_SERIAL_* env vars
+  # (SLZB-06U over the network → tcp://<coordinator-ip>:6638, adapter zstack)
+
+frontend:
+  port: 8080
+
+advanced:
+  log_level: info
+  # network_key auto-generated on first start and persisted to this data dir.
+  channel: 25
+
+# Per-device overrides (friendly_name, retention, timeouts) can be added here
+# after pairing, e.g. tuning a SNZB-03PR2 occupancy_timeout.
+devices: {}
+groups: {}

@@ -110,13 +110,15 @@ BLE_AWAY_ENABLED = os.environ.get("BLE_AWAY_ENABLED", "0") in ("1", "true", "yes
 # own last command (hard floor against flapping; sits above the ~13 s PLC latency).
 MIN_DWELL_SECONDS = float(os.environ.get("MIN_DWELL_SECONDS", "300"))
 
-# Presence-Service contract (Core C). Confidence gate + vacancy timeouts. These
-# only take effect once a `presence` measurement exists for a room; until then
-# presence_for_room() returns None and the room keeps its interim behavior.
+# Presence-Service contract (Core C). Consumed once the Presence Engine writes a
+# `presence` measurement for a room; until then presence_for_room() returns None
+# and the room keeps its interim (comfort-first) behaviour.
 PRESENCE_MIN_CONFIDENCE = float(os.environ.get("PRESENCE_MIN_CONFIDENCE", "0.6"))
-ROOM_VACANCY_MIN = int(os.environ.get("ROOM_VACANCY_MIN", "12"))   # mmwave stay-still rooms
-TRANSIT_VACANCY_MIN = int(os.environ.get("TRANSIT_VACANCY_MIN", "4"))  # PIR transit areas
-BATH_VACANCY_MIN = int(os.environ.get("BATH_VACANCY_MIN", "15"))
+# Per-room vacancy TIMING lives in the Presence Engine (its per-room linger_s),
+# so the optimizer just needs a small on-time floor before a vacancy-off — it
+# bridges the race where a light is switched on a beat before the sensor reports
+# presence, so we don't instantly turn it back off.
+VACANCY_GRACE_MIN = float(os.environ.get("VACANCY_GRACE_MIN", "1.5"))
 
 # CO₂ (interim living-core occupancy). Ported from v1.
 CO2_AUTO_ON_DELTA_PPM = float(os.environ.get("CO2_AUTO_ON_DELTA_PPM", "20"))
@@ -168,13 +170,34 @@ CATS: dict[str, Cat] = {
     "living":     Cat(True,  False, True,  True,  None,                    MANUAL_HOLD_MIN, "living_core",  "mmwave"),
     "window":     Cat(False, True,  True,  True,  None,                    SHORT_HOLD_MIN,  None,           None),
     "accent":     Cat(False, False, True,  True,  None,                    MANUAL_HOLD_MIN, None,           None),
-    "circulation":Cat(False, False, True,  True,  CIRCULATION_TIMEOUT_MIN, SHORT_HOLD_MIN,  "hall",         "motion"),
+    # Transit + toilet + bedroom auto-ON on motion when dark (needs a real PIR
+    # in that room — no-op until the Presence Engine publishes it).
+    "circulation":Cat(True,  False, True,  True,  CIRCULATION_TIMEOUT_MIN, SHORT_HOLD_MIN,  "hall",         "motion"),
     "utility":    Cat(False, False, True,  True,  UTILITY_TIMEOUT_MIN,     SHORT_HOLD_MIN,  None,           "motion"),
-    "toilet":     Cat(False, False, False, True,  TOILET_TIMEOUT_MIN,      SHORT_HOLD_MIN,  None,           "motion"),
-    "bedroom":    Cat(False, False, True,  True,  None,                    BEDROOM_HOLD_MIN,None,           "mmwave"),
-    "office":     Cat(False, False, False, True,  None,                    MANUAL_HOLD_MIN, "office",       "mmwave"),
+    "toilet":     Cat(True,  False, False, True,  TOILET_TIMEOUT_MIN,      SHORT_HOLD_MIN,  None,           "motion"),
+    "bedroom":    Cat(True,  False, True,  True,  None,                    BEDROOM_HOLD_MIN,None,           "motion"),
+    "office":     Cat(True,  False, False, True,  None,                    MANUAL_HOLD_MIN, "office",       "mmwave"),
+    # Theater: mmWave prevents wrong auto-OFF during a movie, but NEVER auto-on
+    # (you set the mood manually) — motion mid-film must not relight it.
     "theater":    Cat(False, False, False, True,  None,                    MANUAL_HOLD_MIN, "theater",      "mmwave"),
     "outdoor":    Cat(False, True,  True,  False, None,                    SHORT_HOLD_MIN,  None,           None),
+}
+
+# Per-light PHYSICAL room → matches a room in config/presence_rooms.json. A light
+# uses this room's presence for auto-on/vacancy-off; lights not listed fall back
+# to their category's presence_room. Kitchen (8, 40) intentionally stays on
+# `living_core` (CO₂, no vacancy sensor) so a living-room FP300 going vacant
+# can't turn off the kitchen. Populate as sensors are installed; a room with no
+# sensor simply yields no presence (comfort-first hold), so this is safe now.
+LIGHT_ROOM: dict[int, str] = {
+    54: "living_room", 55: "living_room", 19: "living_room",   # living-room proper (FP300)
+    17: "office",                                              # office (future FP300)
+    49: "theater", 50: "theater", 51: "theater",              # basement theater
+    35: "hall_down", 37: "hall_down", 42: "hall_down",        # downstairs entry/stairs (PIR)
+    25: "hall_up", 26: "hall_up",                             # upstairs hall/stairs (PIR)
+    44: "wc_down", 45: "wc_down", 52: "wc_basement",          # WCs (PIR)
+    29: "bath_up", 34: "bath_up",                             # upstairs bathroom (PIR)
+    22: "bedroom_seela", 28: "bedroom_aarni", 33: "bedroom_adults",  # bedrooms (PIR)
 }
 
 # Light index → category. Every index in LIGHT_LABELS is covered. Special-block
@@ -771,12 +794,14 @@ def evaluate_light(idx: int, is_on: bool, now: datetime, sunrise: datetime,
 
     today = now.date()
 
-    # REAL per-room presence from the Presence Service ONLY (None until it's
-    # deployed). Deliberately does NOT include the kitchen-CO₂ signal: CO₂ is a
-    # weak proxy that lags and reads "dropped" when people sit still, so it may
-    # only ever turn a light ON (comfort), never OFF. Using it for vacancy-off
-    # was turning off the occupied kitchen/living room — the exact v1 bug.
-    presence = presence_for_room(cat.presence_room)
+    # REAL per-room presence from the Presence Engine ONLY (None until a sensor
+    # exists for this light's room). Deliberately does NOT include kitchen-CO₂:
+    # CO₂ lags and reads "dropped" when people sit still, so it may only ever
+    # turn a light ON (comfort), never OFF — using it for vacancy-off was the v1
+    # bug that turned off the occupied kitchen/living room. The room is the
+    # light's physical room (LIGHT_ROOM) or its category default.
+    room = LIGHT_ROOM.get(idx) or cat.presence_room
+    presence = presence_for_room(room)
 
     # ---- OFF (light currently on) ----
     if is_on:
@@ -794,14 +819,12 @@ def evaluate_light(idx: int, is_on: bool, now: datetime, sunrise: datetime,
             _act_off(idx, "daylight_off", cat_name, human_on, on_dur_min)
             return
         # 3) Presence vacancy-off — ONLY when a REAL presence signal says empty
-        #    (mmWave/PIR via the Presence Service). Never fires on CO₂/no-data.
-        if cat.presence_kind and presence is False:
-            vac = (BATH_VACANCY_MIN if cat_name in ("toilet",)
-                   else TRANSIT_VACANCY_MIN if cat.presence_kind == "motion"
-                   else ROOM_VACANCY_MIN)
-            if on_dur_min >= vac:
-                _act_off(idx, "vacancy_off", cat_name, human_on, on_dur_min)
-                return
+        #    (mmWave/PIR via the Presence Engine, which already applied the
+        #    room's linger). Never fires on CO₂/no-data. Small on-time floor
+        #    bridges the switch-on-before-sensor race.
+        if cat.presence_kind and presence is False and on_dur_min >= VACANCY_GRACE_MIN:
+            _act_off(idx, "vacancy_off", cat_name, human_on, on_dur_min)
+            return
         # 4) Overnight cull — forgotten lights only. A light turned on DURING
         #    the window (on_since ≥ window start) is protected. A room with real
         #    presence (occupied) is never culled.
@@ -831,9 +854,11 @@ def evaluate_light(idx: int, is_on: bool, now: datetime, sunrise: datetime,
         log_decision(idx, "hold", "dismissed_today", cat_name)
         return
     # Auto-ON occupancy: real presence if available, else the CO₂ interim signal
-    # for the living core. CO₂ is allowed to turn lights ON (it never turns off).
+    # for the living category (kitchen/dining/living). CO₂ is allowed to turn
+    # lights ON (it never turns off), so living lights keep comfort auto-on even
+    # before an FP300 is installed.
     occ_for_on = presence
-    if occ_for_on is None and cat.presence_room == "living_core":
+    if occ_for_on is None and cat_name == "living":
         occ_for_on = living_core_occupied()
     if occ_for_on is True:
         if publish_state(idx, True, "auto_on_comfort"):

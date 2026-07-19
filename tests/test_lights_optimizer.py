@@ -118,13 +118,15 @@ def harness(monkeypatch):
     state = {
         "since": datetime.now(timezone.utc) - timedelta(hours=2),
         "origin": "wall",
-        "presence": None,   # None|True|False (normalized per-room)
+        "presence": None,        # default per-room presence (None|True|False)
+        "presence_rooms": {},    # per-room override: {room: True|False|None}
         "co2": "BASELINE",
         "dwell": False,
     }
     monkeypatch.setattr(lo, "fetch_last_transition", lambda idx: (True, state["since"]))
     monkeypatch.setattr(lo, "classify_origin", lambda idx, is_on, since: state["origin"])
-    monkeypatch.setattr(lo, "_presence_for_room_uncached", lambda room: state["presence"])
+    monkeypatch.setattr(lo, "_presence_for_room_uncached",
+                        lambda room: state["presence_rooms"].get(room, state["presence"]))
     monkeypatch.setattr(lo, "_co2_signal_class_uncached", lambda: state["co2"])
     monkeypatch.setattr(lo, "within_min_dwell", lambda idx: state["dwell"])
     monkeypatch.setattr(lo, "publish_state",
@@ -235,4 +237,42 @@ def test_occupied_room_not_overnight_culled(harness):
     harness["state"]["since"] = datetime(2026, 1, 15, 22, 0, tzinfo=timezone.utc)
     harness["state"]["presence"] = True
     _eval(54, True, _local(2026, 1, 16, 3, 0))
+    assert harness["published"] == []
+
+
+# ── Per-room presence + motion auto-on (Zigbee Presence Engine) ───────────────
+def test_toilet_motion_auto_on_when_dark(harness):
+    harness["state"]["presence_rooms"] = {"wc_down": True}   # PIR sees motion
+    _eval(44, False, _local(2026, 1, 15, 18, 0), dark=True)
+    assert (44, True, "auto_on_comfort") in harness["published"]
+
+
+def test_hall_motion_auto_on_when_dark(harness):
+    harness["state"]["presence_rooms"] = {"hall_down": True}
+    _eval(35, False, _local(2026, 1, 15, 18, 0), dark=True)
+    assert (35, True, "auto_on_comfort") in harness["published"]
+
+
+def test_theater_never_auto_on_even_with_presence(harness):
+    # mmWave present + dark, but theater must not relight (movie mood is manual).
+    harness["state"]["presence_rooms"] = {"theater": True}
+    _eval(49, False, _local(2026, 1, 15, 20, 0), dark=True)
+    assert harness["published"] == []
+
+
+def test_living_room_fp300_vacancy_does_not_kill_kitchen(harness):
+    # FP300 (living_room) reads vacant, but the kitchen (idx 40, room=living_core,
+    # no sensor) must NOT be turned off by it.
+    harness["state"]["presence_rooms"] = {"living_room": False}  # living_core → None
+    harness["state"]["since"] = datetime.now(timezone.utc) - timedelta(minutes=30)
+    _eval(40, True, _local(2026, 1, 15, 14, 0))
+    assert harness["published"] == []
+    # ...while the living-room ceiling (54, room=living_room) IS turned off.
+    _eval(54, True, _local(2026, 1, 15, 14, 0))
+    assert (54, False, "vacancy_off") in harness["published"]
+
+
+def test_motion_auto_on_suppressed_when_not_dark(harness):
+    harness["state"]["presence_rooms"] = {"wc_down": True}
+    _eval(44, False, _local(2026, 6, 15, 13, 0), dark=False)
     assert harness["published"] == []
