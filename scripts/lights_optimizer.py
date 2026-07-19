@@ -20,7 +20,7 @@ Provenance (the core fix for v1's "flapping"):
   press. So the optimizer can tell WHO last set a light and never auto-offs a
   human's light during awake hours. (The PLC `/set` accepts only bare
   `true`/`false` — enriching that payload was tested and rejected; see
-  memory/plc_command_channel.md. Commands actuate ~12–13 s later, so all
+  docs/plc-command-channel.md. Commands actuate ~12–13 s later, so all
   confirm/min-dwell windows sit well above that.)
 
 Presence (Core C): the optimizer consumes a NORMALIZED per-room occupancy

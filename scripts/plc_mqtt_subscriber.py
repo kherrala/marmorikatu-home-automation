@@ -569,7 +569,7 @@ def _handle_light_command(idx_str, msg):
     `{"on": bool, "src": "optimizer|mobile|mcp|voice", "ts": ...}` alongside
     their unchanged `/set` command so the optimizer can tell WHO turned a
     light on/off. The PLC never sees this topic (its `/set` binding accepts
-    only bare `true`/`false` — see memory/plc_command_channel.md). Wall
+    only bare `true`/`false` — see docs/plc-command-channel.md). Wall
     switches emit no breadcrumb, so a `lights/is_on` change with no matching
     `light_command` row is inferred as a physical wall press.
     """

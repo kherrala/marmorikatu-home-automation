@@ -261,7 +261,7 @@ def _publish_command_breadcrumb(idx, on):
     """Emit marmorikatu/light/<idx>/command so the lights-optimizer can tell an
     MCP/voice command apart from a physical wall press. Side-channel only — the
     PLC's `/set` binding accepts bare `true`/`false` only (see
-    memory/plc_command_channel.md). Best-effort; never blocks the /set command."""
+    docs/plc-command-channel.md). Best-effort; never blocks the /set command."""
     topic = f"{MQTT_TOPIC_PREFIX}/light/{idx}/command"
     try:
         mqtt_publish.single(

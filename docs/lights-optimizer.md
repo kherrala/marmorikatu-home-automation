@@ -22,7 +22,7 @@ The PLC, the mobile app, and voice/MCP all drive lights by publishing
 `marmorikatu/light/<idx>/set` = `true`/`false`. That payload is consumed by an
 out-of-repo WBM Native-MQTT→`Controls[]` BOOL binding that accepts **only** the
 bare `true`/`false` (enriching it with a source field was tested live and
-**rejected** — see `memory/plc_command_channel.md`; commands also actuate
+**rejected** — see [docs/plc-command-channel.md](plc-command-channel.md); commands also actuate
 ~12–13 s later). So provenance travels on a **side-channel** topic instead:
 
 - Every software controller also publishes `marmorikatu/light/<idx>/command` =
@@ -99,9 +99,23 @@ fires for the flags set — an unset flag means that cull never happens for the 
 `*` idx 39 (Tekninen tila) is categorized `utility` but is also a post-sauna
 special light (handled by the sauna block, skipped in the category loop).
 
-A human's ON is **held** during awake hours for every category — the auto-off
-rules above are the *only* ways a light turns off, and each is scoped to the
-genuinely-forgotten case. `manual_locked` is recorded on the decision either way.
+### Does the optimizer ever turn things off? Yes — a lot.
+
+Human provenance does **not** globally veto auto-off. The **high-confidence culls
+above fire regardless of who switched the light on** — a window light gets a
+`daylight_off` even if you flipped it, a forgotten hall light gets `overnight_off`,
+a toilet/closet gets its `duration_cap`, and *everything* gets `away_off` when the
+house is empty. (In the live test, the optimizer turned off a basement WC a human
+had switched on, via `duration_cap`, while leaving the occupied kitchen and living
+room alone.)
+
+What comfort-first actually restricts is narrow: the **living / office / theater**
+categories simply have *no* daytime or occupancy off-rule, so you're never plunged
+into darkness while using a room — but they still go off on `away_off` (and living
+on `overnight_off` if forgotten). The one thing provenance truly *prevents* is the
+**re-fight**: if the optimizer auto-on'd a light and you turn it off, it is marked
+dismissed and won't turn it back on today (`detect_dismissals`). `manual_locked` is
+recorded on every decision for observability.
 
 ### Overnight cull (gentle)
 
