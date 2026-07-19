@@ -252,6 +252,31 @@ async def handle_get_light_status(arguments):
         return [TextContent(type="text", text=f"Error: {e}")]
 
 
+def _command_breadcrumb_payload(on):
+    """JSON provenance breadcrumb marking this command as MCP-originated."""
+    return json.dumps({"on": bool(on), "src": "mcp", "ts": int(time.time())})
+
+
+def _publish_command_breadcrumb(idx, on):
+    """Emit marmorikatu/light/<idx>/command so the lights-optimizer can tell an
+    MCP/voice command apart from a physical wall press. Side-channel only — the
+    PLC's `/set` binding accepts bare `true`/`false` only (see
+    memory/plc_command_channel.md). Best-effort; never blocks the /set command."""
+    topic = f"{MQTT_TOPIC_PREFIX}/light/{idx}/command"
+    try:
+        mqtt_publish.single(
+            topic=topic,
+            payload=_command_breadcrumb_payload(on),
+            qos=1,
+            retain=False,
+            hostname=MQTT_BROKER,
+            port=MQTT_PORT,
+            client_id="marmorikatu-mcp-cmd",
+        )
+    except Exception as e:
+        log.warning("command breadcrumb to %s failed: %s", topic, e)
+
+
 def _publish_set(idx, on, client_id):
     """Publish 'true'/'false' to marmorikatu/light/<idx>/set."""
     topic = f"{MQTT_TOPIC_PREFIX}/light/{idx}/set"
@@ -265,6 +290,7 @@ def _publish_set(idx, on, client_id):
         port=MQTT_PORT,
         client_id=client_id,
     )
+    _publish_command_breadcrumb(idx, on)
     return topic, payload
 
 
@@ -301,6 +327,16 @@ def _publish_batch(indices, on, client_id):
             except Exception as e:
                 failed.append(idx)
                 log.warning("publish to %s failed: %s", topic, e)
+            # Provenance breadcrumb on the same connection (side-channel topic).
+            try:
+                client.publish(
+                    f"{MQTT_TOPIC_PREFIX}/light/{idx}/command",
+                    _command_breadcrumb_payload(on),
+                    qos=1,
+                    retain=False,
+                )
+            except Exception as e:
+                log.warning("command breadcrumb for light %s failed: %s", idx, e)
             time.sleep(BATCH_INTER_PUBLISH_DELAY)
     finally:
         client.loop_stop()

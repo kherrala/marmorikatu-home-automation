@@ -23,6 +23,9 @@ Complete schema reference for the building automation InfluxDB database.
 | `lights` | MQTT (`marmorikatu/lights`, `/outlets`) | ~13 s | `light_id`, `light_name`, `floor`, `floor_name`, `switch_type` | Light switch on/off status, outdoor outlets |
 | `switches` | MQTT (`marmorikatu/switches`) | ~13 s | `switch_id`, `switch_name`, `floor`, `floor_name` | Wall-switch press states |
 | `plc_publisher` | MQTT (`marmorikatu/status`) | ~13 s | — | PLC publisher heartbeat counters |
+| `light_command` | MQTT (`marmorikatu/light/<idx>/command`) | per command | `light_id`, `light_name`, `source` | Provenance breadcrumb — who commanded a light (`optimizer`/`mobile`/`mcp`/`voice`); field `is_on` (0/1) |
+| `ble` | MQTT (Ruuvi Gateway raw BLE) | per sighting | `mac`, `device_class`, `name`? | BLE-identity sightings for whole-house presence; field `rssi` (int dBm) |
+| `lights_optimizer` | `scripts/lights_optimizer.py` | per tick/light | `light_id`, `light_name`, `category` | Lights-optimizer decision log; fields `decision`, `reason`, `manual_locked`, `on_duration_min`, `dry_run` |
 
 For the publishing protocol see `../marmorikatu-plc/MQTT.md`.
 

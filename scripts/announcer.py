@@ -610,16 +610,16 @@ COOLED_FLOORS = {
     "alakerta": ("Alakerta", "alakerran jäähdytys"),
 }
 
-# Map raw lights_optimizer reason strings → spoken description + priority.
-# Many reasons are diagnostic-only ("hold", "manual_only") — only call out the
-# user-relevant transitions (auto-off fired, sauna laude on/off, CO2 auto-on/off,
-# post-sauna cleanup, porch schedule).
+# Map raw lights_optimizer decisions → spoken description + priority.
+# v2 keys on the (distinct) `reason` string rather than `category`, so it is
+# robust to category renames. Many reasons are diagnostic-only ("hold",
+# "min_dwell_hold", "no_off_rule") — only user-relevant transitions are spoken.
 def _format_lights_optimizer(row: dict) -> Event | None:
     decision = (row.get("decision") or "").lower()
     reason   = (row.get("reason") or "").lower()
-    category = (row.get("category") or "").lower()
     name     = row.get("light_name") or "Valo"
     on_dur   = row.get("on_duration_min")
+    light_id = row.get("light_id", "")
     ts       = (row.get("ts") or datetime.now(timezone.utc)).timestamp()
 
     # Skip "hold" — it's the no-op outcome.
@@ -627,42 +627,42 @@ def _format_lights_optimizer(row: dict) -> Event | None:
         return None
 
     # Sauna laude (idx 4) — sensor-driven temperature hysteresis.
-    if category == "sauna_laude":
-        if decision == "on":
-            return Event("Saunan laudevalo syttyi automaattisesti löylyjä varten.",
-                         "lights_opt_sauna_on", 1, "lights_opt_sauna_laude", ts)
-        else:
-            return Event("Saunan laudevalo sammui — sauna on jäähtynyt.",
-                         "lights_opt_sauna_off", 1, "lights_opt_sauna_laude", ts)
+    if reason.startswith("sauna_heated"):
+        return Event("Saunan laudevalo syttyi automaattisesti löylyjä varten.",
+                     "lights_opt_sauna_on", 1, "lights_opt_sauna_laude", ts)
+    if reason.startswith("sauna_cooled"):
+        return Event("Saunan laudevalo sammui — sauna on jäähtynyt.",
+                     "lights_opt_sauna_off", 1, "lights_opt_sauna_laude", ts)
 
     # Post-sauna cleanup of bathroom + sauna ceiling (idx 1, 38, 39).
-    if category == "sauna_post_session":
+    if reason.startswith("post_sauna"):
         return Event(f"{name} sammutettiin saunavuoron päätteeksi.",
                      "lights_opt_post_sauna", 1,
-                     f"lights_opt_post_sauna:{row.get('light_id','')}", ts)
+                     f"lights_opt_post_sauna:{light_id}", ts)
 
-    # CO2-auto kitchen + livingroom ceiling.
-    if category == "co2_auto":
-        if decision == "on":
-            return Event(f"{name} syttyi koholla olevan hiilidioksidipitoisuuden vuoksi.",
-                         "lights_opt_co2_on", 1,
-                         f"lights_opt_co2:{row.get('light_id','')}", ts)
-        else:
-            return Event(f"{name} sammui — ilma on raikastunut tai on yöaika.",
-                         "lights_opt_co2_off", 2,
-                         f"lights_opt_co2:{row.get('light_id','')}", ts)
-
-    # Porch schedule.
-    if category == "porch_schedule":
+    # Front porch schedule / Unifi hold.
+    if reason.startswith("porch"):
         if decision == "on":
             return Event("Etupihan valo syttyi auringonlaskun mukana.",
                          "lights_opt_porch_on", 2, "lights_opt_porch", ts)
-        else:
-            return Event("Etupihan valo sammui yön ajaksi.",
-                         "lights_opt_porch_off", 2, "lights_opt_porch", ts)
+        return Event("Etupihan valo sammui yön ajaksi.",
+                     "lights_opt_porch_off", 2, "lights_opt_porch", ts)
 
-    # Generic auto-off (toilet timeout, bedroom timeout, daylight, unoccupied …).
+    # Comfort auto-on (living core, dark + occupied).
+    if decision == "on" and reason == "auto_on_comfort":
+        return Event(f"{name} syttyi automaattisesti hämärän aikaan.",
+                     "lights_opt_auto_on", 1, f"lights_opt_on:{light_id}", ts)
+
+    # Auto-off variants — tailored message per high-confidence cull reason.
     if decision == "off":
+        OFF_MESSAGES = {
+            "daylight_off":  f"{name} sammutettiin — ulkona on valoisaa.",
+            "overnight_off": f"{name} sammutettiin yöksi.",
+            "away_off":      f"{name} sammutettiin, koska kotona ei ole ketään.",
+            "vacancy_off":   f"{name} sammutettiin — huone on tyhjä.",
+            "duration_cap":  f"{name} sammutettiin automaattisesti.",
+        }
+        base = OFF_MESSAGES.get(reason, f"{name} sammutettiin automaattisesti.")
         suffix = ""
         if on_dur:
             try:
@@ -671,9 +671,9 @@ def _format_lights_optimizer(row: dict) -> Event | None:
                     suffix = f" Se oli päällä {mins} minuuttia."
             except (TypeError, ValueError):
                 pass
-        msg = f"{name} sammutettiin automaattisesti.{suffix}"
-        return Event(msg, "lights_opt_auto_off", 1,
-                     f"lights_opt_off:{row.get('light_id','')}", ts)
+        prio = 2 if reason in ("daylight_off", "overnight_off") else 1
+        return Event(base + suffix, "lights_opt_auto_off", prio,
+                     f"lights_opt_off:{light_id}", ts)
 
     return None
 

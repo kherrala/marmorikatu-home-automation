@@ -1,38 +1,41 @@
 #!/usr/bin/env python3
 """
-Auto-off lights optimizer.
+Lights optimizer v2 — comfort-first, provenance-aware.
 
-Periodically inspects the current state of every light in the Marmorikatu
-home and turns off those that are demonstrably forgotten on. Rules are
-per-category (toilet, bedroom, kitchen, …) — see LIGHT_POLICY / POLICIES
-below.
+Design goals (see docs/lights-optimizer.md and the v2 spec):
+  * NEVER fight an active user. A light a human turned on (wall switch, mobile
+    app, or voice/MCP) is held; the optimizer only ever turns OFF lights that
+    are demonstrably forgotten.
+  * Comfort auto-ON in the dark for the rooms the family lives in.
+  * Energy savings only from HIGH-confidence culls: daylight waste on
+    window/outdoor/decorative lights, whole-house-away, deep-night overnight,
+    and duration caps on transient rooms.
 
-Also runs a few sensor- or schedule-driven ON/OFF blocks:
-  - Front porch (Sisäänkäynti, idx 47): ON when it's actually getting
-    dark (sun elevation < SUN_DARK_ELEVATION_DEG, default 8°) AND
-    within the evening window (12:00 → PORCH_OFF_HOUR). Skips the porch
-    entirely on midsummer evenings when sun never dips below 8°.
-  - Sauna laude LED (idx 4): hysteresis on Ruuvi Sauna temperature
-    (50–55 °C dead-band).
-  - Post-sauna cooldown auto-off (idx 1, 38, 39): once the sauna has
-    been below SAUNA_AFTER_OFF_C for SAUNA_AFTER_DELAY_MIN minutes
-    after a session, turn these `manual_only` lights off.
-  - CO₂-driven kitchen + livingroom ceiling lights (idx 40, 54):
-    auto-on when dark and CO₂ rising, auto-off when CO₂ drops or
-    after midnight; user dismissal blocks re-enable until next day.
+Provenance (the core fix for v1's "flapping"):
+  Every software controller (this optimizer, the mobile app, MCP/voice) also
+  publishes a breadcrumb to `marmorikatu/light/<idx>/command`
+  {"on":bool,"src":...} beside its `/set` command. `plc_mqtt_subscriber`
+  records these as the `light_command` measurement. A `lights/is_on`
+  transition with NO matching breadcrumb is inferred to be a physical wall
+  press. So the optimizer can tell WHO last set a light and never auto-offs a
+  human's light during awake hours. (The PLC `/set` accepts only bare
+  `true`/`false` — enriching that payload was tested and rejected; see
+  memory/plc_command_channel.md. Commands actuate ~12–13 s later, so all
+  confirm/min-dwell windows sit well above that.)
 
-Occupancy is detected from three signals over rolling windows:
-  - Wall switches pressed (`switches` measurement)
-  - Lights freshly turned on (positive jump in `lights/is_on`)
-  - Keittiö Ruuvi CO₂ (`ruuvi/co2` for sensor_name=Keittiö) rising vs baseline
+Presence (Core C): the optimizer consumes a NORMALIZED per-room occupancy
+  signal (`presence` measurement / `presence/<room>` — written by the separate
+  Presence Service project). Until that lands, it degrades to interim signals:
+  kitchen-CO₂ for the open-plan living core, astronomical darkness, and
+  BLE-identity "anyone home" (`ble` measurement) for whole-house-away, with a
+  legacy activity fallback.
 
-Sunrise/sunset is computed locally from HOME_LAT/HOME_LON via the `astral`
-library — no API dependency.
-
-Decisions are logged to InfluxDB measurement `lights_optimizer` for later
-review via Grafana / the MCP `get_lights_optimizer_status` tool.
+Special blocks (ported from v1, they work well): front porch (idx 47,
+  sun-elevation schedule + Unifi hold), sauna laude LED (idx 4, temperature
+  hysteresis), post-sauna cooldown (idx 1/38/39).
 """
 
+import json
 import logging
 import math
 import os
@@ -67,206 +70,136 @@ HOME_LAT = float(os.environ.get("HOME_LAT") or os.environ.get("WEATHER_LAT") or 
 HOME_LON = float(os.environ.get("HOME_LON") or os.environ.get("WEATHER_LON") or "23.7610")
 
 CHECK_INTERVAL = int(os.environ.get("CHECK_INTERVAL", "60"))
+MAX_CONSECUTIVE_FAILURES = int(os.environ.get("MAX_CONSECUTIVE_FAILURES", "5"))
+
+# Darkness threshold (astronomical sun elevation, °). Shared by porch + auto-on.
+SUN_DARK_ELEVATION_DEG = float(os.environ.get("SUN_DARK_ELEVATION_DEG", "8"))
+# Daylight-off only fires between sunrise+grace and sunset (real daylight hours).
 SUNRISE_GRACE_MIN = int(os.environ.get("SUNRISE_GRACE_MIN", "60"))
-WORKDAY_START_HOUR = int(os.environ.get("WORKDAY_START_HOUR", "9"))
-WORKDAY_END_HOUR = int(os.environ.get("WORKDAY_END_HOUR", "16"))
-TOILET_TIMEOUT_MIN = int(os.environ.get("TOILET_TIMEOUT_MIN", "30"))
-STAIRCASE_TIMEOUT_MIN = int(os.environ.get("STAIRCASE_TIMEOUT_MIN", "30"))
-OCCUPANCY_WINDOW_MIN = int(os.environ.get("OCCUPANCY_WINDOW_MIN", "30"))
-LONG_ABSENCE_MIN = int(os.environ.get("LONG_ABSENCE_MIN", "120"))
-CO2_OCCUPANCY_DELTA_PPM = float(os.environ.get("CO2_OCCUPANCY_DELTA_PPM", "30"))
-# Grace period after a manual on-press for kitchen / livingroom / general
-# categories. After this many minutes the auto-off rules (`during_daylight`,
-# `house_unoccupied`, `after_midnight`) can fire. Default 90 min — short
-# enough that a forgotten light during an empty workday eventually gets
-# culled, long enough that setting the dinner table, cooking, or hanging
-# out in the living room doesn't get cut short by the optimizer at the
-# 15-minute mark. (Was 15.)
+
+# Manual-grace windows (minutes) — after a human turns a light on, the "soft"
+# rules (duration cap) are suppressed for at least this long.
 MANUAL_HOLD_MIN = int(os.environ.get("MANUAL_HOLD_MIN", "90"))
 BEDROOM_HOLD_MIN = int(os.environ.get("BEDROOM_HOLD_MIN", "30"))
-# Liveness: every successful tick calls touch_health() (see scripts/health.py);
-# a Docker HEALTHCHECK watches the file mtime so a stuck/looping-but-failing
-# optimizer shows up as "(unhealthy)" in `docker compose ps` (the midsummer
-# crash was invisible there because the container kept running while every tick
-# threw). After MAX_CONSECUTIVE_FAILURES ticks all throwing, exit non-zero so
-# the restart policy crash-loops it loudly rather than failing silently forever.
-MAX_CONSECUTIVE_FAILURES = int(os.environ.get("MAX_CONSECUTIVE_FAILURES", "5"))
-PORCH_OFF_HOUR = int(os.environ.get("PORCH_OFF_HOUR", os.environ.get("TERRACE_OFF_HOUR", "23")))
-# After-midnight auto-off rule (toilet / staircase / bedroom / kitchen / etc.
-# policies that opt in via `auto_off_after_midnight=True`) only fires while
-# wall-clock is inside [AFTER_MIDNIGHT_START_HOUR:30, AFTER_MIDNIGHT_END_HOUR).
-# Default end at 05:00 — early-risers' bathroom routine (06–07 local) used to
-# overlap with the previous 07:00 cutoff, causing the optimizer to flap-off
-# the toilet light every minute against an active user. After 05:00 the
-# regular per-category duration timeout (TOILET_TIMEOUT_MIN etc.) takes over.
-AFTER_MIDNIGHT_END_HOUR = int(os.environ.get("AFTER_MIDNIGHT_END_HOUR", "5"))
-# Sun elevation below this (°) → "dark enough indoors" for CO₂-driven auto-on
-# AND for the front-porch schedule.
-# 8° lands roughly 30–60 min either side of horizon depending on latitude/
-# season — covers the Finnish dim-evening / dim-morning the user notices.
-SUN_DARK_ELEVATION_DEG = float(os.environ.get("SUN_DARK_ELEVATION_DEG", "8"))
+SHORT_HOLD_MIN = int(os.environ.get("SHORT_HOLD_MIN", "5"))
 
-# Sauna laude (bench) LED auto-control: track Ruuvi Sauna temperature.
-# Hysteresis dead-band (50–55°C) prevents flapping when löyly is poured.
+# Duration caps for transient categories (minutes since on).
+TOILET_TIMEOUT_MIN = int(os.environ.get("TOILET_TIMEOUT_MIN", "30"))
+CIRCULATION_TIMEOUT_MIN = int(os.environ.get("CIRCULATION_TIMEOUT_MIN", "25"))
+UTILITY_TIMEOUT_MIN = int(os.environ.get("UTILITY_TIMEOUT_MIN", "30"))
+
+# Overnight "gentle" cull window (local). A light turned on DURING the window
+# (night bathroom / up-late kid) is protected by min-dwell + on_since.
+OVERNIGHT_START_HOUR = int(os.environ.get("OVERNIGHT_START_HOUR", "0"))
+OVERNIGHT_START_MIN = int(os.environ.get("OVERNIGHT_START_MIN", "30"))
+OVERNIGHT_END_HOUR = int(os.environ.get("OVERNIGHT_END_HOUR", "6"))
+
+# Whole-house-away confirmation.
+LONG_ABSENCE_MIN = int(os.environ.get("LONG_ABSENCE_MIN", "180"))
+AWAY_CONFIRM_MIN = int(os.environ.get("AWAY_CONFIRM_MIN", "15"))
+BLE_RSSI_INSIDE = float(os.environ.get("BLE_RSSI_INSIDE", "-80"))
+BLE_WINDOW_MIN = int(os.environ.get("BLE_WINDOW_MIN", "5"))
+
+# Idempotent reconciler: never reverse a light within MIN_DWELL_SECONDS of our
+# own last command (hard floor against flapping; sits above the ~13 s PLC latency).
+MIN_DWELL_SECONDS = float(os.environ.get("MIN_DWELL_SECONDS", "300"))
+
+# Presence-Service contract (Core C). Confidence gate + vacancy timeouts. These
+# only take effect once a `presence` measurement exists for a room; until then
+# presence_for_room() returns None and the room keeps its interim behavior.
+PRESENCE_MIN_CONFIDENCE = float(os.environ.get("PRESENCE_MIN_CONFIDENCE", "0.6"))
+ROOM_VACANCY_MIN = int(os.environ.get("ROOM_VACANCY_MIN", "12"))   # mmwave stay-still rooms
+TRANSIT_VACANCY_MIN = int(os.environ.get("TRANSIT_VACANCY_MIN", "4"))  # PIR transit areas
+BATH_VACANCY_MIN = int(os.environ.get("BATH_VACANCY_MIN", "15"))
+
+# CO₂ (interim living-core occupancy). Ported from v1.
+CO2_AUTO_ON_DELTA_PPM = float(os.environ.get("CO2_AUTO_ON_DELTA_PPM", "20"))
+CO2_AUTO_ON_ABSOLUTE_PPM = float(os.environ.get("CO2_AUTO_ON_ABSOLUTE_PPM", "580"))
+CO2_AUTO_OFF_DELTA_PPM = float(os.environ.get("CO2_AUTO_OFF_DELTA_PPM", "100"))
+CO2_AUTO_OFF_ABSOLUTE_PPM = float(os.environ.get("CO2_AUTO_OFF_ABSOLUTE_PPM", "450"))
+
+# Front porch schedule (idx 47).
+PORCH_OFF_HOUR = int(os.environ.get("PORCH_OFF_HOUR", os.environ.get("TERRACE_OFF_HOUR", "23")))
+
+# Sauna laude LED (idx 4) hysteresis.
 SAUNA_LAUDE_IDX = 4
 SAUNA_LAUDE_ON_C = float(os.environ.get("SAUNA_LAUDE_ON_C", "55"))
 SAUNA_LAUDE_OFF_C = float(os.environ.get("SAUNA_LAUDE_OFF_C", "50"))
 
-# Post-sauna cooldown auto-off for the bathroom + sauna ceiling lights.
-# Logic: when the sauna has been heated above SAUNA_AFTER_PEAK_C in the
-# past SAUNA_AFTER_LOOKBACK_H hours AND has now been below
-# SAUNA_AFTER_OFF_C for at least SAUNA_AFTER_DELAY_MIN minutes, infer
-# the session has ended and auto-off lights that were left on. These
-# lights are otherwise `manual_only` (idx 1, 38, 39) since a regular
-# auto-off timer would cut showers/baths short — the sauna temperature
-# drop is a much more reliable "session over" signal than a wall clock.
+# Post-sauna cooldown auto-off for bathroom + sauna ceiling lights.
 SAUNA_AFTER_LIGHTS = (1, 38, 39)
 SAUNA_AFTER_PEAK_C = float(os.environ.get("SAUNA_AFTER_PEAK_C", "55"))
 SAUNA_AFTER_OFF_C = float(os.environ.get("SAUNA_AFTER_OFF_C", "40"))
 SAUNA_AFTER_DELAY_MIN = int(os.environ.get("SAUNA_AFTER_DELAY_MIN", "30"))
 SAUNA_AFTER_LOOKBACK_H = int(os.environ.get("SAUNA_AFTER_LOOKBACK_H", "6"))
 
-# CO₂-driven auto-on/off for kitchen + living-room ceiling lights.
-# - Evening (after sunset): kitchen (40) AND living-room (54).
-# - Morning (before sunrise + SUNRISE_GRACE_MIN): kitchen (40) only.
-# - Auto-off any time CO₂ has clearly dropped (occupancy gone) or after midnight.
-# - If user manually turns off after we auto-on, suppress until next day.
-CO2_AUTO_KITCHEN_IDX = 40       # Keittiö kattovalo
-CO2_AUTO_LIVINGROOM_IDX = 54    # Olohuone kattovalo
-CO2_AUTO_MANAGED = (CO2_AUTO_KITCHEN_IDX, CO2_AUTO_LIVINGROOM_IDX)
-# Sliding baseline (last 30→5 min) is too short — when occupancy ramps up
-# slowly, both the recent and baseline windows track the rise and the delta
-# stays small. Anchor the baseline further back (~2 h ago) so a steady climb
-# becomes visible. Defaults below trigger ELEVATED on a single occupant in
-# the kitchen / adjacent room within ~15–30 min of arrival.
-CO2_AUTO_ON_DELTA_PPM = float(os.environ.get("CO2_AUTO_ON_DELTA_PPM", "20"))
-CO2_AUTO_ON_ABSOLUTE_PPM = float(os.environ.get("CO2_AUTO_ON_ABSOLUTE_PPM", "580"))
-# DROPPED is now stricter than ELEVATED to provide real hysteresis. The
-# previous 500 ppm absolute threshold was barely above outdoor (~420) and
-# too close to "single occupant settled" levels (550–650 ppm), causing the
-# kitchen light to flap on/off when CO₂ wandered through the dead-band.
-CO2_AUTO_OFF_DELTA_PPM = float(os.environ.get("CO2_AUTO_OFF_DELTA_PPM", "100"))
-CO2_AUTO_OFF_ABSOLUTE_PPM = float(os.environ.get("CO2_AUTO_OFF_ABSOLUTE_PPM", "450"))
-# Minimum on-time after a CO₂-driven auto-on before another auto-off can
-# fire. Hard floor against rapid flapping when CO₂ wanders just above the
-# threshold and dips briefly. Manual off (= dismissal) bypasses this.
-CO2_AUTO_MIN_ON_SECONDS = float(os.environ.get("CO2_AUTO_MIN_ON_SECONDS", "1200"))
-
 DRY_RUN = os.environ.get("DRY_RUN", "0") in ("1", "true", "yes")
 
-# ── Light category map ────────────────────────────────────────────────────────
-# Names in comments are from light_labels.LIGHT_LABELS (buttontxt source).
-LIGHT_POLICY: dict[int, str] = {
-    # Never auto-managed. Includes the windowless basement (no daylight, no
-    # occupancy proxy) and the downstairs bedroom that doubles as a daytime
-    # home office (kitchen-Ruuvi CO₂ doesn't see her there, so the workday
-    # rule was turning lights off mid-Zoom-call).
-    # NOTE: light idx 4 (Saunan laude ledi) is NOT here — it has its own
-    # temperature-driven block in check_and_control(), see SAUNA_LAUDE_IDX.
-    17: "manual_only",  # MH alakerta kattovalo — downstairs bedroom doubles
-                        # as a daytime workspace; the ceiling light needs
-                        # to stay on during Zoom calls regardless of the
-                        # kitchen-Ruuvi-CO₂ occupancy proxy missing her.
-    18: "bedroom_window",  # MH alakerta ikkuna — only the kattovalo (17)
-                        # needs the workspace exemption; the window light
-                        # also auto-offs in daylight (bedroom_window) since
-                        # the workspace has natural light during the day.
-    1:  "manual_only",  # Kylpyhuone alakerta — bathroom needs to stay on for
-                        # showers/baths; no Ruuvi sensor here so we can't
-                        # drive it from humidity like the sauna laude LED
-                        # tracks temperature, so behave like the regular
-                        # sauna ceiling lights (idx 38, 39): no auto-off,
-                        # user toggles manually.
-    38: "manual_only", 39: "manual_only",
-    48: "outdoor",      # Ulkovalo terassi — auto-off in daylight / after
-                        # midnight, never auto-on (user switches it on for
-                        # evenings; it just won't get left on overnight).
-    49: "manual_only",  # Kellari etuosa
-    50: "manual_only",  # Kellari takaosa
-    51: "manual_only",  # Biljardipöytä
-    52: "manual_only",  # WC kellari
-    59: "manual_only", 61: "manual_only",
-    60: "outdoor",      # Varasto ulkovalo — outdoor, same auto-off as terrace
-
-    53: "general",     # Kellari varasto — small windows, follows sunrise rule
-
-    # Toilets / bathrooms — frequently forgotten on
-    44: "toilet",      # WC alakerta katto
-    45: "toilet",      # WC alakerta peili
-    29: "toilet",      # Kylpyhuone yläkerta katto
-    34: "toilet",      # Kylpyhuone yläkerta peilivalo
-
-    # Bedrooms (upstairs, sleeping use). Aula is NOT a bedroom.
-    # Window lights (ikkunavalo) use bedroom_window so they ALSO auto-off in
-    # daylight; ceiling/vaatehuone lights stay plain bedroom (no daylight-off,
-    # so a daytime nap isn't interrupted).
-    22: "bedroom", 23: "bedroom_window",                    # Aarni (kattovalo / ikkunavalo; PLC legacy "Aatu")
-    28: "bedroom", 30: "bedroom_window",                    # Seela (kattovalo / ikkunavalo; PLC legacy "Onni")
-    31: "bedroom", 32: "bedroom_window", 33: "bedroom",     # Aikuiset (vaatehuone / ikkunavalo / kattovalo; PLC legacy "Essi")
-
-    # Kitchen — note: idx 40 (Keittiö kattovalo) is CO₂-auto-managed below,
-    # NOT in this policy.
-    2: "kitchen", 7: "kitchen", 8: "kitchen", 41: "kitchen",
-
-    # Living / dining — note: idx 54 (Olohuone kattovalo) is CO₂-auto-managed
-    # below, NOT in this policy. Idx 55 (Olohuone kattovalo 2) is left here.
-    5: "livingroom", 19: "livingroom", 20: "livingroom",
-    46: "livingroom", 55: "livingroom",
-
-    # Staircase — transient, often forgotten
-    25: "staircase",   # Aula rappuset
-    42: "staircase",   # Portaikko
-
-    # Common / general
-    3: "general", 6: "general", 24: "general", 26: "general",
-    35: "general", 36: "general", 37: "general", 43: "general", 56: "general",
-
-    # Schedule-driven
-    47: "porch_schedule",  # Sisäänkäynti (front porch) — sun-elevation driven, capped by PORCH_OFF_HOUR
-}
+# Correlation tolerance: a /set actuates ~12–13 s after the command breadcrumb,
+# and state broadcasts every ~13 s, so a transition is attributed to a command
+# whose breadcrumb landed within [transition − LEAD, transition + LAG].
+CMD_CORRELATION_LEAD_S = float(os.environ.get("CMD_CORRELATION_LEAD_S", "40"))
+CMD_CORRELATION_LAG_S = float(os.environ.get("CMD_CORRELATION_LAG_S", "10"))
 
 
-# ── Policy ────────────────────────────────────────────────────────────────────
+# ── Behaviour categories ──────────────────────────────────────────────────────
 @dataclass(frozen=True)
-class Policy:
-    auto_off_after_sunrise_min: int | None
-    auto_off_when_unoccupied: bool
-    auto_off_after_on_duration_min: int | None
-    auto_off_after_midnight: bool
-    min_hold_after_manual_min: int
+class Cat:
+    """Behaviour of a light category. Auto-OFF only fires for the flags set
+    here (comfort-first: absent flag ⇒ that cull never happens for the room)."""
+    auto_on: bool                 # comfort auto-on when dark + occupied
+    daylight_off: bool            # off when sun clearly up
+    overnight_off: bool           # off in the deep-night window if forgotten
+    away_off: bool                # off when the whole house is away
+    duration_cap_min: int | None  # transient duration cap (minutes)
+    manual_hold_min: int          # grace after a human-on before soft rules
+    presence_room: str | None     # normalized Presence-Service room key
+    presence_kind: str | None     # "mmwave" (hold-while-still) | "motion" (transit)
 
 
-POLICIES: dict[str, Policy] = {
-    # Toilet auto_off_after_midnight intentionally disabled. Toilet visits
-    # at 03–05 local are normal in this household (early risers, kids); the
-    # deep-night rule was killing the light 5 min after manual press during
-    # active use. The 30-min duration cap (TOILET_TIMEOUT_MIN) remains the
-    # only auto-off path — that's the desired ceiling regardless of clock.
-    "toilet":           Policy(None, False, TOILET_TIMEOUT_MIN,    False, 5),
-    "staircase":        Policy(SUNRISE_GRACE_MIN, True, STAIRCASE_TIMEOUT_MIN, True, 5),
-    "bedroom":          Policy(None, True,  None,                  True,  BEDROOM_HOLD_MIN),
-    # Bedroom window lights: same as bedroom (off when unoccupied / after
-    # midnight) but ALSO off in daylight — a window light serves no purpose
-    # when the sun is up, and unlike the ceiling light it won't darken a
-    # daytime nap.
-    "bedroom_window":   Policy(SUNRISE_GRACE_MIN, True, None,      True,  BEDROOM_HOLD_MIN),
-    "kitchen":          Policy(SUNRISE_GRACE_MIN, True, None,      True,  MANUAL_HOLD_MIN),
-    "livingroom":       Policy(SUNRISE_GRACE_MIN, True, None,      True,  MANUAL_HOLD_MIN),
-    "general":          Policy(SUNRISE_GRACE_MIN, True, None,      True,  MANUAL_HOLD_MIN),
-    "manual_only":      Policy(None, False, None,                  False, 60),
-    # Outdoor lights (terrace, storage): force OFF whenever the sun is up
-    # (auto_off_after_sunrise) and after midnight, but NEVER auto-on and
-    # never auto-off on the indoor occupancy proxy — someone sitting out on
-    # the terrace in the evening reads as "unoccupied" to the indoor Ruuvis,
-    # and we must not kill the light out from under them. The manual-hold is
-    # only 5 min (not MANUAL_HOLD_MIN): the long grace exists to protect a
-    # light deliberately switched on, but for an outdoor light the priority
-    # is "definitely off when the sun is up", so daylight auto-off should
-    # fire promptly. (You only switch these on in the dark, when the daylight
-    # rule is inactive anyway, so the short grace costs nothing in practice.)
-    "outdoor":          Policy(SUNRISE_GRACE_MIN, False, None,      True,  5),
-    "porch_schedule":   Policy(None, False, None,                  False, 5),
+CATS: dict[str, Cat] = {
+    #                 auto_on daylt  overn  away   cap                     hold             room            kind
+    "living":     Cat(True,  False, True,  True,  None,                    MANUAL_HOLD_MIN, "living_core",  "mmwave"),
+    "window":     Cat(False, True,  True,  True,  None,                    SHORT_HOLD_MIN,  None,           None),
+    "accent":     Cat(False, False, True,  True,  None,                    MANUAL_HOLD_MIN, None,           None),
+    "circulation":Cat(False, False, True,  True,  CIRCULATION_TIMEOUT_MIN, SHORT_HOLD_MIN,  "hall",         "motion"),
+    "utility":    Cat(False, False, True,  True,  UTILITY_TIMEOUT_MIN,     SHORT_HOLD_MIN,  None,           "motion"),
+    "toilet":     Cat(False, False, False, True,  TOILET_TIMEOUT_MIN,      SHORT_HOLD_MIN,  None,           "motion"),
+    "bedroom":    Cat(False, False, True,  True,  None,                    BEDROOM_HOLD_MIN,None,           "mmwave"),
+    "office":     Cat(False, False, False, True,  None,                    MANUAL_HOLD_MIN, "office",       "mmwave"),
+    "theater":    Cat(False, False, False, True,  None,                    MANUAL_HOLD_MIN, "theater",      "mmwave"),
+    "outdoor":    Cat(False, True,  True,  False, None,                    SHORT_HOLD_MIN,  None,           None),
 }
+
+# Light index → category. Every index in LIGHT_LABELS is covered. Special-block
+# lights (porch 47, laude 4, post-sauna 1/38/39) are handled outside the loop.
+CATEGORY_OF: dict[int, str] = {
+    # LIVING — open-plan kitchen / dining / living core
+    8: "living", 19: "living", 40: "living", 54: "living", 55: "living",
+    # WINDOW — decorative window lights, pointless in daylight
+    18: "window", 20: "window", 23: "window", 24: "window",
+    30: "window", 32: "window", 41: "window", 46: "window",
+    # ACCENT — decorative LED strips
+    2: "accent", 3: "accent", 5: "accent", 6: "accent", 7: "accent",
+    # CIRCULATION — halls, entry, staircases (transient)
+    25: "circulation", 26: "circulation", 35: "circulation", 37: "circulation", 42: "circulation",
+    # UTILITY / CLOSET — windowless, forgotten-prone
+    31: "utility", 36: "utility", 43: "utility", 53: "utility", 56: "utility", 61: "utility",
+    # TOILET — WCs + mirror lights
+    29: "toilet", 34: "toilet", 44: "toilet", 45: "toilet", 52: "toilet",
+    # BEDROOM (sleep) — ceilings/wardrobes upstairs (no daylight-off, nap-safe)
+    22: "bedroom", 28: "bedroom", 33: "bedroom",
+    # OFFICE — downstairs bedroom / workspace (never off during work)
+    17: "office",
+    # THEATER — windowless basement leisure/work (never off during use)
+    49: "theater", 50: "theater", 51: "theater",
+    # OUTDOOR — terrace / carport / storage exterior (porch 47 = special block)
+    48: "outdoor", 59: "outdoor", 60: "outdoor",
+}
+
+# Lights handled by dedicated blocks, skipped in the category loop.
+PORCH_IDX = 47
+SPECIAL_IDX = {PORCH_IDX, SAUNA_LAUDE_IDX, *SAUNA_AFTER_LIGHTS}
 
 
 # ── Logging ───────────────────────────────────────────────────────────────────
@@ -285,27 +218,20 @@ influx_client: InfluxDBClient | None = None
 write_api = None
 query_api = None
 
-# Per-idx tracking for the CO₂ auto-managed lights:
-#   _co2_auto_on_at[idx]        = local-tz time we last auto-on'd this light.
-#   _co2_auto_on_confirmed[idx] = True once we've observed is_on=1 after
-#                                 our publish — needed to distinguish a
-#                                 user dismissal from a silently-failed
-#                                 publish (e.g. unresponsive relay).
-#   _co2_dismissed_date[idx]    = local date the user dismissed the auto-on,
-#                                 so we don't re-enable it the same day.
-#   _co2_after_midnight_quenched[idx]
-#                              = local date the after-midnight rule killed
-#                                this light. Suppresses re-auto-on for the
-#                                rest of the after-midnight window (00:30 →
-#                                AFTER_MIDNIGHT_END_HOUR) so a still-elevated
-#                                CO₂ reading can't loop the light back on
-#                                every tick. Normal auto-on resumes once
-#                                the window ends.
-_co2_auto_on_at: dict[int, datetime] = {}
-_co2_auto_on_confirmed: dict[int, bool] = {}
-_co2_dismissed_date: dict[int, date] = {}
-_co2_after_midnight_quenched: dict[int, date] = {}
-_CO2_PUBLISH_GRACE_SECONDS = 90.0  # how long to wait for the relay to confirm
+# Per-light runtime state (rebuilt from InfluxDB on boot → restart-deterministic):
+#   _dismissed_date[idx]  = local date a human turned off our auto-on (suppress
+#                           re-auto-on until the next local day).
+#   _last_publish_ts[idx] = monotonic-ish epoch of our last command (min-dwell).
+_dismissed_date: dict[int, date] = {}
+_last_publish_ts: dict[int, float] = {}
+# Per-tick memoization of expensive shared queries (cleared each tick).
+_memo: dict = {}
+
+
+def _memoize(key, fn):
+    if key not in _memo:
+        _memo[key] = fn()
+    return _memo[key]
 
 
 def signal_handler(sig, frame):
@@ -315,17 +241,9 @@ def signal_handler(sig, frame):
 
 
 # ── Sun ───────────────────────────────────────────────────────────────────────
-
 def todays_sun(now: datetime) -> tuple[datetime, datetime]:
-    # Compute sunrise/sunset directly rather than via sun(), which ALSO
-    # derives dawn/dusk at −6° civil twilight. Around midsummer at this
-    # latitude the sun never drops 6° below the horizon, so sun() raises
-    # ValueError ("Sun never reaches 6 degrees below the horizon") even
-    # though the sun itself still rises and sets — that exception used to
-    # crash check_and_control() on every tick, freezing all auto-off rules.
-    # sunrise()/sunset() only fail under true polar day/night (which Tampere
-    # never sees); the fallbacks below degrade to a full-daylight window so
-    # the daytime auto-off rules keep running regardless.
+    """Sunrise/sunset with midsummer polar-day fallbacks (never uses civil
+    twilight, which raises at this latitude around midsummer)."""
     d = now.date()
     try:
         sr = sun_rise(LOC.observer, date=d, tzinfo=LOCAL_TZ)
@@ -338,14 +256,20 @@ def todays_sun(now: datetime) -> tuple[datetime, datetime]:
     return sr, ss
 
 
-# ── InfluxDB queries ──────────────────────────────────────────────────────────
-
-def _query(flux: str) -> list:
-    """Run a Flux query and return the records. None on error."""
+def sun_elev(now: datetime) -> float:
+    """Instantaneous sun elevation (°). Fail-safe to bright daylight on error so
+    a sensor/astral fault never pins lights on."""
     try:
-        tables = query_api.query(flux, org=INFLUXDB_ORG)
+        return sun_elevation(LOC.observer, dateandtime=now)
+    except Exception:
+        return 90.0
+
+
+# ── InfluxDB helpers ──────────────────────────────────────────────────────────
+def _query(flux: str) -> list:
+    try:
         rows = []
-        for table in tables:
+        for table in query_api.query(flux, org=INFLUXDB_ORG):
             for record in table.records:
                 rows.append(record)
         return rows
@@ -354,87 +278,232 @@ def _query(flux: str) -> list:
         return []
 
 
-def fetch_current_light_states() -> dict[int, tuple[bool, datetime]]:
-    """Return {light_id_int: (is_on, last_seen)} for every primary light."""
+def fetch_current_light_states() -> dict[int, bool]:
+    """{light_id: is_on} for every primary light (last value over 10 min)."""
     flux = f'''
 from(bucket: "{INFLUXDB_BUCKET}")
   |> range(start: -10m)
   |> filter(fn: (r) => r._measurement == "lights" and r._field == "is_on")
   |> filter(fn: (r) => r.switch_type == "primary")
   |> last()
-  |> keep(columns: ["_time", "_value", "light_id"])
+  |> keep(columns: ["_value", "light_id"])
 '''
-    out = {}
+    out: dict[int, bool] = {}
     for r in _query(flux):
         try:
-            idx = int(r.values.get("light_id"))
+            out[int(r.values.get("light_id"))] = bool(int(r.get_value() or 0))
         except (TypeError, ValueError):
             continue
-        out[idx] = (bool(int(r.get_value() or 0)), r.get_time())
     return out
 
 
-def fetch_last_zero_to_one(idx: int) -> datetime | None:
-    """Return the timestamp of the most recent 0→1 transition for one light,
-    or None if the light has been continuously on for the whole lookback
-    window or hasn't been seen.
-    """
+def fetch_last_transition(idx: int) -> tuple[bool | None, datetime | None]:
+    """(current_is_on, time_of_last_change) for one light over 24 h. If the
+    light held one state the whole window, time is the window start (treated as
+    'on since long ago'). Uses difference() to find the last edge."""
     flux = f'''
 from(bucket: "{INFLUXDB_BUCKET}")
   |> range(start: -24h)
   |> filter(fn: (r) => r._measurement == "lights" and r._field == "is_on")
   |> filter(fn: (r) => r.switch_type == "primary" and r.light_id == "{idx}")
   |> sort(columns: ["_time"])
-  |> difference(nonNegative: false)
-  |> filter(fn: (r) => r._value == 1)
+'''
+    rows = _query(flux)
+    if not rows:
+        return None, None
+    last_val = None
+    last_change = None
+    prev = None
+    for r in rows:
+        try:
+            v = bool(int(r.get_value() or 0))
+        except (TypeError, ValueError):
+            continue
+        t = r.get_time()
+        if prev is None or v != prev:
+            last_change = t
+        prev = v
+        last_val = v
+    return last_val, last_change
+
+
+def fetch_recent_commands(idx: int, lookback_min: int = 180) -> list[tuple[bool, str, datetime]]:
+    """Return [(target_on, source, time)] breadcrumbs for one light, sorted by
+    time, from the `light_command` measurement written by plc_mqtt_subscriber."""
+    flux = f'''
+from(bucket: "{INFLUXDB_BUCKET}")
+  |> range(start: -{lookback_min}m)
+  |> filter(fn: (r) => r._measurement == "light_command" and r._field == "is_on")
+  |> filter(fn: (r) => r.light_id == "{idx}")
+  |> sort(columns: ["_time"])
+  |> keep(columns: ["_time", "_value", "source"])
+'''
+    out: list[tuple[bool, str, datetime]] = []
+    for r in _query(flux):
+        t = r.get_time()
+        try:
+            target = bool(int(r.get_value() or 0))
+        except (TypeError, ValueError):
+            continue
+        src = r.values.get("source") or "unknown"
+        if t is not None:
+            out.append((target, str(src), t))
+    return out
+
+
+def classify_origin(idx: int, is_on: bool, since: datetime | None) -> str:
+    """Who caused the CURRENT state of this light?
+
+    Returns "optimizer" | "human" (mobile/mcp/voice) | "wall" | "unknown".
+    A transition is attributed to a command breadcrumb whose timestamp falls
+    within [since − LEAD, since + LAG] (commands actuate ~12 s later). If a
+    matching breadcrumb exists, its source decides; if none does, the change
+    came from a physical wall switch. Both mobile/mcp and wall count as a human
+    action (the optimizer must not fight either)."""
+    if since is None:
+        return "unknown"
+    lo = since - timedelta(seconds=CMD_CORRELATION_LEAD_S)
+    hi = since + timedelta(seconds=CMD_CORRELATION_LAG_S)
+    best_src = None
+    for target, src, t in fetch_recent_commands(idx):
+        if target == is_on and lo <= t <= hi:
+            best_src = src  # latest matching wins (list is time-sorted)
+    if best_src is None:
+        return "wall"
+    return "optimizer" if best_src == "optimizer" else "human"
+
+
+# ── Occupancy / presence ──────────────────────────────────────────────────────
+def presence_for_room(room: str | None) -> bool | None:
+    """Normalized per-room occupancy from the Presence Service's `presence`
+    measurement (occupied field, room tag). Returns True/False if a fresh,
+    confident reading exists, else None (room falls back to interim behaviour).
+    Activates automatically once the Presence Service starts writing."""
+    if not room:
+        return None
+    return _memoize(("presence", room), lambda: _presence_for_room_uncached(room))
+
+
+def _presence_for_room_uncached(room: str) -> bool | None:
+    flux = f'''
+from(bucket: "{INFLUXDB_BUCKET}")
+  |> range(start: -10m)
+  |> filter(fn: (r) => r._measurement == "presence" and r.room == "{room}")
+  |> filter(fn: (r) => r._field == "occupied" or r._field == "confidence")
   |> last()
-  |> keep(columns: ["_time"])
+  |> pivot(rowKey: ["_time"], columnKey: ["_field"], valueColumn: "_value")
 '''
     rows = _query(flux)
-    return rows[0].get_time() if rows else None
+    if not rows:
+        return None
+    r = rows[0]
+    occ = r.values.get("occupied")
+    conf = r.values.get("confidence")
+    if occ is None:
+        return None
+    try:
+        if conf is not None and float(conf) < PRESENCE_MIN_CONFIDENCE:
+            return None
+    except (TypeError, ValueError):
+        pass
+    return bool(occ)
 
 
-# ── Occupancy ─────────────────────────────────────────────────────────────────
+def co2_signal_class() -> str:
+    return _memoize("co2", _co2_signal_class_uncached)
 
-def switch_pressed_recently(minutes: int) -> bool:
+
+def _co2_signal_class_uncached() -> str:
+    """Kitchen Ruuvi CO₂ trend for the living core: ELEVATED / DROPPED /
+    BASELINE / UNKNOWN. Baseline anchored 2 h→1 h back so a slow occupancy ramp
+    stays visible; absolute fallbacks catch sustained occupancy with no
+    baseline (cold start)."""
+    def _mean(rng: str) -> float | None:
+        rows = _query(f'''
+from(bucket: "{INFLUXDB_BUCKET}")
+  |> range({rng})
+  |> filter(fn: (r) => r._measurement == "ruuvi" and r.sensor_name == "Keittiö" and r._field == "co2")
+  |> mean()
+''')
+        if not rows:
+            return None
+        v = rows[0].get_value()
+        try:
+            return float(v) if v is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    recent = _mean("start: -5m")
+    if recent is None:
+        return "UNKNOWN"
+    base = _mean("start: -2h, stop: -1h")
+    if base is None:
+        base = _mean("start: -6h, stop: -1h")  # cold-start widen
+    if recent >= CO2_AUTO_ON_ABSOLUTE_PPM:
+        return "ELEVATED"
+    if recent <= CO2_AUTO_OFF_ABSOLUTE_PPM:
+        return "DROPPED"
+    if base is not None:
+        delta = recent - base
+        if delta >= CO2_AUTO_ON_DELTA_PPM:
+            return "ELEVATED"
+        if delta <= -CO2_AUTO_OFF_DELTA_PPM:
+            return "DROPPED"
+    return "BASELINE"
+
+
+def living_core_occupied() -> bool | None:
+    """Interim living-core occupancy: normalized presence if available, else
+    kitchen CO₂. None if no signal at all."""
+    p = presence_for_room("living_core")
+    if p is not None:
+        return p
+    c = co2_signal_class()
+    if c == "ELEVATED":
+        return True
+    if c == "DROPPED":
+        return False
+    return None  # BASELINE / UNKNOWN → no strong signal
+
+
+def ble_present_count() -> int | None:
+    """Distinct strong-RSSI BLE MACs seen in the last BLE_WINDOW_MIN — a
+    whole-house 'anyone home' proxy. None if the `ble` measurement has no data
+    (subsystem not deployed yet) → caller falls back to activity heuristic."""
     flux = f'''
 from(bucket: "{INFLUXDB_BUCKET}")
-  |> range(start: -{minutes}m)
-  |> filter(fn: (r) => r._measurement == "switches" and r._field == "pressed")
-  |> filter(fn: (r) => r._value == 1)
-  |> count()
-'''
-    rows = _query(flux)
-    return any((r.get_value() or 0) > 0 for r in rows)
-
-
-def light_override_until(light_id: int) -> float:
-    """Return the latest `light_override.hold_until` epoch for this light,
-    or 0.0 if no override is in effect. Used by the porch scheduler to
-    let external systems (e.g. unifi-webhook on person detection) hold a
-    light on for a window despite the schedule. Lookback is bounded so a
-    stale row from days ago doesn't keep the schedule pinned — but wide
-    enough that overrides longer than the previous 2h window can't fall
-    off `last()` while still in effect; caller filters expired holds via
-    `hold_until > now.timestamp()`."""
-    flux = f'''
-from(bucket: "{INFLUXDB_BUCKET}")
-  |> range(start: -24h)
-  |> filter(fn: (r) => r._measurement == "light_override"
-        and r._field == "hold_until" and r.light_id == "{light_id}")
+  |> range(start: -{BLE_WINDOW_MIN}m)
+  |> filter(fn: (r) => r._measurement == "ble" and r._field == "rssi")
+  |> filter(fn: (r) => r._value >= {BLE_RSSI_INSIDE})
+  |> group(columns: ["mac"])
   |> last()
 '''
     rows = _query(flux)
     if not rows:
-        return 0.0
-    try:
-        return float(rows[0].get_value() or 0.0)
-    except (TypeError, ValueError):
-        return 0.0
+        # Distinguish "no ble measurement at all" from "measured, nobody home".
+        any_ble = _query(f'''
+from(bucket: "{INFLUXDB_BUCKET}")
+  |> range(start: -30m)
+  |> filter(fn: (r) => r._measurement == "ble")
+  |> limit(n: 1)
+''')
+        return 0 if any_ble else None
+    macs = {r.values.get("mac") for r in rows}
+    macs.discard(None)
+    return len(macs)
 
 
-def light_turned_on_recently(minutes: int) -> bool:
-    flux = f'''
+def activity_recent(minutes: int) -> bool:
+    """Legacy fallback: any wall-switch press or light-on transition in window."""
+    presses = _query(f'''
+from(bucket: "{INFLUXDB_BUCKET}")
+  |> range(start: -{minutes}m)
+  |> filter(fn: (r) => r._measurement == "switches" and r._field == "pressed" and r._value == 1)
+  |> count()
+''')
+    if any((r.get_value() or 0) > 0 for r in presses):
+        return True
+    ons = _query(f'''
 from(bucket: "{INFLUXDB_BUCKET}")
   |> range(start: -{minutes}m)
   |> filter(fn: (r) => r._measurement == "lights" and r._field == "is_on")
@@ -442,20 +511,27 @@ from(bucket: "{INFLUXDB_BUCKET}")
   |> difference(nonNegative: false)
   |> filter(fn: (r) => r._value == 1)
   |> count()
-'''
-    rows = _query(flux)
-    return any((r.get_value() or 0) > 0 for r in rows)
+''')
+    return any((r.get_value() or 0) > 0 for r in ons)
 
 
+def whole_house_away() -> bool:
+    """High-confidence 'nobody home'. Prefers BLE identity; falls back to the
+    legacy activity heuristic when BLE data is unavailable."""
+    n = ble_present_count()
+    if n is not None:
+        return n == 0
+    return not activity_recent(LONG_ABSENCE_MIN)
+
+
+# ── Sauna ─────────────────────────────────────────────────────────────────────
 def fetch_sauna_temp_recent() -> float | None:
-    """5-minute mean Ruuvi Sauna temperature, or None if no data."""
-    flux = f'''
+    rows = _query(f'''
 from(bucket: "{INFLUXDB_BUCKET}")
   |> range(start: -5m)
   |> filter(fn: (r) => r._measurement == "ruuvi" and r.sensor_name == "Sauna" and r._field == "temperature")
   |> mean()
-'''
-    rows = _query(flux)
+''')
     if not rows:
         return None
     v = rows[0].get_value()
@@ -466,198 +542,102 @@ from(bucket: "{INFLUXDB_BUCKET}")
 
 
 def sauna_session_ended_minutes_ago() -> float | None:
-    """Return minutes elapsed since the sauna temperature dropped below
-    SAUNA_AFTER_OFF_C, IF the sauna previously peaked above
-    SAUNA_AFTER_PEAK_C in the past SAUNA_AFTER_LOOKBACK_H hours.
-
-    Returns None if no recent session is detected, or if the sauna is
-    still hot, or if the sensor data is missing.
-
-    Used to time the auto-off of bathroom + sauna ceiling lights after
-    a session — they otherwise stay manual_only so showers/baths don't
-    get interrupted by a wall-clock timeout."""
-    flux = f'''
+    """Minutes since the sauna dropped below SAUNA_AFTER_OFF_C, if it peaked
+    above SAUNA_AFTER_PEAK_C in the lookback window; else None."""
+    rows = _query(f'''
 from(bucket: "{INFLUXDB_BUCKET}")
   |> range(start: -{SAUNA_AFTER_LOOKBACK_H}h)
   |> filter(fn: (r) => r._measurement == "ruuvi" and r.sensor_name == "Sauna" and r._field == "temperature")
   |> sort(columns: ["_time"])
-'''
-    rows = _query(flux)
-    if not rows:
-        return None
+''')
     samples: list[tuple[datetime, float]] = []
     for r in rows:
         try:
-            t = r.get_time()
-            v = r.get_value()
+            t, v = r.get_time(), r.get_value()
             if t is not None and v is not None:
                 samples.append((t, float(v)))
         except (TypeError, ValueError):
             continue
     if not samples:
         return None
-
-    peak = max(v for _, v in samples)
-    if peak < SAUNA_AFTER_PEAK_C:
-        return None  # no session in the lookback window
-
-    latest_t, latest_v = samples[-1]
-    if latest_v >= SAUNA_AFTER_OFF_C:
-        return None  # still cooling down or warming back up
-
-    # Find the latest moment the sauna was still above SAUNA_AFTER_OFF_C;
-    # the first sample after that is when "post-session" started.
-    drop_time: datetime | None = None
+    if max(v for _, v in samples) < SAUNA_AFTER_PEAK_C:
+        return None
+    if samples[-1][1] >= SAUNA_AFTER_OFF_C:
+        return None
+    drop_time = None
     for t, v in samples:
         if v < SAUNA_AFTER_OFF_C and drop_time is None:
             drop_time = t
         elif v >= SAUNA_AFTER_OFF_C:
-            drop_time = None  # any rebound resets the timer
+            drop_time = None
     if drop_time is None:
         return None
     return (datetime.now(timezone.utc) - drop_time).total_seconds() / 60.0
 
 
-def co2_signal_class() -> str:
-    """Classify the kitchen Ruuvi CO₂ trend.
-
-    Baseline window is 2 h → 1 h ago — far enough back that a slow rise
-    in the recent 5 min isn't masked by the baseline drifting up with it.
-
-    Returns:
-      "ELEVATED"  — recent 5-min mean is ≥ baseline + CO2_AUTO_ON_DELTA_PPM,
-                    OR recent ≥ CO2_AUTO_ON_ABSOLUTE_PPM (someone clearly here)
-      "DROPPED"   — recent ≤ baseline − CO2_AUTO_OFF_DELTA_PPM, OR recent has
-                    fallen near outdoor (≤ CO2_AUTO_OFF_ABSOLUTE_PPM)
-      "BASELINE"  — within the dead-band
-      "UNKNOWN"   — sensor data missing
-    """
-    flux_recent = f'''
+def light_override_until(light_id: int) -> float:
+    """Latest light_override.hold_until epoch (Unifi porch pulse), or 0.0."""
+    rows = _query(f'''
 from(bucket: "{INFLUXDB_BUCKET}")
-  |> range(start: -5m)
-  |> filter(fn: (r) => r._measurement == "ruuvi" and r.sensor_name == "Keittiö" and r._field == "co2")
-  |> mean()
-'''
-    flux_baseline = f'''
-from(bucket: "{INFLUXDB_BUCKET}")
-  |> range(start: -2h, stop: -1h)
-  |> filter(fn: (r) => r._measurement == "ruuvi" and r.sensor_name == "Keittiö" and r._field == "co2")
-  |> mean()
-'''
-    recent_rows = _query(flux_recent)
-    base_rows = _query(flux_baseline)
-    if not recent_rows:
-        return "UNKNOWN"
-    recent = recent_rows[0].get_value()
-    base = base_rows[0].get_value() if base_rows else None
-    if recent is None:
-        return "UNKNOWN"
-
-    # Cold-start fallback: if the narrow -2h→-1h baseline window is empty
-    # (e.g. service was down for the last hour, or the Ruuvi reconnected
-    # late), widen to -6h→-1h. Restores delta-classification right after
-    # a restart instead of falling back to ABS-only thresholds for an hour.
-    if base is None:
-        flux_baseline_wide = f'''
-from(bucket: "{INFLUXDB_BUCKET}")
-  |> range(start: -6h, stop: -1h)
-  |> filter(fn: (r) => r._measurement == "ruuvi" and r.sensor_name == "Keittiö" and r._field == "co2")
-  |> mean()
-'''
-        wide_rows = _query(flux_baseline_wide)
-        if wide_rows:
-            base = wide_rows[0].get_value()
-
-    # Absolute fallbacks first — they don't need a baseline.
-    if recent >= CO2_AUTO_ON_ABSOLUTE_PPM:
-        return "ELEVATED"
-    if recent <= CO2_AUTO_OFF_ABSOLUTE_PPM:
-        return "DROPPED"
-
-    # Delta-based classification (skip if baseline missing, e.g. after restart).
-    if base is not None:
-        delta = recent - base
-        if delta >= CO2_AUTO_ON_DELTA_PPM:
-            return "ELEVATED"
-        if delta <= -CO2_AUTO_OFF_DELTA_PPM:
-            return "DROPPED"
-    return "BASELINE"
-
-
-def co2_recently_elevated(minutes: int) -> bool:
-    """Compare the recent (last 5 min) Keittiö CO₂ mean against the baseline
-    of the longer rolling window. If the recent mean is ≥ delta ppm above
-    the baseline, treat as occupied."""
-    short_min = min(5, minutes)
-    flux_recent = f'''
-from(bucket: "{INFLUXDB_BUCKET}")
-  |> range(start: -{short_min}m)
-  |> filter(fn: (r) => r._measurement == "ruuvi" and r.sensor_name == "Keittiö" and r._field == "co2")
-  |> mean()
-'''
-    flux_baseline = f'''
-from(bucket: "{INFLUXDB_BUCKET}")
-  |> range(start: -{minutes}m, stop: -{short_min}m)
-  |> filter(fn: (r) => r._measurement == "ruuvi" and r.sensor_name == "Keittiö" and r._field == "co2")
-  |> mean()
-'''
-    recent = _query(flux_recent)
-    base = _query(flux_baseline)
-    if not recent or not base:
-        return False
-    rv = recent[0].get_value()
-    bv = base[0].get_value()
-    if rv is None or bv is None:
-        return False
-    return (rv - bv) >= CO2_OCCUPANCY_DELTA_PPM
-
-
-def house_occupied() -> bool:
-    return (
-        switch_pressed_recently(OCCUPANCY_WINDOW_MIN)
-        or light_turned_on_recently(OCCUPANCY_WINDOW_MIN)
-        or co2_recently_elevated(OCCUPANCY_WINDOW_MIN)
-    )
-
-
-def long_unoccupied() -> bool:
-    """True iff none of the three signals fired in the last LONG_ABSENCE_MIN."""
-    return not (
-        switch_pressed_recently(LONG_ABSENCE_MIN)
-        or light_turned_on_recently(LONG_ABSENCE_MIN)
-        or co2_recently_elevated(LONG_ABSENCE_MIN)
-    )
+  |> range(start: -24h)
+  |> filter(fn: (r) => r._measurement == "light_override"
+        and r._field == "hold_until" and r.light_id == "{light_id}")
+  |> last()
+''')
+    if not rows:
+        return 0.0
+    try:
+        return float(rows[0].get_value() or 0.0)
+    except (TypeError, ValueError):
+        return 0.0
 
 
 # ── MQTT publish ──────────────────────────────────────────────────────────────
+def publish_command_breadcrumb(idx: int, on: bool, src: str = "optimizer"):
+    """Provenance breadcrumb on the side-channel /command topic (never /set)."""
+    topic = f"{MQTT_TOPIC_PREFIX}/light/{idx}/command"
+    payload = json.dumps({"on": bool(on), "src": src, "ts": int(time.time())})
+    try:
+        mqtt_publish.single(
+            topic=topic, payload=payload, qos=1, retain=False,
+            hostname=MQTT_BROKER, port=MQTT_PORT,
+            client_id=f"marmorikatu-lights-optimizer-cmd-{idx}",
+        )
+    except Exception as e:
+        log.warning("command breadcrumb publish to %s failed: %s", topic, e)
 
-def publish_state(idx: int, on: bool, reason: str):
+
+def publish_state(idx: int, on: bool, reason: str) -> bool:
     topic = f"{MQTT_TOPIC_PREFIX}/light/{idx}/set"
     payload = "true" if on else "false"
     if DRY_RUN:
         log.info("[DRY RUN] Would publish %s → %s (reason=%s)", topic, payload, reason)
+        _last_publish_ts[idx] = time.time()
         return True
     try:
         mqtt_publish.single(
-            topic=topic,
-            payload=payload,
-            qos=1,
-            retain=False,
-            hostname=MQTT_BROKER,
-            port=MQTT_PORT,
+            topic=topic, payload=payload, qos=1, retain=False,
+            hostname=MQTT_BROKER, port=MQTT_PORT,
             client_id=f"marmorikatu-lights-optimizer-{idx}",
         )
         log.info("Published %s → %s (reason=%s)", topic, payload, reason)
+        publish_command_breadcrumb(idx, on, "optimizer")
+        _last_publish_ts[idx] = time.time()
         return True
     except Exception as e:
         log.error("MQTT publish to %s failed: %s", topic, e)
         return False
 
 
-# ── Decision logging ──────────────────────────────────────────────────────────
+def within_min_dwell(idx: int) -> bool:
+    """True if we commanded this light within MIN_DWELL_SECONDS (don't reverse)."""
+    ts = _last_publish_ts.get(idx)
+    return ts is not None and (time.time() - ts) < MIN_DWELL_SECONDS
 
-def log_decision(idx: int, decision: str, reason: str, on_dur: float | None = None,
-                 category: str = ""):
+
+# ── Decision logging ──────────────────────────────────────────────────────────
+def log_decision(idx: int, decision: str, reason: str, category: str = "",
+                 manual_locked: bool = False, on_dur: float | None = None):
     name = LIGHT_LABELS.get(idx, (f"light_{idx}", None))[0]
     p = (
         Point("lights_optimizer")
@@ -666,6 +646,7 @@ def log_decision(idx: int, decision: str, reason: str, on_dur: float | None = No
         .tag("category", category)
         .field("decision", decision)
         .field("reason", reason)
+        .field("manual_locked", 1 if manual_locked else 0)
         .field("dry_run", 1 if DRY_RUN else 0)
         .time(datetime.now(timezone.utc), WritePrecision.S)
     )
@@ -677,38 +658,27 @@ def log_decision(idx: int, decision: str, reason: str, on_dur: float | None = No
         log.error("InfluxDB write failed for light %d: %s", idx, e)
 
 
-# ── Decision loop ─────────────────────────────────────────────────────────────
-
-def in_after_midnight_window(now: datetime) -> bool:
-    """00:30 ≤ now < AFTER_MIDNIGHT_END_HOUR local time. `now` is local-tz-aware.
-
-    Catches "light left on overnight" without trampling early-morning use.
-    """
-    return dtime(0, 30) <= now.time() < dtime(AFTER_MIDNIGHT_END_HOUR, 0)
+# ── Windows ───────────────────────────────────────────────────────────────────
+def in_overnight_window(now: datetime) -> bool:
+    start = dtime(OVERNIGHT_START_HOUR, OVERNIGHT_START_MIN)
+    end = dtime(OVERNIGHT_END_HOUR, 0)
+    return start <= now.time() < end
 
 
-def porch_target_state(now: datetime, sun_elev_deg: float) -> bool:
-    """Whether the porch (idx 47) should be on at this instant.
+def overnight_start_dt(now: datetime) -> datetime:
+    """The datetime at which tonight's overnight window began (for on_since)."""
+    today_start = now.replace(hour=OVERNIGHT_START_HOUR, minute=OVERNIGHT_START_MIN,
+                              second=0, microsecond=0)
+    return today_start
 
-    Drives transitions off the same "getting dark" threshold used by the
-    CO₂-managed lights (sun elevation < SUN_DARK_ELEVATION_DEG, default
-    8°) — well before sunset (elev=0°) in winter, and matching the
-    "indoors is getting dim" experience.
 
-    Returns True iff:
-      - It's actually dark (sun elevation below threshold), AND
-      - Wall clock is inside the evening window.
+def in_daylight(now: datetime, sunrise: datetime, sunset: datetime) -> bool:
+    return sunrise + timedelta(minutes=SUNRISE_GRACE_MIN) <= now < sunset
 
-    The evening-window gate prevents pre-dawn twilight (sun rising back
-    up through the threshold in the morning) from turning the porch on
-    again at 04:00. PORCH_OFF_HOUR caps the late-night side so the porch
-    isn't on through the whole dark winter night.
 
-    Wrap-around: when PORCH_OFF_HOUR >= 24 (e.g. 26 = 02:00 next day),
-    the window spans midnight and any hour ≥ 12 OR < (off_hour % 24)
-    counts as "in window".
-    """
-    is_dark = sun_elev_deg < SUN_DARK_ELEVATION_DEG
+# ── Porch (special block, ported from v1) ─────────────────────────────────────
+def porch_target_state(now: datetime, elev: float) -> bool:
+    is_dark = elev < SUN_DARK_ELEVATION_DEG
     off_hour = PORCH_OFF_HOUR % 24
     if PORCH_OFF_HOUR >= 24:
         in_window = (now.hour >= 12) or (now.hour < off_hour)
@@ -717,326 +687,240 @@ def porch_target_state(now: datetime, sun_elev_deg: float) -> bool:
     return is_dark and in_window
 
 
-def check_and_control():
-    now = datetime.now(LOCAL_TZ)
-    weekday = now.weekday() < 5
-    sunrise, sunset = todays_sun(now)
-    states = fetch_current_light_states()
-    occupied = house_occupied()
-    long_absent = long_unoccupied() if not occupied else False
-    log.info(
-        "tick: %s sunrise=%s sunset=%s occupied=%s long_absent=%s lights_seen=%d",
-        now.isoformat(timespec="seconds"),
-        sunrise.strftime("%H:%M"),
-        sunset.strftime("%H:%M"),
-        occupied,
-        long_absent,
-        len(states),
-    )
-
-    # --- Front-porch (idx 47): track real darkness, not a clock-only
-    #     schedule. The porch toggles only when sun elevation crosses
-    #     SUN_DARK_ELEVATION_DEG (same threshold as the CO₂-managed
-    #     lights) — meaningfully earlier than sunset in winter, and
-    #     skipping the porch entirely on midsummer evenings when it
-    #     never actually gets dark. PORCH_OFF_HOUR still caps the
-    #     late-night side so the porch isn't on through the whole
-    #     dark winter night.
-    porch_idx = 47
-    porch_state = states.get(porch_idx)
-    try:
-        porch_sun_elev = sun_elevation(LOC.observer, dateandtime=now)
-    except Exception:
-        # Fail safe: if astral throws, assume bright daylight so we don't
-        # accidentally pin the porch on (or auto-on the CO₂-managed lights
-        # below). is_dark uses `< SUN_DARK_ELEVATION_DEG`, so a high
-        # elevation reliably evaluates to "not dark".
-        porch_sun_elev = 90.0
-    target_on = porch_target_state(now, porch_sun_elev)
-
-    # External hold (e.g. unifi-webhook person-detection pulse) overrides
-    # the darkness gate. Forces ON for the duration the override row covers;
-    # once `hold_until` has passed, the darkness rule reasserts on the next tick.
-    porch_hold_until = light_override_until(porch_idx)
-    hold_active = porch_hold_until > now.timestamp()
-    if hold_active and not target_on:
-        target_on = True
+def run_porch(now: datetime, states: dict[int, bool], elev: float):
+    state = states.get(PORCH_IDX)
+    target = porch_target_state(now, elev)
+    hold_until = light_override_until(PORCH_IDX)
+    hold_active = hold_until > now.timestamp()
+    if hold_active and not target:
+        target = True
         log.info("porch hold active until %s — forcing ON",
-                 datetime.fromtimestamp(porch_hold_until, tz=LOCAL_TZ).strftime("%H:%M:%S"))
-
-    if porch_state is None or porch_state[0] != target_on:
+                 datetime.fromtimestamp(hold_until, tz=LOCAL_TZ).strftime("%H:%M:%S"))
+    if state is None or state != target:
         reason = "porch_hold" if hold_active else "porch_dark_schedule"
-        if publish_state(porch_idx, target_on, "porch_dark_schedule"):
-            log_decision(porch_idx, "on" if target_on else "off", reason,
-                         category="porch_schedule")
+        if publish_state(PORCH_IDX, target, "porch_dark_schedule"):
+            log_decision(PORCH_IDX, "on" if target else "off", reason, "outdoor")
         else:
-            log_decision(porch_idx, "hold", "mqtt_publish_failed",
-                         category="porch_schedule")
+            log_decision(PORCH_IDX, "hold", "mqtt_publish_failed", "outdoor")
     else:
-        log_decision(porch_idx, "hold", "porch_already_correct",
-                     category="porch_schedule")
+        log_decision(PORCH_IDX, "hold", "porch_already_correct", "outdoor")
 
-    # --- CO₂-driven auto-on/off for kitchen + living-room ceiling lights.
-    #     "Dark indoors" is defined as sun elevation < SUN_DARK_ELEVATION_DEG
-    #     (default 8°), which kicks in well before astronomical sunset/after
-    #     sunrise — matching the user's "getting pretty dark" experience.
-    #     Eligible-to-turn-on: any time it's dark, both kitchen and
-    #     livingroom ceiling lights. Auto-off any time CO₂ drops or after
-    #     midnight. Manual dismissal (light off without us asking)
-    #     suppresses re-enable until next day.
-    co2 = co2_signal_class()
-    today = now.date()
-    try:
-        sun_elev = sun_elevation(LOC.observer, dateandtime=now)
-    except Exception:
-        # Fail safe: if astral throws, assume bright daylight so we don't
-        # auto-on the kitchen / livingroom lights on a sensor error.
-        sun_elev = 90.0
-    is_dark_now = sun_elev < SUN_DARK_ELEVATION_DEG
-    eligible_for_on: set[int] = set(CO2_AUTO_MANAGED) if is_dark_now else set()
 
-    # Drop stale dismissal entries from previous days
-    for idx_d, date_d in list(_co2_dismissed_date.items()):
-        if date_d < today:
-            del _co2_dismissed_date[idx_d]
-    # Same lifecycle for the after-midnight quench: it suppresses auto-on
-    # only while we're still in tonight's after-midnight window AND the
-    # quench was set on the current local date. Stale entries from previous
-    # days get dropped so tomorrow's window starts fresh.
-    for idx_q, date_q in list(_co2_after_midnight_quenched.items()):
-        if date_q < today:
-            del _co2_after_midnight_quenched[idx_q]
+def run_sauna_laude(states: dict[int, bool]):
+    state = states.get(SAUNA_LAUDE_IDX)
+    if state is None:
+        return
+    temp = fetch_sauna_temp_recent()
+    if temp is None:
+        log_decision(SAUNA_LAUDE_IDX, "hold", "no_sauna_temp_data", "bath")
+        return
+    if state and temp <= SAUNA_LAUDE_OFF_C:
+        target, reason = False, f"sauna_cooled_to_{temp:.1f}C"
+    elif not state and temp >= SAUNA_LAUDE_ON_C:
+        target, reason = True, f"sauna_heated_to_{temp:.1f}C"
+    else:
+        log_decision(SAUNA_LAUDE_IDX, "hold", f"hysteresis_hold_{temp:.1f}C", "bath")
+        return
+    if publish_state(SAUNA_LAUDE_IDX, target, reason):
+        log_decision(SAUNA_LAUDE_IDX, "on" if target else "off", reason, "bath")
+    else:
+        log_decision(SAUNA_LAUDE_IDX, "hold", "mqtt_publish_failed", "bath")
 
-    for idx_co2 in CO2_AUTO_MANAGED:
-        co2_state = states.get(idx_co2)
-        if co2_state is None:
+
+def run_post_sauna(now: datetime, states: dict[int, bool]):
+    ended = sauna_session_ended_minutes_ago()
+    if ended is None or ended < SAUNA_AFTER_DELAY_MIN:
+        return
+    for idx in SAUNA_AFTER_LIGHTS:
+        if not states.get(idx):
             continue
-        currently_on = co2_state[0]
-
-        # Track whether our auto-on actually took effect at the PLC. We
-        # need this to distinguish a real user dismissal from a publish
-        # that silently failed (relay unresponsive, MQTT lost, etc.).
-        auto_on_t = _co2_auto_on_at.get(idx_co2)
-        if auto_on_t is not None:
-            if currently_on:
-                # Relay confirmed our publish.
-                _co2_auto_on_confirmed[idx_co2] = True
-            elif _co2_auto_on_confirmed.get(idx_co2):
-                # Was on, now off → user turned it off after our auto-on.
-                _co2_dismissed_date[idx_co2] = today
-                _co2_auto_on_at.pop(idx_co2, None)
-                _co2_auto_on_confirmed.pop(idx_co2, None)
-            elif (now - auto_on_t).total_seconds() > _CO2_PUBLISH_GRACE_SECONDS:
-                # Publish never confirmed — relay/PLC isn't responding.
-                # Clear the attempt without marking dismissed so we keep
-                # retrying on the next eligible tick.
-                _co2_auto_on_at.pop(idx_co2, None)
-
-        dismissed_today = _co2_dismissed_date.get(idx_co2) == today
-
-        if currently_on:
-            if auto_on_t is None:
-                # We didn't switch this on — the user did. The CO₂ manager
-                # only ever switches off a light it switched on itself, so a
-                # manual on is always respected: no no-occupancy off and no
-                # after-midnight quench. It stays on until the user turns it
-                # off. (Auto-ons that linger past midnight still get the
-                # after-midnight off below, because they keep their auto_on_t.)
-                log_decision(idx_co2, "hold", "manual_on", category="co2_auto")
-            elif in_after_midnight_window(now):
-                if publish_state(idx_co2, False, "co2_auto_after_midnight"):
-                    log_decision(idx_co2, "off", "after_midnight", category="co2_auto")
-                    _co2_auto_on_at.pop(idx_co2, None)
-                    _co2_auto_on_confirmed.pop(idx_co2, None)
-                    # Quench: block auto-on for the rest of tonight's
-                    # after-midnight window so an unchanged CO₂ reading can't
-                    # loop the light right back on next tick.
-                    _co2_after_midnight_quenched[idx_co2] = today
-                else:
-                    log_decision(idx_co2, "hold", "mqtt_publish_failed",
-                                 category="co2_auto")
-            elif co2 == "DROPPED":
-                # Don't auto-off too soon after our own auto-on — prevents
-                # flapping when CO₂ wanders through the dead-band.
-                seconds_since_on = (now - auto_on_t).total_seconds()
-                if seconds_since_on < CO2_AUTO_MIN_ON_SECONDS:
-                    log_decision(
-                        idx_co2, "hold",
-                        f"min_on_time_remaining_{int(CO2_AUTO_MIN_ON_SECONDS - seconds_since_on)}s",
-                        category="co2_auto",
-                    )
-                elif publish_state(idx_co2, False, "co2_no_occupancy"):
-                    log_decision(idx_co2, "off", "co2_no_occupancy", category="co2_auto")
-                    _co2_auto_on_at.pop(idx_co2, None)
-                    _co2_auto_on_confirmed.pop(idx_co2, None)
-                else:
-                    log_decision(idx_co2, "hold", "mqtt_publish_failed",
-                                 category="co2_auto")
-            else:
-                log_decision(idx_co2, "hold", f"co2_{co2.lower()}", category="co2_auto")
-        else:
-            after_midnight_quenched = (
-                _co2_after_midnight_quenched.get(idx_co2) == today
-                and in_after_midnight_window(now)
-            )
-            if dismissed_today:
-                log_decision(idx_co2, "hold", "dismissed_today", category="co2_auto")
-            elif after_midnight_quenched:
-                log_decision(idx_co2, "hold", "after_midnight_quenched", category="co2_auto")
-            elif idx_co2 not in eligible_for_on:
-                log_decision(idx_co2, "hold", "outside_dark_window", category="co2_auto")
-            elif co2 == "ELEVATED":
-                if publish_state(idx_co2, True, "co2_occupancy"):
-                    _co2_auto_on_at[idx_co2] = now
-                    _co2_auto_on_confirmed.pop(idx_co2, None)
-                    log_decision(idx_co2, "on", "co2_occupancy", category="co2_auto")
-                    # Brief pause so a second publish in the same tick (the
-                    # other CO₂-managed light) doesn't pile onto the PLC's
-                    # MQTT command handler before it has finished the first.
-                    time.sleep(0.3)
-                else:
-                    log_decision(idx_co2, "hold", "mqtt_publish_failed",
-                                 category="co2_auto")
-            else:
-                log_decision(idx_co2, "hold", f"co2_{co2.lower()}", category="co2_auto")
-
-    # --- Sauna laude LED: ON when sauna ≥ SAUNA_LAUDE_ON_C, OFF when sauna
-    #     ≤ SAUNA_LAUDE_OFF_C. Hysteresis dead-band keeps it stable as
-    #     löyly causes brief drops. Acts regardless of current on/off state.
-    laude_state = states.get(SAUNA_LAUDE_IDX)
-    sauna_temp = fetch_sauna_temp_recent()
-    if laude_state is not None and sauna_temp is not None:
-        currently_on = laude_state[0]
-        if currently_on and sauna_temp <= SAUNA_LAUDE_OFF_C:
-            target_on = False
-            reason = f"sauna_cooled_to_{sauna_temp:.1f}C"
-        elif not currently_on and sauna_temp >= SAUNA_LAUDE_ON_C:
-            target_on = True
-            reason = f"sauna_heated_to_{sauna_temp:.1f}C"
-        else:
-            target_on = currently_on  # within dead-band → hold
-            reason = f"hysteresis_hold_{sauna_temp:.1f}C"
-        if target_on != currently_on:
-            if publish_state(SAUNA_LAUDE_IDX, target_on, reason):
-                log_decision(SAUNA_LAUDE_IDX, "on" if target_on else "off",
-                             reason, category="sauna_laude")
-            else:
-                log_decision(SAUNA_LAUDE_IDX, "hold", "mqtt_publish_failed",
-                             category="sauna_laude")
-        else:
-            log_decision(SAUNA_LAUDE_IDX, "hold", reason, category="sauna_laude")
-    elif laude_state is not None:
-        log_decision(SAUNA_LAUDE_IDX, "hold", "no_sauna_temp_data",
-                     category="sauna_laude")
-
-    # --- Post-sauna cooldown: bathroom + sauna ceiling lights are
-    #     `manual_only` so showers don't get interrupted, but once the
-    #     sauna has been cooling for SAUNA_AFTER_DELAY_MIN we infer the
-    #     session is over and auto-off them. The Saunan laude LED (idx
-    #     SAUNA_LAUDE_IDX) is handled above by hysteresis on the live
-    #     temperature directly, so it's not in this list.
-    ended_min = sauna_session_ended_minutes_ago()
-    if ended_min is not None and ended_min >= SAUNA_AFTER_DELAY_MIN:
-        manual_grace_min = POLICIES["manual_only"].min_hold_after_manual_min
-        for idx_after in SAUNA_AFTER_LIGHTS:
-            after_state = states.get(idx_after)
-            if after_state is None or not after_state[0]:
+        # Don't cut a fresh shower/bath short — respect a recent manual on.
+        is_on, since = fetch_last_transition(idx)
+        if since is not None:
+            on_dur = (datetime.now(timezone.utc) - since).total_seconds() / 60.0
+            if on_dur < MANUAL_HOLD_MIN:
+                log_decision(idx, "hold", "post_sauna_manual_grace", "bath", on_dur=on_dur)
                 continue
-            # Don't interrupt a fresh shower/bath. These lights are
-            # `manual_only` specifically so wall-clock auto-off can't cut
-            # sessions short; the same constraint must apply when the
-            # post-sauna cooldown rule is the one firing — otherwise a
-            # bathroom press at any point in the SAUNA_AFTER_LOOKBACK_H
-            # window after a sauna gets killed on the next tick.
-            on_t = fetch_last_zero_to_one(idx_after)
-            if on_t is not None:
-                on_dur = (datetime.now(timezone.utc) - on_t).total_seconds() / 60.0
-                if on_dur < manual_grace_min:
-                    log_decision(idx_after, "hold", "post_sauna_manual_grace",
-                                 on_dur, category="sauna_post_session")
-                    continue
-            reason = f"post_sauna_cooled_{ended_min:.0f}min_ago"
-            if publish_state(idx_after, False, reason):
-                log_decision(idx_after, "off", reason,
-                             category="sauna_post_session")
-            else:
-                log_decision(idx_after, "hold", "mqtt_publish_failed",
-                             category="sauna_post_session")
-
-    # --- Per-light evaluation
-    #     Skip lights that already have a dedicated block above. The
-    #     sauna-cooldown lights are also skipped here so a future edit
-    #     to LIGHT_POLICY can't accidentally subject them to the
-    #     general auto-off rules — their only auto-off path is the
-    #     post-sauna block.
-    skip_idx = {porch_idx, SAUNA_LAUDE_IDX, *CO2_AUTO_MANAGED, *SAUNA_AFTER_LIGHTS}
-    for idx, (is_on, _) in states.items():
-        if idx in skip_idx:
-            continue
-        if not is_on:
-            continue
-
-        cat = LIGHT_POLICY.get(idx, "manual_only")
-        pol = POLICIES[cat]
-
-        # Manual-on grace window
-        on_t = fetch_last_zero_to_one(idx)
-        if on_t is not None:
-            on_dur = (datetime.now(timezone.utc) - on_t).total_seconds() / 60.0
+        reason = f"post_sauna_cooled_{ended:.0f}min_ago"
+        if publish_state(idx, False, reason):
+            log_decision(idx, "off", reason, "bath")
         else:
-            # No 0→1 transition in the 24h lookback. Most likely the light
-            # has been continuously on for >24h — treat as long-lived so
-            # the manual-grace check correctly skips AND duration-based
-            # auto-off can still fire (would otherwise be inert because
-            # the rule guards on `on_dur is not None`).
-            on_dur = float("inf")
-        if on_dur < pol.min_hold_after_manual_min:
-            log_decision(idx, "hold", "manual_grace", on_dur, cat)
-            continue
+            log_decision(idx, "hold", "mqtt_publish_failed", "bath")
 
-        reason = None
 
-        # Daytime auto-off: only between sunrise+grace and sunset. The
-        # condition used to be `now >= sunrise + grace`, which was true
-        # all day AND all evening — so a light turned on at 22:30 in
-        # the dark was instantly auto-offed because "now > 05:55"
-        # (today's sunrise + 60 min). Bracketing with `< sunset`
-        # restricts the rule to actual daylight hours.
-        if (pol.auto_off_after_sunrise_min is not None
-                and sunrise + timedelta(minutes=pol.auto_off_after_sunrise_min) <= now < sunset):
-            reason = "during_daylight"
-        elif pol.auto_off_when_unoccupied and (
-                (weekday and WORKDAY_START_HOUR <= now.hour < WORKDAY_END_HOUR and not occupied)
-                or long_absent
-        ):
-            reason = "house_unoccupied"
-        elif pol.auto_off_after_on_duration_min is not None \
-                and on_dur >= pol.auto_off_after_on_duration_min:
-            reason = "duration_exceeded"
-        elif pol.auto_off_after_midnight and in_after_midnight_window(now):
-            reason = "after_midnight"
+# ── Per-light category evaluation ─────────────────────────────────────────────
+def evaluate_light(idx: int, is_on: bool, now: datetime, sunrise: datetime,
+                   sunset: datetime, is_dark: bool, away: bool):
+    """Decide + act on one categorized light. Comfort-first: auto-OFF only on
+    high-confidence culls; a human's light is held during awake hours."""
+    cat_name = CATEGORY_OF.get(idx, "utility")
+    cat = CATS[cat_name]
 
-        if reason:
-            if publish_state(idx, False, reason):
-                log_decision(idx, "off", reason, on_dur, cat)
-            else:
-                log_decision(idx, "hold", "mqtt_publish_failed", on_dur, cat)
+    # Min-dwell: never reverse our own very recent command.
+    if within_min_dwell(idx):
+        log_decision(idx, "hold", "min_dwell_hold", cat_name)
+        return
+
+    today = now.date()
+
+    # Per-room presence (activates when the Presence Service publishes).
+    occupied = presence_for_room(cat.presence_room)
+    if cat.presence_room == "living_core" and occupied is None:
+        occupied = living_core_occupied()
+
+    # ---- OFF (light currently on) ----
+    if is_on:
+        _, since = fetch_last_transition(idx)
+        on_dur_min = ((datetime.now(timezone.utc) - since).total_seconds() / 60.0
+                      if since is not None else float("inf"))
+        human_on = classify_origin(idx, is_on, since) in ("human", "wall")
+        # 1) Whole-house away — highest-confidence cull, overrides manual.
+        if cat.away_off and away:
+            _act_off(idx, "away_off", cat_name, human_on, on_dur_min)
+            return
+        # 2) Daylight waste (window / accent-opt / outdoor) — overrides manual;
+        #    these serve no purpose once the sun is clearly up.
+        if cat.daylight_off and in_daylight(now, sunrise, sunset):
+            _act_off(idx, "daylight_off", cat_name, human_on, on_dur_min)
+            return
+        # 3) Presence vacancy-off (only when a real presence signal says empty).
+        if cat.presence_kind and occupied is False:
+            vac = (BATH_VACANCY_MIN if cat_name in ("toilet",)
+                   else TRANSIT_VACANCY_MIN if cat.presence_kind == "motion"
+                   else ROOM_VACANCY_MIN)
+            if on_dur_min >= vac:
+                _act_off(idx, "vacancy_off", cat_name, human_on, on_dur_min)
+                return
+        # 4) Overnight cull — forgotten lights only. A light turned on DURING
+        #    the window (on_since ≥ window start) is protected. Occupied rooms
+        #    (real presence) are never culled.
+        if cat.overnight_off and in_overnight_window(now):
+            turned_on_in_window = since is not None and since.astimezone(LOCAL_TZ) >= overnight_start_dt(now)
+            if not turned_on_in_window and occupied is not True:
+                _act_off(idx, "overnight_off", cat_name, human_on, on_dur_min)
+                return
+        # 5) Duration cap (transient categories) — after the manual grace.
+        if cat.duration_cap_min is not None and on_dur_min >= max(cat.duration_cap_min, cat.manual_hold_min):
+            # Presence, if present and occupied, vetoes the cap.
+            if occupied is not True:
+                _act_off(idx, "duration_cap", cat_name, human_on, on_dur_min)
+                return
+        # Otherwise: HOLD. This is the comfort-first default — living spaces,
+        # a human's light, anything without a high-confidence off reason.
+        reason = "manual_hold" if human_on else "no_off_rule"
+        log_decision(idx, "hold", reason, cat_name, human_on, on_dur_min)
+        return
+
+    # ---- ON (light currently off) → comfort auto-on ----
+    if not cat.auto_on:
+        return  # category never auto-ons (no log spam for the many off lights)
+    if not is_dark:
+        return
+    if _dismissed_date.get(idx) == today:
+        log_decision(idx, "hold", "dismissed_today", cat_name)
+        return
+    if occupied is True:
+        if publish_state(idx, True, "auto_on_comfort"):
+            log_decision(idx, "on", "auto_on_comfort", cat_name)
+            time.sleep(0.3)  # pace successive publishes for the PLC
         else:
-            log_decision(idx, "hold", "no_rule_fired", on_dur, cat)
+            log_decision(idx, "hold", "mqtt_publish_failed", cat_name)
+
+
+def _act_off(idx: int, reason: str, cat_name: str, human_on: bool, on_dur: float):
+    if publish_state(idx, False, reason):
+        log_decision(idx, "off", reason, cat_name, human_on, on_dur)
+    else:
+        log_decision(idx, "hold", "mqtt_publish_failed", cat_name, human_on, on_dur)
+
+
+def detect_dismissals(now: datetime, states: dict[int, bool]):
+    """For auto-on-capable lights that are OFF: if we auto-on'd them earlier and
+    a human turned them off, suppress re-auto-on until the next local day."""
+    today = now.date()
+    for idx, cat_name in CATEGORY_OF.items():
+        if not CATS[cat_name].auto_on:
+            continue
+        if states.get(idx):
+            continue  # still on
+        if _dismissed_date.get(idx) == today:
+            continue
+        # Was our last command an ON, and the light is now off by a human?
+        cmds = fetch_recent_commands(idx)
+        if not cmds:
+            continue
+        last_target, last_src, _ = cmds[-1]
+        _, since = fetch_last_transition(idx)
+        off_origin = classify_origin(idx, False, since)
+        if last_src == "optimizer" and last_target is True and off_origin in ("human", "wall"):
+            _dismissed_date[idx] = today
+            log.info("light %d dismissed by %s — suppress auto-on until tomorrow", idx, off_origin)
+
+
+# ── Tick ──────────────────────────────────────────────────────────────────────
+def check_and_control():
+    _memo.clear()
+    now = datetime.now(LOCAL_TZ)
+    sunrise, sunset = todays_sun(now)
+    elev = sun_elev(now)
+    is_dark = elev < SUN_DARK_ELEVATION_DEG
+    states = fetch_current_light_states()
+    away = whole_house_away()
+
+    # Drop stale dismissals from previous days.
+    today = now.date()
+    for i, d in list(_dismissed_date.items()):
+        if d < today:
+            del _dismissed_date[i]
+
+    log.info("tick: %s elev=%.1f dark=%s away=%s lights=%d",
+             now.isoformat(timespec="seconds"), elev, is_dark, away, len(states))
+
+    # Special blocks first.
+    run_porch(now, states, elev)
+    run_sauna_laude(states)
+    run_post_sauna(now, states)
+
+    # Dismissal detection before auto-on so a same-tick dismissal suppresses.
+    detect_dismissals(now, states)
+
+    # Category loop.
+    for idx, is_on in states.items():
+        if idx in SPECIAL_IDX or idx not in CATEGORY_OF:
+            continue
+        evaluate_light(idx, is_on, now, sunrise, sunset, is_dark, away)
+
+
+# ── Boot: rebuild dismissals from the persisted command/state log ─────────────
+def rebuild_state():
+    """Restart-determinism: reconstruct today's dismissals from InfluxDB so a
+    restart doesn't re-enable a light the user dismissed earlier today."""
+    now = datetime.now(LOCAL_TZ)
+    states = fetch_current_light_states()
+    for idx, cat_name in CATEGORY_OF.items():
+        if not CATS[cat_name].auto_on or states.get(idx):
+            continue
+        cmds = fetch_recent_commands(idx, lookback_min=18 * 60)
+        if not cmds:
+            continue
+        last_target, last_src, last_t = cmds[-1]
+        if last_src == "optimizer" and last_target is True:
+            _, since = fetch_last_transition(idx)
+            if since is not None and classify_origin(idx, False, since) in ("human", "wall"):
+                if since.astimezone(LOCAL_TZ).date() == now.date():
+                    _dismissed_date[idx] = now.date()
+    if _dismissed_date:
+        log.info("rebuilt dismissals: %s", {k: str(v) for k, v in _dismissed_date.items()})
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
-
 def main():
     global influx_client, write_api, query_api
-
     log.info("=" * 60)
-    log.info("Lights Optimizer")
+    log.info("Lights Optimizer v2 (comfort-first, provenance-aware)")
+    log.info("HOME=%.4f,%.4f TZ=%s DRY_RUN=%s CHECK_INTERVAL=%ds",
+             HOME_LAT, HOME_LON, LOCAL_TZ, DRY_RUN, CHECK_INTERVAL)
     log.info("=" * 60)
-    log.info("HOME=%.4f,%.4f  TZ=%s  DRY_RUN=%s", HOME_LAT, HOME_LON, LOCAL_TZ, DRY_RUN)
-    log.info("CHECK_INTERVAL=%ds  sunrise_grace=%dm  occ_window=%dm  long_absence=%dm",
-             CHECK_INTERVAL, SUNRISE_GRACE_MIN, OCCUPANCY_WINDOW_MIN, LONG_ABSENCE_MIN)
-    log.info("-" * 60)
 
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
@@ -1049,13 +933,13 @@ def main():
     write_api = influx_client.write_api(write_options=SYNCHRONOUS)
     query_api = influx_client.query_api()
 
-    # Initial sun calc — surface bad coordinates immediately rather than at
-    # the first tick.
-    sr, ss = todays_sun(datetime.now(LOCAL_TZ))
-    log.info("Today's sun: rise=%s set=%s", sr.isoformat(timespec="seconds"),
-             ss.isoformat(timespec="seconds"))
+    sr, ss = todays_sun(now := datetime.now(LOCAL_TZ))
+    log.info("Today's sun: rise=%s set=%s", sr.strftime("%H:%M"), ss.strftime("%H:%M"))
+    try:
+        rebuild_state()
+    except Exception as e:
+        log.warning("state rebuild failed (continuing): %s", e)
 
-    # Run once immediately, then on the configured interval.
     consecutive_failures = 0
     while running:
         try:
@@ -1064,21 +948,14 @@ def main():
             touch_health()
         except Exception as e:
             consecutive_failures += 1
-            log.exception("check_and_control failed (%d/%d consecutive): %s",
+            log.exception("check_and_control failed (%d/%d): %s",
                           consecutive_failures, MAX_CONSECUTIVE_FAILURES, e)
             if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
-                # Persistent failure (e.g. the midsummer sun-calc crash that
-                # silently froze every tick). Stop touching the health file and
-                # exit non-zero so the container goes unhealthy AND crash-loops
-                # under `restart: unless-stopped`, surfacing the breakage in
-                # `docker compose ps` instead of looking "Up" forever.
-                log.critical("%d consecutive failures — exiting non-zero for restart/visibility",
-                             consecutive_failures)
+                log.critical("%d consecutive failures — exiting for restart", consecutive_failures)
                 if influx_client:
                     influx_client.close()
                 sys.exit(1)
 
-        # Interruptible sleep
         end = time.monotonic() + CHECK_INTERVAL
         while running and time.monotonic() < end:
             time.sleep(min(1.0, end - time.monotonic()))

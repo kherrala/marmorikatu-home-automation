@@ -35,7 +35,7 @@ no new instrumentation required.
 | Sauna state                | `ruuvi.temperature` for sensor `Sauna` — heating / hot / cooling / off | 1–2          |
 | Sauna left on (waste)      | Heater continuously in heating/hot ≥ 2 h — repeats every 15 min until off | 0 (critical) |
 | Spot-price tier transition | `heating_optimizer.tier` (CHEAP / NORMAL / EXPENSIVE / PRE_HEAT)    | 1–2              |
-| Lights-optimizer decisions | `lights_optimizer` (auto-off, sauna-laude, CO₂ auto, post-sauna, porch) | 1–2          |
+| Lights-optimizer decisions | `lights_optimizer` — keyed on the `reason` string (comfort auto-on, daylight/overnight/away/vacancy/duration auto-off, sauna-laude, post-sauna, porch) | 1–2          |
 | CO₂ class transition       | `ruuvi.co2` per sensor → good / elevated / high / very_high (both directions) | 1–2      |
 | PM2.5 class transition     | `ruuvi.pm2_5` per sensor → good / elevated / high (both directions) | 1–2              |
 | Aux-heater activation      | `thermia.aux_heater_3kw` / `aux_heater_6kw` rising / falling edge   | 1                |

@@ -34,7 +34,7 @@ See [docs/architecture.md](docs/architecture.md) for full service details, ports
 
 ## InfluxDB Data Model
 
-Seven measurements in bucket `building_automation`: `hvac` (WAGO HVAC + OR-WE-517 energy meters, ~13s), `rooms` (WAGO room temps + underfloor-heating valves, ~13s), `ruuvi` (Bluetooth sensors, ~1s), `thermia` (heat pump, ~30s), `lights` (WAGO controls + outlets, ~13s), `switches` (wall-switch press states, ~13s), `plc_publisher` (heartbeat counters, ~13s).
+Core measurements in bucket `building_automation`: `hvac` (WAGO HVAC + OR-WE-517 energy meters, ~13s), `rooms` (WAGO room temps + underfloor-heating valves, ~13s), `ruuvi` (Bluetooth sensors, ~1s), `thermia` (heat pump, ~30s), `lights` (WAGO controls + outlets, ~13s), `switches` (wall-switch press states, ~13s), `plc_publisher` (heartbeat counters, ~13s). Plus derived/support measurements: `lights_optimizer` (decision log), `light_command` (per-command provenance breadcrumb: tags `light_id`/`source`, field `is_on`), `light_override` (Unifi porch holds), `ble` (BLE-identity sightings: tag `mac`/`device_class`, field `rssi`), `heating_optimizer` (spot-price tier), and — when the Presence Service lands — `presence` (per-room `{occupied, confidence, source}`).
 
 See [docs/influxdb-data-model.md](docs/influxdb-data-model.md) for complete schema with all tags, fields, types, units, and example queries.
 
@@ -84,9 +84,9 @@ See [docs/heating-optimizer.md](docs/heating-optimizer.md) for the tier algorith
 
 ## Lights Optimizer
 
-The `lights-optimizer` service applies per-light auto-off rules and a few special-case auto-on/off blocks: front-porch sunset schedule (idx 47), sauna laude LED temperature hysteresis (idx 4), and CO₂-driven kitchen + living-room ceiling lights (idx 40, 54) gated on a sun-elevation darkness threshold with user-dismissal-until-tomorrow logic. Decisions log to InfluxDB measurement `lights_optimizer`.
+The `lights-optimizer` service is **comfort-first and provenance-aware**: it never fights an active user and only turns lights off on high-confidence culls (daylight waste on window/outdoor/decorative lights, whole-house-away, deep-night overnight, and duration caps on transient rooms), while offering comfort auto-on in the dark for the living core. Every light maps to a behaviour category (living/window/accent/circulation/utility/toilet/bedroom/office/theater/outdoor) plus special blocks: front porch (idx 47), sauna laude LED (idx 4), post-sauna cooldown (idx 1/38/39). Command **provenance** is carried on a side-channel `marmorikatu/light/<idx>/command` breadcrumb (the PLC `/set` accepts only bare `true`/`false` — enriching it was tested and rejected), recorded as the `light_command` measurement; a state change with no matching breadcrumb is inferred to be a physical wall press. Occupancy comes from a normalized `presence` measurement (the separate Presence Service) with kitchen-CO₂ + BLE-identity (`ble` measurement) + astronomical-darkness interim fallbacks. Decisions log to InfluxDB measurement `lights_optimizer` (adds a `manual_locked` field).
 
-See [docs/lights-optimizer.md](docs/lights-optimizer.md) for full policy table, special-case block details, CO₂ classification thresholds, and tunable env vars.
+See [docs/lights-optimizer.md](docs/lights-optimizer.md) for the category table, provenance/manual-lock model, presence contract, special-case blocks, reason vocabulary, and tunable env vars.
 
 ## Kiosk Announcer
 

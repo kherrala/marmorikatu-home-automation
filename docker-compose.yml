@@ -126,6 +126,30 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # BLE identity ("who / anyone is home"). Requires the Ruuvi Gateway to be
+  # configured to forward raw BLE advertisements to this broker/topic — until
+  # that is enabled the container idles (no `ble` data). Start it after enabling
+  # the gateway feed: `docker compose up -d ble`. See docs/lights-optimizer.md §F.
+  ble:
+    build:
+      context: .
+      dockerfile: Dockerfile.ble
+    container_name: marmorikatu-ble
+    environment:
+      - MQTT_BROKER=freenas.kherrala.fi
+      - MQTT_PORT=1883
+      - BLE_MQTT_TOPIC=ruuvi/#
+      - INFLUXDB_URL=http://influxdb:8086
+      - INFLUXDB_TOKEN=wago-secret-token
+      - INFLUXDB_ORG=wago
+      - INFLUXDB_BUCKET=building_automation
+      # Optional friendly names for known static-MAC BLE tags (JSON MAC→name).
+      - BLE_DEVICE_NAMES={}
+    depends_on:
+      influxdb:
+        condition: service_healthy
+    restart: unless-stopped
+
   thermia:
     build:
       context: .

@@ -562,11 +562,61 @@ def on_disconnect(client, userdata, rc, properties=None, reason_code=None):
     print(f"Disconnected from MQTT broker (rc={rc})", flush=True)
 
 
+def _handle_light_command(idx_str, msg):
+    """Record a provenance breadcrumb from marmorikatu/light/<idx>/command.
+
+    Software controllers (lights-optimizer, mobile app, MCP/voice) publish
+    `{"on": bool, "src": "optimizer|mobile|mcp|voice", "ts": ...}` alongside
+    their unchanged `/set` command so the optimizer can tell WHO turned a
+    light on/off. The PLC never sees this topic (its `/set` binding accepts
+    only bare `true`/`false` — see memory/plc_command_channel.md). Wall
+    switches emit no breadcrumb, so a `lights/is_on` change with no matching
+    `light_command` row is inferred as a physical wall press.
+    """
+    try:
+        idx = int(idx_str)
+    except (TypeError, ValueError):
+        return
+    try:
+        d = json.loads(msg.payload.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as e:
+        print(f"[light/{idx_str}/command] bad payload: {e}", flush=True)
+        return
+    if not isinstance(d, dict):
+        return
+    on = d.get("on")
+    if on is None:
+        return
+    src = str(d.get("src") or d.get("source") or "unknown")
+    name = LIGHT_LABELS.get(idx, (f"light_{idx}", None))[0]
+    p = (
+        Point("light_command")
+        .tag("light_id", str(idx))
+        .tag("light_name", name)
+        .tag("source", src)
+        .field("is_on", 1 if on else 0)
+        .time(datetime.now(timezone.utc), WritePrecision.S)
+    )
+    try:
+        write_api.write(bucket=INFLUXDB_BUCKET, org=INFLUXDB_ORG, record=[p])
+        print(f"[light/{idx}/command] src={src} on={bool(on)}", flush=True)
+        touch_health()
+    except Exception as e:
+        print(f"[light/{idx}/command] influx write failed: {e}", flush=True)
+
+
 def on_message(client, userdata, msg):
     prefix = f"{TOPIC_PREFIX}/"
     if not msg.topic.startswith(prefix):
         return
     suffix = msg.topic[len(prefix):]
+
+    # Provenance breadcrumb: marmorikatu/light/<idx>/command (not a state topic).
+    parts = suffix.split("/")
+    if len(parts) == 3 and parts[0] == "light" and parts[2] == "command":
+        _handle_light_command(parts[1], msg)
+        return
+
     handler = TOPIC_HANDLERS.get(suffix)
     if handler is None:
         return

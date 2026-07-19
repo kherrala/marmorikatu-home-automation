@@ -1,177 +1,191 @@
-# Lights Optimizer
+# Lights Optimizer (v2)
 
-Auto-off and limited auto-on rules for the WAGO PLC lighting system.
+Comfort-first, provenance-aware auto on/off for the WAGO PLC lighting system.
 Implementation: `scripts/lights_optimizer.py`. Decisions log to InfluxDB
-measurement `lights_optimizer` (tags: `light_id`, `light_name`, `category`;
-fields: `decision`, `reason`, `on_duration_min`, `dry_run`).
+measurement `lights_optimizer` (tags `light_id`, `light_name`, `category`;
+fields `decision`, `reason`, `manual_locked`, `on_duration_min`, `dry_run`).
+
+## Design principles
+
+1. **Never fight an active user.** A light a human turned on — wall switch,
+   mobile app, or voice/MCP — is held. The optimizer only ever turns a light
+   *off* on a **high-confidence** cull.
+2. **Comfort auto-on** in the dark for the rooms the family lives in.
+3. **Energy savings only from high-confidence culls:** daylight waste on
+   window/outdoor/decorative lights, whole-house-away, deep-night overnight, and
+   duration caps on transient rooms. Lighting is a small share of house energy;
+   the optimizer's job is comfort + zero-annoyance waste elimination.
+
+## Command provenance (the core fix)
+
+The PLC, the mobile app, and voice/MCP all drive lights by publishing
+`marmorikatu/light/<idx>/set` = `true`/`false`. That payload is consumed by an
+out-of-repo WBM Native-MQTT→`Controls[]` BOOL binding that accepts **only** the
+bare `true`/`false` (enriching it with a source field was tested live and
+**rejected** — see `memory/plc_command_channel.md`; commands also actuate
+~12–13 s later). So provenance travels on a **side-channel** topic instead:
+
+- Every software controller also publishes `marmorikatu/light/<idx>/command` =
+  `{"on":bool,"src":"optimizer|mobile|mcp|voice","ts":…}` beside its unchanged
+  `/set` (`lights_optimizer.publish_command_breadcrumb`,
+  `mcp_tools/lights.py`, and the mobile app).
+- `plc_mqtt_subscriber` records these as the **`light_command`** measurement
+  (tags `light_id`, `light_name`, `source`; field `is_on`).
+- The optimizer's `classify_origin(idx, is_on, since)` attributes a
+  `lights/is_on` transition to the breadcrumb landing within
+  `[since − CMD_CORRELATION_LEAD_S, since + CMD_CORRELATION_LAG_S]`. A
+  transition with **no** matching breadcrumb is a **physical wall press**. Result:
+  `optimizer` | `human` (mobile/mcp/voice) | `wall`. Both human and wall count as
+  a manual action the optimizer must not fight.
+
+## Presence (Core C)
+
+The optimizer consumes a **normalized per-room occupancy** signal — the
+`presence` measurement / `presence/<room>` written by the separate Presence
+Service project (`memory/presence_architecture.md`): `{room, occupied,
+confidence, source}`. It never talks to individual sensors.
+
+Until a room's sensor lands, it degrades gracefully to **interim signals**:
+
+- `living_core` occupancy ← kitchen Ruuvi CO₂ (`co2_signal_class`, below).
+- whole-house away ← **BLE identity** (`ble` measurement, strong-RSSI MAC count,
+  `ble_present_count`), falling back to the legacy activity heuristic
+  (`activity_recent` over `LONG_ABSENCE_MIN`) when no BLE data exists.
+- darkness ← astronomical sun elevation (`SUN_DARK_ELEVATION_DEG`, 8°).
+
+When the Presence Service publishes `occupied` for a room, the **presence
+overlay** activates with no rule change: transit areas (PIR) get motion-on +
+short vacancy-off; stay-still rooms (mmWave) hold while occupied and only off
+after confirmed vacancy. Gated by `PRESENCE_MIN_CONFIDENCE`.
 
 ## Tick
 
 Runs every `CHECK_INTERVAL` (default 60 s):
 
-1. Fetch every primary light's current `is_on` state from `lights` measurement.
-2. Compute `house_occupied` from three signals over `OCCUPANCY_WINDOW_MIN`
-   (default 30 min): wall-switch press, light-on transition, kitchen Ruuvi
-   CO₂ rise (`co2_recently_elevated`).
-3. Compute today's sunrise / sunset (local astral library).
-4. Run **special-case blocks** (front porch, sauna laude LED, CO₂-auto kitchen
-   + living room) — each can publish on/off regardless of current state.
-5. Run **per-light evaluation loop** for all other primary lights using their
-   policy from `LIGHT_POLICY`.
+1. Read every primary light's `is_on` (`fetch_current_light_states`).
+2. Compute darkness (sun elevation) and `whole_house_away` (BLE / activity).
+3. Run **special blocks**: front porch (idx 47), sauna laude LED (idx 4),
+   post-sauna cooldown (idx 1/38/39).
+4. `detect_dismissals` — a light we auto-on'd that a human then turned off is
+   marked dismissed-until-tomorrow.
+5. Per-light **category evaluation** for every other light.
 
-The special-case lights (`porch_idx=47`, `SAUNA_LAUDE_IDX=4`,
-`CO2_AUTO_MANAGED={40, 54}`) are explicitly skipped inside the per-light loop.
+Idempotent: a light is only commanded when its desired state differs from the
+observed state, and never reversed within `MIN_DWELL_SECONDS` of our own last
+command (`within_min_dwell`) — a hard floor against flapping that sits above the
+~13 s PLC latency. Restart-deterministic: `rebuild_state` reconstructs today's
+dismissals from the persisted `light_command` + `lights` history on boot.
 
-## Policies (`LIGHT_POLICY`)
+## Behaviour categories
 
-```
-Policy(auto_off_after_sunrise_min,
-       auto_off_when_unoccupied,
-       auto_off_after_on_duration_min,
-       auto_off_after_midnight,
-       min_hold_after_manual_min)
-```
+Every light index maps to exactly one category (`CATEGORY_OF`); each category's
+behaviour is a `Cat(auto_on, daylight_off, overnight_off, away_off,
+duration_cap_min, manual_hold_min, presence_room, presence_kind)`. Auto-OFF only
+fires for the flags set — an unset flag means that cull never happens for the room.
 
-| Policy | Behaviour |
-|---|---|
-| `toilet` | Forced off after `TOILET_TIMEOUT_MIN` (default 30) since manual on. Deep-night `after_midnight` rule deliberately NOT applied — toilet visits at 03–05 local were getting cut off 5 min after manual press; the 30-min duration cap remains the only auto-off path. |
-| `staircase` | Sunrise grace + occupancy + duration cap + midnight off. |
-| `bedroom` | Occupancy off (workday rule); midnight off; longer manual hold (30 min). |
-| `kitchen` | Sunrise grace + occupancy + midnight off. |
-| `livingroom` | Same as kitchen. |
-| `general` | Same as kitchen, used for hallways, outdoor power, etc. |
-| `manual_only` | Never auto-managed. Long manual hold (60 min). |
-| `porch_schedule` | Hard-coded ON when sun elevation < `SUN_DARK_ELEVATION_DEG` (default 8°) **and** local time is in the evening window 12:00 → `PORCH_OFF_HOUR`. Front porch (idx 47) only. |
+| Category | Lights (idx) | Auto-on | Auto-off criteria |
+|---|---|---|---|
+| **living** | 8,19,40,54,55 | dark + occupied (CO₂/presence), dismissable | away, or overnight-if-forgotten. **Never** daytime/occupancy off. |
+| **window** | 18,20,23,24,30,32,41,46 | — | daylight (sun up), overnight, away |
+| **accent** (LED strips) | 2,3,5,6,7 | — | overnight, away |
+| **circulation** | 25,26,35,37,42 | presence-gated (deferred) | duration cap (25 min), overnight, away |
+| **utility/closet** | 31,36,39*,43,53,56,61 | — | duration cap (30 min), overnight, away |
+| **toilet** | 29,34,44,45,52 | — | duration cap (30 min) only. No overnight-kill mid-use. |
+| **bedroom** | 22,28,33 | — | overnight, away. **No daylight-off** (nap-safe). |
+| **office** | 17 | — | away only (never daytime/overnight — must survive Zoom calls) |
+| **theater** | 49,50,51 | — | away only (never off during a movie) |
+| **outdoor** | 48,59,60 | — | daylight, overnight. **No occupancy-off** (terrace users read as away indoors). |
 
-`ABSENCE_EXEMPT_INDICES` is currently empty; it remains as a hook for any
-future light moved back into a policy that respects occupancy.
+`*` idx 39 (Tekninen tila) is categorized `utility` but is also a post-sauna
+special light (handled by the sauna block, skipped in the category loop).
 
-## Special-Case Light Blocks
+A human's ON is **held** during awake hours for every category — the auto-off
+rules above are the *only* ways a light turns off, and each is scoped to the
+genuinely-forgotten case. `manual_locked` is recorded on the decision either way.
 
-### Front Porch (idx 47, `porch_schedule`)
+### Overnight cull (gentle)
 
-`Sisäänkäynti` — front-porch light. Tracks **real darkness** rather than a
-clock-only schedule:
+`in_overnight_window` = `OVERNIGHT_START` (00:30) ≤ now < `OVERNIGHT_END_HOUR`
+(06:00). Applies to categories with `overnight_off=True`. A light turned on
+*during* the window (on-since ≥ window start — night bathroom, up-late kid) is
+**protected** (plus min-dwell), and an occupied room (real presence) is never
+culled.
 
-- ON when `sun elevation < SUN_DARK_ELEVATION_DEG` (default **8°**, same
-  threshold the CO₂-managed lights use for "getting dark indoors") **and**
-  local hour is in the evening window 12:00 → `PORCH_OFF_HOUR`.
-- OFF otherwise (daylight, after the off-hour cap, or pre-dawn morning).
-- The evening-window gate is what prevents the porch from flapping back
-  on at 04:00 when sun is still below 8° — only evening darkness counts.
-- In midsummer, when the sun never dips below 8° in Tampere, the porch
-  stays off the whole evening (intentional — there's no real darkness).
+## Special-case blocks
 
-Idempotent — only publishes when state disagrees with target.
-(Idx 48 `Ulkovalo terassi` is `manual_only` — the back-yard terrace
-light is no longer on a schedule.)
+### Front porch — idx 47 (Sisäänkäynti)
+ON when `sun elevation < SUN_DARK_ELEVATION_DEG` (8°) **and** the evening window
+`12:00 → PORCH_OFF_HOUR`. Midsummer (sun never < 8°) → stays off. A Unifi
+front-door person-detection pulse (`light_override.hold_until`) forces it on for
+a window. Idempotent.
 
-External holds (e.g. `unifi-webhook` person-detection pulses) override the
-darkness gate and force the porch ON until the override `hold_until`
-expires; the darkness rule reasserts on the next tick after that.
+### Sauna laude LED — idx 4 (Saunan laude ledi)
+Hysteresis on the Ruuvi `Sauna` temperature: on ≥ `SAUNA_LAUDE_ON_C` (55 °C),
+off ≤ `SAUNA_LAUDE_OFF_C` (50 °C), hold in the 50–55 °C dead-band.
 
-### Sauna Laude LED (idx 4)
+### Post-sauna cooldown — idx 1, 38, 39
+Once the sauna peaked > `SAUNA_AFTER_PEAK_C` (55 °C) and has been <
+`SAUNA_AFTER_OFF_C` (40 °C) for ≥ `SAUNA_AFTER_DELAY_MIN` (30 min), turn these
+manual-only lights off — unless one was pressed recently (`MANUAL_HOLD_MIN`
+grace), so a fresh shower isn't cut short.
 
-`Saunan laude ledi` follows the Ruuvi `Sauna` temperature with hysteresis:
+## CO₂ classification (`co2_signal_class`)
 
-- ON when 5-min mean sauna temp ≥ `SAUNA_LAUDE_ON_C` (default **55 °C**).
-- OFF when 5-min mean sauna temp ≤ `SAUNA_LAUDE_OFF_C` (default **50 °C**).
-- HOLD between 50–55 °C — prevents flapping when löyly causes brief
-  temperature dips during active use.
-
-Reason strings: `sauna_heated_to_57.3C`, `sauna_cooled_to_49.8C`,
-`hysteresis_hold_52.1C`, `no_sauna_temp_data`.
-
-Hard-coded because `manual_only` policy lets the LED stay on indefinitely
-after a session — observed once for ~24 h.
-
-### CO₂-Driven Kitchen + Living Room (idx 40, 54)
-
-Auto-on/off for `Keittiö kattovalo` (40) and `Olohuone kattovalo` (54)
-based on the kitchen Ruuvi CO₂ sensor (`sensor_name="Keittiö"`).
-
-#### Dark window
-
-Eligibility for auto-on requires `astral.sun.elevation()` to be below
-`SUN_DARK_ELEVATION_DEG` (default **8°**). This fires roughly 30–60 min
-either side of horizon crossing depending on latitude/season.
-
-- **Morning** (hour < 12 AND dark): only **idx 40** is eligible.
-- **Evening** (hour ≥ 12 AND dark): **both 40 and 54** are eligible.
-- Daytime (sun elevation ≥ threshold): no auto-on.
-
-#### CO₂ classification (`co2_signal_class`)
+Interim living-core occupancy from the kitchen Ruuvi (`sensor_name="Keittiö"`,
+`co2`):
 
 ```
-recent   = mean over last 5 min   (Keittiö CO₂)
-baseline = mean over [-2 h, -1 h] (anchored far enough back that recent
-                                   doesn't pull the baseline up with it)
+recent   = mean over last 5 min
+baseline = mean over [-2 h, -1 h]  (widens to [-6 h, -1 h] on cold start)
 
-ELEVATED if recent ≥ baseline + CO2_AUTO_ON_DELTA_PPM   (default +20)
-       OR recent ≥ CO2_AUTO_ON_ABSOLUTE_PPM              (default 580)
-DROPPED  if recent ≤ baseline - CO2_AUTO_OFF_DELTA_PPM   (default 50)
-       OR recent ≤ CO2_AUTO_OFF_ABSOLUTE_PPM             (default 500)
-BASELINE otherwise
-UNKNOWN  if recent missing
+ELEVATED if recent ≥ baseline + CO2_AUTO_ON_DELTA_PPM   (20)  OR recent ≥ CO2_AUTO_ON_ABSOLUTE_PPM  (580)
+DROPPED  if recent ≤ baseline − CO2_AUTO_OFF_DELTA_PPM  (100) OR recent ≤ CO2_AUTO_OFF_ABSOLUTE_PPM (450)
+BASELINE otherwise    UNKNOWN if recent missing
 ```
 
-The 1–2 h baseline window is critical: with a sliding 30-min baseline a
-slow occupancy ramp would drift both windows together and the delta would
-stay near zero. The absolute-fallback thresholds catch sustained occupancy
-without needing a baseline (also handles cold-start after restart when the
-2 h-ago window has no data).
+## Decision reason vocabulary
 
-#### Auto-on / off / dismissal
-
-- **Auto-on**: dark + eligible + ELEVATED + not dismissed today →
-  publish ON. Reason: `co2_occupancy_morning` or `co2_occupancy_evening`.
-- **Auto-off**: only ever fires for a light **the optimizer switched on
-  itself** (it has a live `_co2_auto_on_at[idx]`). Fires when that light is
-  on AND (DROPPED OR `in_after_midnight_window`). Reason: `co2_no_occupancy`
-  or `after_midnight`.
-- **Manual on always wins**: if a CO₂-managed light is on but has **no**
-  `_co2_auto_on_at` record, the user switched it on manually — the optimizer
-  holds it (reason `manual_on`) and never auto-offs it (no `co2_no_occupancy`,
-  no `after_midnight`, no quench). It stays on until the user turns it off.
-  This is why switching the living-room ceiling on used to get killed on the
-  next tick / instantly after midnight: the no-occupancy path treated a
-  missing `auto_on_t` as "on forever ago" and the after-midnight rule fired
-  on any on light regardless of origin. Our own auto-ons keep their
-  `auto_on_t` across midnight, so a lingering auto-on still gets the
-  after-midnight off.
-- **Dismissal detection**: only fires after the publish has been
-  *confirmed* by the relay. Tracked via `_co2_auto_on_confirmed[idx]`,
-  set true once `is_on=1` is observed within the
-  `_CO2_PUBLISH_GRACE_SECONDS` (default 90 s) window after publish. If
-  the relay never confirms within the grace window, the auto-on is
-  silently retried — preventing a hardware failure (unresponsive PLC
-  output) from being misread as a user dismissal.
-- Confirmed-on then off → mark `_co2_dismissed_date[idx] = today`,
-  suppress re-enable until next local date.
-- A `time.sleep(0.3)` between successive publishes within the same tick
-  reduces the chance the PLC's MQTT command handler drops one command
-  while still busy with the previous.
+`auto_on_comfort`, `daylight_off`, `overnight_off`, `away_off`, `vacancy_off`,
+`duration_cap`, `manual_hold`, `no_off_rule`, `min_dwell_hold`,
+`dismissed_today`, `porch_dark_schedule` / `porch_hold` / `porch_already_correct`,
+`sauna_heated_to_XC` / `sauna_cooled_to_XC` / `hysteresis_hold_XC` /
+`no_sauna_temp_data`, `post_sauna_cooled_Nmin_ago` / `post_sauna_manual_grace`,
+`mqtt_publish_failed`. (The `announcer` keys on these reason strings.)
 
 ## Tunable environment variables
 
 | Var | Default | Purpose |
 |---|---|---|
-| `CHECK_INTERVAL` | 60 (s) | Tick period |
-| `SUNRISE_GRACE_MIN` | 60 | Used by `kitchen`/`livingroom`/`general` policies |
-| `WORKDAY_START_HOUR` / `WORKDAY_END_HOUR` | 9 / 16 | Bedroom workday-occupancy rule |
-| `OCCUPANCY_WINDOW_MIN` | 30 | `house_occupied` lookback |
-| `LONG_ABSENCE_MIN` | 120 | `long_unoccupied` lookback |
-| `CO2_OCCUPANCY_DELTA_PPM` | 30 | Old `co2_recently_elevated` threshold |
-| `MANUAL_HOLD_MIN` | 90 | Grace after a manual on-press for `kitchen` / `livingroom` / `general` categories. Generous on purpose: cooking, eating, hanging out and tidying take longer than the 15 min it was before — letting auto-off fire that quickly trained the optimizer to fight active users. After this window the `during_daylight` / `house_unoccupied` / `after_midnight` rules can fire. |
-| `BEDROOM_HOLD_MIN` | 30 | Bedroom min-hold-after-manual |
-| `PORCH_OFF_HOUR` | 22 | Front-porch schedule end (local). `TERRACE_OFF_HOUR` is accepted as a fallback for backwards compatibility. |
-| `AFTER_MIDNIGHT_END_HOUR` | 5 | `in_after_midnight_window` upper bound (local). Default 05:00 leaves the 00:30–05:00 deep-night window where forgotten lights get culled, but releases the morning routine (≥ 05:00) to be governed by the regular per-policy duration cap. Was 07:00 — that overlapped with the early-riser bathroom use and caused the toilet light to flap-off against an active user. |
-| `SUN_DARK_ELEVATION_DEG` | 8 | Dark threshold for CO₂ auto-on |
-| `CO2_AUTO_ON_DELTA_PPM` | 20 | ELEVATED delta threshold |
-| `CO2_AUTO_ON_ABSOLUTE_PPM` | 580 | ELEVATED absolute fallback |
-| `CO2_AUTO_OFF_DELTA_PPM` | 100 | DROPPED delta threshold (stricter than ON to provide hysteresis) |
-| `CO2_AUTO_OFF_ABSOLUTE_PPM` | 450 | DROPPED absolute fallback (close to outdoor ~420) |
-| `CO2_AUTO_MIN_ON_SECONDS` | 1200 | Minimum on-time before auto-off can fire (20 min) |
-| `SAUNA_LAUDE_ON_C` | 55 | Sauna LED on threshold |
-| `SAUNA_LAUDE_OFF_C` | 50 | Sauna LED off threshold |
-| `DRY_RUN` | 0 | Set to 1 to log decisions without publishing |
+| `CHECK_INTERVAL` | 60 | Tick period (s) |
+| `SUN_DARK_ELEVATION_DEG` | 8 | Darkness threshold (porch + auto-on) |
+| `SUNRISE_GRACE_MIN` | 60 | Daylight-off only fires after sunrise+grace |
+| `MANUAL_HOLD_MIN` | 90 | Grace after a human-on (living/accent/office) |
+| `BEDROOM_HOLD_MIN` | 30 | Bedroom manual grace |
+| `SHORT_HOLD_MIN` | 5 | Grace for window/transient categories |
+| `TOILET_TIMEOUT_MIN` | 30 | Toilet duration cap |
+| `CIRCULATION_TIMEOUT_MIN` | 25 | Hall/stair duration cap |
+| `UTILITY_TIMEOUT_MIN` | 30 | Closet/utility duration cap |
+| `OVERNIGHT_START_HOUR`/`_MIN` | 0 / 30 | Overnight cull start (local) |
+| `OVERNIGHT_END_HOUR` | 6 | Overnight cull end (local) |
+| `LONG_ABSENCE_MIN` | 180 | Legacy away lookback (BLE-absent fallback) |
+| `AWAY_CONFIRM_MIN` | 15 | BLE away confirmation |
+| `BLE_RSSI_INSIDE` | −80 | Min RSSI to count a BLE device as inside |
+| `BLE_WINDOW_MIN` | 5 | BLE presence window |
+| `MIN_DWELL_SECONDS` | 300 | Never reverse our own command within this |
+| `PRESENCE_MIN_CONFIDENCE` | 0.6 | Confidence gate on normalized presence |
+| `ROOM_VACANCY_MIN` | 12 | mmWave stay-still vacancy-off |
+| `TRANSIT_VACANCY_MIN` | 4 | PIR transit vacancy-off |
+| `BATH_VACANCY_MIN` | 15 | Bathroom vacancy-off (still-shower safe) |
+| `CO2_AUTO_ON_DELTA_PPM` / `_ABSOLUTE_PPM` | 20 / 580 | ELEVATED thresholds |
+| `CO2_AUTO_OFF_DELTA_PPM` / `_ABSOLUTE_PPM` | 100 / 450 | DROPPED thresholds |
+| `PORCH_OFF_HOUR` | 23 | Front-porch evening window end (local) |
+| `SAUNA_LAUDE_ON_C` / `_OFF_C` | 55 / 50 | Laude LED hysteresis |
+| `SAUNA_AFTER_PEAK_C`/`_OFF_C`/`_DELAY_MIN`/`_LOOKBACK_H` | 55 / 40 / 30 / 6 | Post-sauna detection |
+| `CMD_CORRELATION_LEAD_S` / `_LAG_S` | 40 / 10 | Command↔transition attribution window |
+| `DRY_RUN` | 0 | Log decisions without publishing |
+
+## Rollout
+
+Run `DRY_RUN=1` in shadow first and review the `lights_optimizer` decision log
+(Grafana / MCP `get_lights_optimizer_status`) — there should be **no** `*_off`
+on living/office/theater during awake hours — before enabling actuation.

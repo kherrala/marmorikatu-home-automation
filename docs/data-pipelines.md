@@ -103,6 +103,28 @@ python scripts/import_data.py --incremental # append new lines only
 | `EF:AA:DF:C0:4F:8C` | Pakastin | 5 (basic) | Inside freezer |
 | `F1:19:ED:0F:9A:F6` | Ulkolämpötila | 5 (basic) | Outdoor |
 
+### BLE Identity Pipeline (`ble` measurement)
+
+The same Ruuvi Gateway can retransmit **every** BLE advertisement it hears (raw
+mode) to `ruuvi/<gateway_mac>/<device_mac>` with envelope `{gw_mac, rssi, ts,
+data, …}` (`data` = raw advertisement hex). The `ble` service
+(`scripts/ble_subscriber.py`) subscribes, branches on payload shape (raw
+envelope, not decoded Ruuvi JSON — so it never interferes with the `ruuvi`
+service), classifies the advertiser (`apple`/`samsung`/`google`/… from the
+manufacturer ID / service UUID in `data`), and writes measurement `ble`
+(tag `mac`/`device_class`, field `rssi`). The lights-optimizer counts distinct
+strong-RSSI MACs as a whole-house "anyone home" signal. Phones use rotating MACs
+→ this gives aggregate presence, not per-person identity. **Requires enabling
+BLE forwarding on the gateway;** until then the `ble` service idles.
+
+### Command Provenance Pipeline (`light_command` measurement)
+
+Software controllers publish `marmorikatu/light/<idx>/command`
+`{"on":bool,"src":…}` beside every `/set`; `plc_mqtt_subscriber` records it as
+`light_command` (tags `light_id`/`source`, field `is_on`). The lights-optimizer
+uses it to tell its own commands / mobile / voice apart from a physical wall
+press. See `docs/lights-optimizer.md`.
+
 ### Indoor Temperature Forwarding (INDR_T)
 
 A separate service `scripts/indoor_temp_publisher.py` (container `marmorikatu-indoor`) computes the **median** of 10 indoor sensors over the last 15 min — 3 Ruuvis (Olohuone, Keittiö, Takka) plus 7 WAGO room fields (4 bedrooms + 3 common areas). Sauna is hard-blacklisted in code; basement is excluded by default (intentionally cooler).
