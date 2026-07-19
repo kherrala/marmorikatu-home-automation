@@ -186,6 +186,14 @@ def on_message(client, userdata, msg):
 
     try:
         payload = json.loads(msg.payload.decode('utf-8'))
+        if not isinstance(payload, dict):
+            return
+        # Raw BLE advertisement envelope from the gateway ({gw_mac, rssi, data,
+        # …}) — not a decoded Ruuvi tag. These are handled by the separate `ble`
+        # subscriber; skip silently here so they don't spam "Unknown data
+        # format" and attempt fieldless writes. Also skip the gw_status heartbeat.
+        if ("data" in payload and "gw_mac" in payload) or "state" in payload:
+            return
         sensor_id = payload.get("id", "unknown")
         sensor_name = get_sensor_name(sensor_id)
         data_format = payload.get("dataFormat")
