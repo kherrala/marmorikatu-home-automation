@@ -763,10 +763,12 @@ def evaluate_light(idx: int, is_on: bool, now: datetime, sunrise: datetime,
 
     today = now.date()
 
-    # Per-room presence (activates when the Presence Service publishes).
-    occupied = presence_for_room(cat.presence_room)
-    if cat.presence_room == "living_core" and occupied is None:
-        occupied = living_core_occupied()
+    # REAL per-room presence from the Presence Service ONLY (None until it's
+    # deployed). Deliberately does NOT include the kitchen-CO₂ signal: CO₂ is a
+    # weak proxy that lags and reads "dropped" when people sit still, so it may
+    # only ever turn a light ON (comfort), never OFF. Using it for vacancy-off
+    # was turning off the occupied kitchen/living room — the exact v1 bug.
+    presence = presence_for_room(cat.presence_room)
 
     # ---- OFF (light currently on) ----
     if is_on:
@@ -783,8 +785,9 @@ def evaluate_light(idx: int, is_on: bool, now: datetime, sunrise: datetime,
         if cat.daylight_off and in_daylight(now, sunrise, sunset):
             _act_off(idx, "daylight_off", cat_name, human_on, on_dur_min)
             return
-        # 3) Presence vacancy-off (only when a real presence signal says empty).
-        if cat.presence_kind and occupied is False:
+        # 3) Presence vacancy-off — ONLY when a REAL presence signal says empty
+        #    (mmWave/PIR via the Presence Service). Never fires on CO₂/no-data.
+        if cat.presence_kind and presence is False:
             vac = (BATH_VACANCY_MIN if cat_name in ("toilet",)
                    else TRANSIT_VACANCY_MIN if cat.presence_kind == "motion"
                    else ROOM_VACANCY_MIN)
@@ -792,17 +795,17 @@ def evaluate_light(idx: int, is_on: bool, now: datetime, sunrise: datetime,
                 _act_off(idx, "vacancy_off", cat_name, human_on, on_dur_min)
                 return
         # 4) Overnight cull — forgotten lights only. A light turned on DURING
-        #    the window (on_since ≥ window start) is protected. Occupied rooms
-        #    (real presence) are never culled.
+        #    the window (on_since ≥ window start) is protected. A room with real
+        #    presence (occupied) is never culled.
         if cat.overnight_off and in_overnight_window(now):
             turned_on_in_window = since is not None and since.astimezone(LOCAL_TZ) >= overnight_start_dt(now)
-            if not turned_on_in_window and occupied is not True:
+            if not turned_on_in_window and presence is not True:
                 _act_off(idx, "overnight_off", cat_name, human_on, on_dur_min)
                 return
-        # 5) Duration cap (transient categories) — after the manual grace.
+        # 5) Duration cap (transient categories) — after the manual grace. Real
+        #    presence (occupied) vetoes the cap.
         if cat.duration_cap_min is not None and on_dur_min >= max(cat.duration_cap_min, cat.manual_hold_min):
-            # Presence, if present and occupied, vetoes the cap.
-            if occupied is not True:
+            if presence is not True:
                 _act_off(idx, "duration_cap", cat_name, human_on, on_dur_min)
                 return
         # Otherwise: HOLD. This is the comfort-first default — living spaces,
@@ -819,7 +822,12 @@ def evaluate_light(idx: int, is_on: bool, now: datetime, sunrise: datetime,
     if _dismissed_date.get(idx) == today:
         log_decision(idx, "hold", "dismissed_today", cat_name)
         return
-    if occupied is True:
+    # Auto-ON occupancy: real presence if available, else the CO₂ interim signal
+    # for the living core. CO₂ is allowed to turn lights ON (it never turns off).
+    occ_for_on = presence
+    if occ_for_on is None and cat.presence_room == "living_core":
+        occ_for_on = living_core_occupied()
+    if occ_for_on is True:
         if publish_state(idx, True, "auto_on_comfort"):
             log_decision(idx, "on", "auto_on_comfort", cat_name)
             time.sleep(0.3)  # pace successive publishes for the PLC

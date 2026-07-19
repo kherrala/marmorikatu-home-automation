@@ -155,6 +155,24 @@ def test_living_never_daylight_off(harness):
     assert harness["published"] == []
 
 
+def test_living_not_vacancy_off_on_co2_dropped(harness):
+    # REGRESSION: CO2 "dropped" with no real presence must NOT turn the living
+    # room off (CO2 only drives auto-ON). presence=None, co2=DROPPED → HOLD.
+    harness["state"]["presence"] = None
+    harness["state"]["co2"] = "DROPPED"
+    _eval(54, True, _local(2026, 1, 15, 17, 0), dark=False)
+    assert harness["published"] == []
+    assert harness["decisions"][-1][1] == "hold"
+
+
+def test_living_vacancy_off_only_on_real_presence(harness):
+    # Real mmWave presence=False (Presence Service) DOES allow vacancy-off.
+    harness["state"]["presence"] = False
+    harness["state"]["since"] = datetime.now(timezone.utc) - timedelta(minutes=30)
+    _eval(54, True, _local(2026, 1, 15, 17, 0), dark=False)
+    assert (54, False, "vacancy_off") in harness["published"]
+
+
 def test_window_daylight_off(harness):
     _eval(46, True, _local(2026, 6, 15, 13, 0), dark=False)
     assert (46, False, "daylight_off") in harness["published"]
