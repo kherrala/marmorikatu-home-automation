@@ -13,10 +13,16 @@ sighting into the `ble` measurement (tag `mac`, optional `device_class`/`name`;
 field `rssi`) so the lights-optimizer can count strong-RSSI phone-class
 advertisers → whole-house-away. See docs/lights-optimizer.md (Core F).
 
-NOTE: modern phones use randomized private MACs that rotate ~every 15 min, so
-this gives trustworthy AGGREGATE presence (how many strong advertisers are
-around), NOT stable per-person identity. Per-room / per-person presence is the
-job of the separate Zigbee Presence Service.
+NOTE: modern phones AND Samsung SmartTag / Apple AirTag finders use randomized
+private MACs that rotate ~every 15 min, so this gives at best AGGREGATE presence
+(how many strong advertisers are around), NOT stable per-person identity.
+
+CAVEAT for this house: raw advertiser-count is NOT a reliable "anyone home"
+signal — an always-on Samsung SmartTag 2 in the basement (on the bike, separated
+from its owner) broadcasts rotating finder beacons 24/7, so the count never
+reaches zero. The optimizer therefore keeps BLE-away OFF by default
+(BLE_AWAY_ENABLED). This measurement is still useful raw data for a future,
+smarter presence model; real occupancy is the Zigbee Presence Service's job.
 
 The gateway must be configured to forward BLE advertisements (raw mode) to this
 broker/topic. This subscriber branches on payload shape (`data`+`gw_mac`

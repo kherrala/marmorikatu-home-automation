@@ -99,6 +99,12 @@ LONG_ABSENCE_MIN = int(os.environ.get("LONG_ABSENCE_MIN", "180"))
 AWAY_CONFIRM_MIN = int(os.environ.get("AWAY_CONFIRM_MIN", "15"))
 BLE_RSSI_INSIDE = float(os.environ.get("BLE_RSSI_INSIDE", "-80"))
 BLE_WINDOW_MIN = int(os.environ.get("BLE_WINDOW_MIN", "5"))
+# BLE-based away detection is OPT-IN and OFF by default. Raw advertiser-count
+# presence is unreliable here: an always-on, MAC-rotating Samsung SmartTag (the
+# basement bike) never lets the count reach zero, so away would never fire; and
+# carried keychain tags stay quiet near their owner's phone. Leave off and use
+# the activity fallback until real occupancy comes from the Presence Service.
+BLE_AWAY_ENABLED = os.environ.get("BLE_AWAY_ENABLED", "0") in ("1", "true", "yes")
 
 # Idempotent reconciler: never reverse a light within MIN_DWELL_SECONDS of our
 # own last command (hard floor against flapping; sits above the ~13 s PLC latency).
@@ -516,11 +522,13 @@ from(bucket: "{INFLUXDB_BUCKET}")
 
 
 def whole_house_away() -> bool:
-    """High-confidence 'nobody home'. Prefers BLE identity; falls back to the
-    legacy activity heuristic when BLE data is unavailable."""
-    n = ble_present_count()
-    if n is not None:
-        return n == 0
+    """High-confidence 'nobody home'. BLE advertiser-count is opt-in
+    (BLE_AWAY_ENABLED) because an always-on basement SmartTag never lets the
+    count reach zero; by default use the legacy activity heuristic."""
+    if BLE_AWAY_ENABLED:
+        n = ble_present_count()
+        if n is not None:
+            return n == 0
     return not activity_recent(LONG_ABSENCE_MIN)
 
 

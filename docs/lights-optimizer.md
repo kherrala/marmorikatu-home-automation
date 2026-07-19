@@ -48,9 +48,11 @@ confidence, source}`. It never talks to individual sensors.
 Until a room's sensor lands, it degrades gracefully to **interim signals**:
 
 - `living_core` occupancy ← kitchen Ruuvi CO₂ (`co2_signal_class`, below).
-- whole-house away ← **BLE identity** (`ble` measurement, strong-RSSI MAC count,
-  `ble_present_count`), falling back to the legacy activity heuristic
-  (`activity_recent` over `LONG_ABSENCE_MIN`) when no BLE data exists.
+- whole-house away ← the legacy **activity heuristic** (`activity_recent` over
+  `LONG_ABSENCE_MIN`). BLE advertiser-count (`ble_present_count`) is **opt-in and
+  off by default** (`BLE_AWAY_ENABLED`): an always-on, MAC-rotating Samsung
+  SmartTag in the basement never lets the count reach zero, so raw BLE is not a
+  reliable occupancy signal here.
 - darkness ← astronomical sun elevation (`SUN_DARK_ELEVATION_DEG`, 8°).
 
 When the Presence Service publishes `occupied` for a room, the **presence
