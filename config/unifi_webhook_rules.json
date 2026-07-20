@@ -3,7 +3,7 @@
 
   "rules": [
     {
-      "_comment": "Front-door person detection — kiosk announces, shows the snapshot for 5 minutes, and pulses the front porch light (idx 47) on for 5 minutes IF it's actually dark (sun below SUN_DARK_ELEVATION_DEG) and not already on. The `only_if_dark` gate prevents daytime person-detections from forcing the porch on in broad daylight. A fresh detection within the 5-min window extends the OFF timer.",
+      "_comment": "Front-door person detection — kiosk announces + shows the snapshot for 5 min, and emits a `light_request` for the front porch (idx 47): a SIGNAL only (writes a 5-min light_override hold), NOT a direct light command. The lights-optimizer is the sole controller of the porch — it lights it while the hold is active and turns it off when it expires (using command provenance so it never overrides a manual porch-on). The `only_if_dark` gate keeps daytime detections from requesting the porch in daylight. A fresh detection writes a later hold_until, extending the window.",
       "match": {
         "alarm_name": "Etupihalla ihminen",
         "trigger_key": "person"
@@ -20,13 +20,9 @@
           "image_duration_s": 300
         },
         {
-          "type": "mqtt_pulse",
-          "topic": "marmorikatu/light/47/set",
+          "type": "light_request",
           "light_id": 47,
           "duration_s": 300,
-          "on_payload": "true",
-          "off_payload": "false",
-          "skip_if_on": true,
           "only_if_dark": true
         }
       ]

@@ -47,18 +47,21 @@ def test_overnight_window(h, m, expected):
     assert lo.in_overnight_window(_local(2026, 1, 15, h, m)) is expected
 
 
-# ── Porch (idx 47) — no dusk auto-on ──────────────────────────────────────────
+# ── Porch (idx 47) — optimizer is the sole controller ─────────────────────────
 @pytest.fixture
 def porch(monkeypatch):
     pub, dec = [], []
-    hold = {"until": 0.0}
-    monkeypatch.setattr(lo, "light_override_until", lambda idx: hold["until"])
+    st = {"until": 0.0, "origin": "unknown"}   # detection hold + who lit it
+    monkeypatch.setattr(lo, "light_override_until", lambda idx: st["until"])
+    monkeypatch.setattr(lo, "fetch_last_transition",
+                        lambda idx: (True, datetime.now(timezone.utc)))
+    monkeypatch.setattr(lo, "classify_origin", lambda idx, is_on, since: st["origin"])
     monkeypatch.setattr(lo, "publish_state",
                         lambda idx, on, reason: (pub.append((idx, on, reason)) or True))
     monkeypatch.setattr(lo, "log_decision",
                         lambda idx, decision, reason, category="", manual_locked=False, on_dur=None:
                         dec.append((decision, reason)))
-    return {"pub": pub, "dec": dec, "hold": hold}
+    return {"pub": pub, "dec": dec, "st": st}
 
 
 def _sun(now):
@@ -72,22 +75,43 @@ def test_porch_no_auto_on_at_dusk(porch):
     assert porch["pub"] == []
 
 
+def test_porch_detection_lights_it(porch):
+    now = _local(2026, 1, 15, 23, 0)
+    porch["st"]["until"] = now.timestamp() + 300   # active detection hold
+    lo.run_porch(now, {47: False}, *_sun(now))
+    assert (47, True, "porch_detection") in porch["pub"]
+
+
+def test_porch_detection_ended_turns_off_our_light(porch):
+    # Hold expired, porch on, and WE lit it (origin=optimizer) → turn off.
+    now = _local(2026, 1, 15, 23, 10)
+    porch["st"]["until"] = 0.0
+    porch["st"]["origin"] = "optimizer"
+    lo.run_porch(now, {47: True}, *_sun(now))
+    assert (47, False, "porch_detection_ended") in porch["pub"]
+
+
 def test_porch_manual_on_left_alone_at_night(porch):
-    # Porch on in the evening (someone switched it on) → not turned off.
+    # Porch on at night, no hold, a human lit it → never turned off.
     now = _local(2026, 1, 15, 22, 0)
+    porch["st"]["origin"] = "wall"
     lo.run_porch(now, {47: True}, *_sun(now))
     assert porch["pub"] == []
 
 
-def test_porch_unifi_hold_still_lights_it(porch):
+def test_porch_manual_off_during_detection_respected(porch):
+    # Detection hold active but the user turned it off → don't re-light it.
     now = _local(2026, 1, 15, 23, 0)
-    porch["hold"]["until"] = now.timestamp() + 300   # active detection hold
+    porch["st"]["until"] = now.timestamp() + 300
+    porch["st"]["origin"] = "human"
     lo.run_porch(now, {47: False}, *_sun(now))
-    assert (47, True, "porch_hold") in porch["pub"]
+    assert porch["pub"] == []
+    assert porch["dec"][-1] == ("hold", "detection_dismissed")
 
 
 def test_porch_daylight_off_if_left_on(porch):
-    now = _local(2026, 6, 15, 13, 0)   # midday
+    now = _local(2026, 6, 15, 13, 0)   # midday, manual on
+    porch["st"]["origin"] = "wall"
     lo.run_porch(now, {47: True}, *_sun(now))
     assert (47, False, "daylight_off") in porch["pub"]
 

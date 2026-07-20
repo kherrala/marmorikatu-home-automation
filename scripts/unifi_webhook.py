@@ -453,10 +453,40 @@ def _publish_mqtt_pulse(action: dict[str, Any], ctx: dict[str, Any]) -> None:
     timer.start()
 
 
+def _publish_light_request(action: dict[str, Any], ctx: dict[str, Any]) -> None:
+    """Signal-only: write a `light_override` hold and let the lights-optimizer —
+    the SOLE controller of the light — turn it on for the window and off after.
+
+    Unlike `mqtt_pulse` this does NOT publish to `/set` and runs no OFF timer:
+    the webhook is a pure sensor here. A fresh event just writes a later
+    `hold_until`, which extends the window. The optimizer uses command
+    provenance to avoid ever turning off a light the user switched on manually.
+    """
+    light_id = action.get("light_id")
+    try:
+        light_id_int = int(light_id) if light_id is not None else None
+    except (TypeError, ValueError):
+        light_id_int = None
+    if light_id_int is None:
+        log.warning("light_request missing/invalid light_id: %r", action)
+        return
+    if bool(action.get("only_if_dark", False)) and not _is_dark_now():
+        log.info("light_request for %d suppressed: only_if_dark and sun is up", light_id_int)
+        return
+    try:
+        duration_s = max(5.0, float(action.get("duration_s", 300)))
+    except (TypeError, ValueError):
+        duration_s = 300.0
+    _influx_write_override(light_id_int, time.time() + duration_s)
+    log.info("light_request: light %d requested on for %.0fs (optimizer actuates)",
+             light_id_int, duration_s)
+
+
 ACTIONS = {
-    "announce":     _push_announcement,
-    "mqtt_publish": _publish_mqtt,
-    "mqtt_pulse":   _publish_mqtt_pulse,
+    "announce":      _push_announcement,
+    "mqtt_publish":  _publish_mqtt,
+    "mqtt_pulse":    _publish_mqtt_pulse,
+    "light_request": _publish_light_request,
 }
 
 

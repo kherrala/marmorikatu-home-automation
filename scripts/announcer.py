@@ -640,12 +640,12 @@ def _format_lights_optimizer(row: dict) -> Event | None:
                      "lights_opt_post_sauna", 1,
                      f"lights_opt_post_sauna:{light_id}", ts)
 
-    # Front porch schedule / Unifi hold.
+    # Front porch — detection-driven (Unifi person detection).
     if reason.startswith("porch"):
         if decision == "on":
-            return Event("Etupihan valo syttyi auringonlaskun mukana.",
+            return Event("Etupihan valo syttyi — etupihalla havaittiin liikettä.",
                          "lights_opt_porch_on", 2, "lights_opt_porch", ts)
-        return Event("Etupihan valo sammui yön ajaksi.",
+        return Event("Etupihan valo sammui.",
                      "lights_opt_porch_off", 2, "lights_opt_porch", ts)
 
     # Comfort auto-on (living core, dark + occupied).

@@ -130,11 +130,16 @@ culled.
 ## Special-case blocks
 
 ### Front porch — idx 47 (Sisäänkäynti)
-**No dusk auto-on** (removed by request) — the porch is manual. The only
-automatic behaviours kept: a Unifi front-door person-detection hold
-(`light_override.hold_until`) still lights it after dark for the detection
-window (`porch_hold`), and it's forced OFF if left on into daylight
-(`daylight_off`). Otherwise it's left exactly as set.
+The optimizer is the **sole controller** — no other service writes this light.
+**No dusk auto-on** (removed by request). It lights the porch while a Unifi
+person-detection hold (`light_override.hold_until`, written by the `unifi-webhook`
+as a pure *signal* — its `light_request` action, no direct `/set`) is active
+(`porch_detection`), and turns it off when the hold expires — but **only if the
+optimizer lit it** (`classify_origin == "optimizer"` → `porch_detection_ended`),
+so a manual porch-on is never touched. A user turning it off during a detection
+is respected (`detection_dismissed`, not re-lit). Daylight-off if left on into
+daylight. This replaced the old two-writer setup where the webhook drove the
+light directly.
 
 ### Sauna laude LED — idx 4 (Saunan laude ledi)
 Hysteresis on the Ruuvi `Sauna` temperature: on ≥ `SAUNA_LAUDE_ON_C` (55 °C),

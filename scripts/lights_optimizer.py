@@ -709,33 +709,54 @@ def in_daylight(now: datetime, sunrise: datetime, sunset: datetime) -> bool:
 
 # ── Porch (idx 47) ────────────────────────────────────────────────────────────
 def run_porch(now: datetime, states: dict[int, bool], sunrise: datetime, sunset: datetime):
-    """Front porch. The optimizer NO LONGER turns it on at dusk (removed by
-    request) — it's manual. The only automatic behaviours kept:
-      * a Unifi person-detection hold (`light_override`) still lights it after
-        dark for the detection window;
-      * it's forced OFF in daylight so it can't be left on all day.
-    Otherwise it's left exactly as the user set it (no dusk auto-on)."""
+    """Front porch (idx 47). The optimizer is the SOLE controller — no other
+    service writes this light. Behaviour:
+      * NO dusk auto-on (removed by request).
+      * While a Unifi person-detection hold (`light_override`, written by the
+        webhook as a pure signal) is active → light the porch.
+      * When the hold expires → turn it off, but ONLY if WE lit it (command
+        provenance) — a porch the user switched on manually is never touched.
+      * A user turning it off during a detection is respected (not re-lit).
+      * Daylight-off if it's been left on into daylight.
+    """
     state = states.get(PORCH_IDX)
     if state is None:
         return
-    # Person-detection hold (unifi-webhook) — keep it on for the window.
-    if light_override_until(PORCH_IDX) > now.timestamp():
-        if not state:
-            if publish_state(PORCH_IDX, True, "porch_hold"):
-                log_decision(PORCH_IDX, "on", "porch_hold", "outdoor")
-            else:
-                log_decision(PORCH_IDX, "hold", "mqtt_publish_failed", "outdoor")
-        else:
-            log_decision(PORCH_IDX, "hold", "porch_hold", "outdoor")
-        return
-    # No dusk auto-on. Only cull it if left on into daylight.
-    if state and in_daylight(now, sunrise, sunset):
-        if publish_state(PORCH_IDX, False, "daylight_off"):
-            log_decision(PORCH_IDX, "off", "daylight_off", "outdoor")
+    hold_active = light_override_until(PORCH_IDX) > now.timestamp()
+
+    if hold_active:
+        if state:
+            log_decision(PORCH_IDX, "hold", "porch_detection", "outdoor")
+            return
+        # Porch off during a detection hold: light it — unless the user just
+        # turned it off (respect the dismissal, don't fight them).
+        _, since = fetch_last_transition(PORCH_IDX)
+        if classify_origin(PORCH_IDX, False, since) in ("human", "wall"):
+            log_decision(PORCH_IDX, "hold", "detection_dismissed", "outdoor")
+        elif publish_state(PORCH_IDX, True, "porch_detection"):
+            log_decision(PORCH_IDX, "on", "porch_detection", "outdoor")
         else:
             log_decision(PORCH_IDX, "hold", "mqtt_publish_failed", "outdoor")
         return
-    log_decision(PORCH_IDX, "hold", "manual", "outdoor")
+
+    # No active hold.
+    if not state:
+        log_decision(PORCH_IDX, "hold", "no_rule_fired", "outdoor")
+        return
+    # Porch is on with no hold: turn off if WE lit it (detection over), else
+    # only daylight-off — never touch a manual on at night.
+    _, since = fetch_last_transition(PORCH_IDX)
+    if classify_origin(PORCH_IDX, True, since) == "optimizer":
+        reason = "porch_detection_ended"
+    elif in_daylight(now, sunrise, sunset):
+        reason = "daylight_off"
+    else:
+        log_decision(PORCH_IDX, "hold", "manual", "outdoor")
+        return
+    if publish_state(PORCH_IDX, False, reason):
+        log_decision(PORCH_IDX, "off", reason, "outdoor")
+    else:
+        log_decision(PORCH_IDX, "hold", "mqtt_publish_failed", "outdoor")
 
 
 def run_sauna_laude(states: dict[int, bool]):
