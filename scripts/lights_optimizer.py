@@ -707,34 +707,35 @@ def in_daylight(now: datetime, sunrise: datetime, sunset: datetime) -> bool:
     return sunrise + timedelta(minutes=SUNRISE_GRACE_MIN) <= now < sunset
 
 
-# ── Porch (special block, ported from v1) ─────────────────────────────────────
-def porch_target_state(now: datetime, elev: float) -> bool:
-    is_dark = elev < SUN_DARK_ELEVATION_DEG
-    off_hour = PORCH_OFF_HOUR % 24
-    if PORCH_OFF_HOUR >= 24:
-        in_window = (now.hour >= 12) or (now.hour < off_hour)
-    else:
-        in_window = (12 <= now.hour < off_hour)
-    return is_dark and in_window
-
-
-def run_porch(now: datetime, states: dict[int, bool], elev: float):
+# ── Porch (idx 47) ────────────────────────────────────────────────────────────
+def run_porch(now: datetime, states: dict[int, bool], sunrise: datetime, sunset: datetime):
+    """Front porch. The optimizer NO LONGER turns it on at dusk (removed by
+    request) — it's manual. The only automatic behaviours kept:
+      * a Unifi person-detection hold (`light_override`) still lights it after
+        dark for the detection window;
+      * it's forced OFF in daylight so it can't be left on all day.
+    Otherwise it's left exactly as the user set it (no dusk auto-on)."""
     state = states.get(PORCH_IDX)
-    target = porch_target_state(now, elev)
-    hold_until = light_override_until(PORCH_IDX)
-    hold_active = hold_until > now.timestamp()
-    if hold_active and not target:
-        target = True
-        log.info("porch hold active until %s — forcing ON",
-                 datetime.fromtimestamp(hold_until, tz=LOCAL_TZ).strftime("%H:%M:%S"))
-    if state is None or state != target:
-        reason = "porch_hold" if hold_active else "porch_dark_schedule"
-        if publish_state(PORCH_IDX, target, "porch_dark_schedule"):
-            log_decision(PORCH_IDX, "on" if target else "off", reason, "outdoor")
+    if state is None:
+        return
+    # Person-detection hold (unifi-webhook) — keep it on for the window.
+    if light_override_until(PORCH_IDX) > now.timestamp():
+        if not state:
+            if publish_state(PORCH_IDX, True, "porch_hold"):
+                log_decision(PORCH_IDX, "on", "porch_hold", "outdoor")
+            else:
+                log_decision(PORCH_IDX, "hold", "mqtt_publish_failed", "outdoor")
+        else:
+            log_decision(PORCH_IDX, "hold", "porch_hold", "outdoor")
+        return
+    # No dusk auto-on. Only cull it if left on into daylight.
+    if state and in_daylight(now, sunrise, sunset):
+        if publish_state(PORCH_IDX, False, "daylight_off"):
+            log_decision(PORCH_IDX, "off", "daylight_off", "outdoor")
         else:
             log_decision(PORCH_IDX, "hold", "mqtt_publish_failed", "outdoor")
-    else:
-        log_decision(PORCH_IDX, "hold", "porch_already_correct", "outdoor")
+        return
+    log_decision(PORCH_IDX, "hold", "manual", "outdoor")
 
 
 def run_sauna_laude(states: dict[int, bool]):
@@ -918,7 +919,7 @@ def check_and_control():
              now.isoformat(timespec="seconds"), elev, is_dark, away, len(states))
 
     # Special blocks first.
-    run_porch(now, states, elev)
+    run_porch(now, states, sunrise, sunset)
     run_sauna_laude(states)
     run_post_sauna(now, states)
 

@@ -130,10 +130,11 @@ culled.
 ## Special-case blocks
 
 ### Front porch — idx 47 (Sisäänkäynti)
-ON when `sun elevation < SUN_DARK_ELEVATION_DEG` (8°) **and** the evening window
-`12:00 → PORCH_OFF_HOUR`. Midsummer (sun never < 8°) → stays off. A Unifi
-front-door person-detection pulse (`light_override.hold_until`) forces it on for
-a window. Idempotent.
+**No dusk auto-on** (removed by request) — the porch is manual. The only
+automatic behaviours kept: a Unifi front-door person-detection hold
+(`light_override.hold_until`) still lights it after dark for the detection
+window (`porch_hold`), and it's forced OFF if left on into daylight
+(`daylight_off`). Otherwise it's left exactly as set.
 
 ### Sauna laude LED — idx 4 (Saunan laude ledi)
 Hysteresis on the Ruuvi `Sauna` temperature: on ≥ `SAUNA_LAUDE_ON_C` (55 °C),

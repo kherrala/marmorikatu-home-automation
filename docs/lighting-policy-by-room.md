@@ -158,9 +158,9 @@ lights 23/30/32 are in group 2; the adults' walk-in closet 31 is in group 5.)*
 - **Need:** on when dark and wanted outside; **off whenever the sun is up**. In
   the bright Finnish summer they're essentially never needed — evenings on the
   terrace stay light, and the darkness gate keeps them off automatically.
-- **Auto-ON (porch 47 only):** dark **AND** the evening window (12:00 → 22:00).
-  A Unifi front-door person-detection also pulses it on after hours. Midsummer
-  (never dark) → stays off.
+- **Auto-ON:** none — the porch (47) no longer auto-ons at dusk (removed by
+  request); it's manual. A Unifi front-door person-detection hold still lights
+  it after dark for the detection window.
 - **Auto-OFF:** the sun is up, **OR** after the porch off-hour / overnight.
   **No occupancy-off** — someone sitting on the terrace reads as "away" indoors
   and must never be plunged into darkness.

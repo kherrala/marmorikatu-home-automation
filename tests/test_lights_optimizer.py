@@ -47,22 +47,49 @@ def test_overnight_window(h, m, expected):
     assert lo.in_overnight_window(_local(2026, 1, 15, h, m)) is expected
 
 
-# ── Porch schedule (ported) ───────────────────────────────────────────────────
-def test_porch_off_in_daylight():
-    assert lo.porch_target_state(_local(2026, 5, 19, 15, 0), 35.0) is False
+# ── Porch (idx 47) — no dusk auto-on ──────────────────────────────────────────
+@pytest.fixture
+def porch(monkeypatch):
+    pub, dec = [], []
+    hold = {"until": 0.0}
+    monkeypatch.setattr(lo, "light_override_until", lambda idx: hold["until"])
+    monkeypatch.setattr(lo, "publish_state",
+                        lambda idx, on, reason: (pub.append((idx, on, reason)) or True))
+    monkeypatch.setattr(lo, "log_decision",
+                        lambda idx, decision, reason, category="", manual_locked=False, on_dur=None:
+                        dec.append((decision, reason)))
+    return {"pub": pub, "dec": dec, "hold": hold}
 
 
-def test_porch_on_evening_dusk():
-    assert lo.porch_target_state(_local(2026, 1, 15, 19, 30), 5.0) is True
+def _sun(now):
+    return _local(now.year, now.month, now.day, 6, 0), _local(now.year, now.month, now.day, 21, 0)
 
 
-def test_porch_predawn_no_flap():
-    assert lo.porch_target_state(_local(2026, 1, 15, 4, 0), -12.0) is False
+def test_porch_no_auto_on_at_dusk(porch):
+    # Dark evening, porch off, no detection hold → optimizer must NOT turn it on.
+    now = _local(2026, 1, 15, 19, 30)
+    lo.run_porch(now, {47: False}, *_sun(now))
+    assert porch["pub"] == []
 
 
-def test_porch_threshold_boundary():
-    assert lo.porch_target_state(_local(2026, 4, 15, 20, 0), 8.0) is False
-    assert lo.porch_target_state(_local(2026, 4, 15, 20, 0), 7.99) is True
+def test_porch_manual_on_left_alone_at_night(porch):
+    # Porch on in the evening (someone switched it on) → not turned off.
+    now = _local(2026, 1, 15, 22, 0)
+    lo.run_porch(now, {47: True}, *_sun(now))
+    assert porch["pub"] == []
+
+
+def test_porch_unifi_hold_still_lights_it(porch):
+    now = _local(2026, 1, 15, 23, 0)
+    porch["hold"]["until"] = now.timestamp() + 300   # active detection hold
+    lo.run_porch(now, {47: False}, *_sun(now))
+    assert (47, True, "porch_hold") in porch["pub"]
+
+
+def test_porch_daylight_off_if_left_on(porch):
+    now = _local(2026, 6, 15, 13, 0)   # midday
+    lo.run_porch(now, {47: True}, *_sun(now))
+    assert (47, False, "daylight_off") in porch["pub"]
 
 
 # ── co2_signal_class ──────────────────────────────────────────────────────────
