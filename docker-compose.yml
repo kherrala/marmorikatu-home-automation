@@ -21,6 +21,9 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    # Without this, if InfluxDB ever exits/stops it stays DOWN — which took the
+    # whole data layer (Grafana, mobile app, all ingestion) offline on 2026-07-20.
+    restart: unless-stopped
 
   grafana:
     image: grafana/grafana:12.3.2
