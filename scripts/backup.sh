@@ -1,6 +1,10 @@
 #!/bin/bash
 set -euo pipefail
 
+# Cron runs this with an empty environment; the entrypoint captured the needed
+# vars (INFLUXDB_URL/INFLUXDB_TOKEN/RETENTION_DAYS) here at container start.
+[ -f /etc/backup.env ] && . /etc/backup.env
+
 BACKUP_DIR=/backups
 RETENTION_DAYS=${RETENTION_DAYS:-30}
 DATE=$(date +%Y-%m-%d)

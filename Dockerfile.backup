@@ -5,7 +5,8 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY scripts/backup.sh /usr/local/bin/backup.sh
-RUN chmod +x /usr/local/bin/backup.sh
+COPY scripts/backup-entrypoint.sh /usr/local/bin/backup-entrypoint.sh
+RUN chmod +x /usr/local/bin/backup.sh /usr/local/bin/backup-entrypoint.sh
 
 # Run daily at 03:00
 RUN echo "0 3 * * * root /usr/local/bin/backup.sh >> /var/log/backup.log 2>&1" \
@@ -14,4 +15,6 @@ RUN echo "0 3 * * * root /usr/local/bin/backup.sh >> /var/log/backup.log 2>&1" \
 
 VOLUME ["/backups"]
 
-CMD ["cron", "-f"]
+# Entrypoint captures the container env for cron (which otherwise can't see it),
+# then runs cron in the foreground.
+CMD ["/usr/local/bin/backup-entrypoint.sh"]
