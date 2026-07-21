@@ -87,11 +87,11 @@ fires for the flags set — an unset flag means that cull never happens for the 
 
 | Category | Lights (idx) | Auto-on | Auto-off criteria |
 |---|---|---|---|
-| **living** | 8,19,40,54,55 | dark + occupied (CO₂/presence), dismissable | away, or overnight-if-forgotten. **Never** daytime/occupancy off. |
+| **living** | 5,8,19,40,54,55 | dark + occupied (CO₂/presence), dismissable | presence vacancy-off; away; overnight-if-forgotten. **Never** daytime off. |
 | **window** | 18,20,23,24,30,32,41,46 | — | daylight (sun up), overnight, away |
-| **accent** (LED strips) | 2,3,5,6,7 | — | overnight, away |
-| **circulation** | 25,26,35,37,42 | presence-gated (deferred) | duration cap (25 min), overnight, away |
-| **utility/closet** | 31,36,39*,43,53,56,61 | — | duration cap (30 min), overnight, away |
+| **accent** (kitchen cabinet LED) | 2,7 | — | overnight, away |
+| **circulation** | 3,25,26,35,37,42 | presence-gated (deferred) | duration cap (25 min), overnight, away |
+| **utility/closet** | 6,31,36,39*,43,53,56,61 | — | duration cap (30 min), overnight, away |
 | **toilet** | 29,34,44,45,52 | — | duration cap (30 min) only. No overnight-kill mid-use. |
 | **bedroom** | 22,28,33 | — | overnight, away. **No daylight-off** (nap-safe). |
 | **office** | 17 | — | away only (never daytime/overnight — must survive Zoom calls) |

@@ -191,10 +191,11 @@ CATS: dict[str, Cat] = {
 # sensor simply yields no presence (comfort-first hold), so this is safe now.
 LIGHT_ROOM: dict[int, str] = {
     54: "living_room", 55: "living_room", 19: "living_room",   # living-room proper (FP300)
+    5: "living_room",                                          # Olohuone LED, full room light (FP300)
     17: "office",                                              # office (future FP300)
     49: "theater", 50: "theater", 51: "theater",              # basement theater
     35: "hall_down", 37: "hall_down", 42: "hall_down",        # downstairs entry/stairs (PIR)
-    25: "hall_up", 26: "hall_up",                             # upstairs hall/stairs (PIR)
+    25: "hall_up", 26: "hall_up", 3: "hall_up",               # upstairs hall/stairs (PIR); 3 = YK aula LED
     44: "wc_down", 45: "wc_down", 52: "wc_basement",          # WCs (PIR)
     29: "bath_up", 34: "bath_up",                             # upstairs bathroom (PIR)
     22: "bedroom_seela", 28: "bedroom_aarni", 33: "bedroom_adults",  # bedrooms (PIR)
@@ -203,17 +204,21 @@ LIGHT_ROOM: dict[int, str] = {
 # Light index → category. Every index in LIGHT_LABELS is covered. Special-block
 # lights (porch 47, laude 4, post-sauna 1/38/39) are handled outside the loop.
 CATEGORY_OF: dict[int, str] = {
-    # LIVING — open-plan kitchen / dining / living core
-    8: "living", 19: "living", 40: "living", 54: "living", 55: "living",
+    # LIVING — open-plan kitchen / dining / living core (5 = Olohuone LED, a full
+    # room light, not a strip — behaves like the living-room ceilings 54/55)
+    5: "living", 8: "living", 19: "living", 40: "living", 54: "living", 55: "living",
     # WINDOW — decorative window lights, pointless in daylight
     18: "window", 20: "window", 23: "window", 24: "window",
     30: "window", 32: "window", 41: "window", 46: "window",
-    # ACCENT — decorative LED strips
-    2: "accent", 3: "accent", 5: "accent", 6: "accent", 7: "accent",
-    # CIRCULATION — halls, entry, staircases (transient)
-    25: "circulation", 26: "circulation", 35: "circulation", 37: "circulation", 42: "circulation",
-    # UTILITY / CLOSET — windowless, forgotten-prone
-    31: "utility", 36: "utility", 43: "utility", 53: "utility", 56: "utility", 61: "utility",
+    # ACCENT — kitchen cabinet LED strips only: 2 = mood (above cupboards),
+    # 7 = task (under-cabinet). Full-room LEDs (3/5/6) are NOT accent — see below.
+    2: "accent", 7: "accent",
+    # CIRCULATION — halls, entry, staircases (transient). 3 = YK aula LED, a full
+    # upstairs-hall light.
+    3: "circulation", 25: "circulation", 26: "circulation", 35: "circulation", 37: "circulation", 42: "circulation",
+    # UTILITY / CLOSET — windowless, forgotten-prone. 6 = KHH (utility room) LED,
+    # a full room light.
+    6: "utility", 31: "utility", 36: "utility", 43: "utility", 53: "utility", 56: "utility", 61: "utility",
     # TOILET — WCs + mirror lights
     29: "toilet", 34: "toilet", 44: "toilet", 45: "toilet", 52: "toilet",
     # BEDROOM (sleep) — ceilings/wardrobes upstairs (no daylight-off, nap-safe)

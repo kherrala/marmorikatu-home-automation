@@ -39,8 +39,9 @@ the evening).
 ## 1. Living core — kitchen · dining · downstairs living room
 
 **Lights:** 8 Keittiö katto, 40 Keittiö kattovalo, 19 Ruokailu, 54 Olohuone
-kattovalo, 55 Olohuone kattovalo 2. *(Open-plan; the kitchen Ruuvi CO₂ sensor
-covers the whole area.)*
+kattovalo, 55 Olohuone kattovalo 2, 5 Olohuone LED (a full room light, not a
+strip). *(Open-plan; the kitchen Ruuvi CO₂ sensor + the living-room FP300 cover
+the area.)*
 
 - **Need:** where the family lives — must be lit when someone is here in the
   dark, and **must never go dark on an occupied room**.
@@ -64,7 +65,10 @@ covers the whole area.)*
 
 ## 3. Accent LED strips
 
-**Lights:** 2, 7 Keittiö kaapisto, 5 Olohuone ledi, 6 KHH ledi, 3 YK aula ledi.
+**Lights:** 2 Keittiö kaapisto ylä (mood, above cupboards), 7 Keittiö kaapisto
+ala (task, under-cabinet). *These are the only true LED strips — the other LEDs
+(5 Olohuone, 6 KHH, 3 YK aula) are full room lights, categorised with their
+rooms below.*
 
 - **Need:** mood lighting — a deliberate human choice.
 - **Auto-ON:** none.
@@ -73,8 +77,8 @@ covers the whole area.)*
 
 ## 4. Circulation — halls · entry · staircases
 
-**Lights:** 25 Aula rappuset, 26 YK aula katto, 35 Eteinen, 37 Tuulikaappi,
-42 Portaikko.
+**Lights:** 25 Aula rappuset, 26 YK aula katto, 3 YK aula LED, 35 Eteinen,
+37 Tuulikaappi, 42 Portaikko.
 
 - **Need:** on briefly for passage; frequently forgotten.
 - **Auto-ON:** *deferred* — no reliable arrival signal until PIR is installed
@@ -86,8 +90,9 @@ covers the whole area.)*
 
 ## 5. Utility & closets
 
-**Lights:** 31 Aikuiset vaatehuone, 36 Tuulikaappi vaatehuone, 43 KHH
-vaatehuone, 53 Kellari varasto, 56 KHH katto 2, 61 Varasto, 39 Tekninen tila.
+**Lights:** 6 KHH LED (full room light), 31 Aikuiset vaatehuone, 36 Tuulikaappi
+vaatehuone, 43 KHH vaatehuone, 53 Kellari varasto, 56 KHH katto 2, 61 Varasto,
+39 Tekninen tila.
 
 - **Need:** windowless, the #1 forgotten lights.
 - **Auto-ON:** none.
