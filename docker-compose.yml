@@ -162,7 +162,6 @@ services:
   zigbee2mqtt:
     image: koenkk/zigbee2mqtt:latest
     container_name: marmorikatu-zigbee2mqtt
-    profiles: ["presence"]
     volumes:
       - ./zigbee2mqtt:/app/data
     ports:
@@ -188,7 +187,6 @@ services:
       context: .
       dockerfile: Dockerfile.presence
     container_name: marmorikatu-presence
-    profiles: ["presence"]
     environment:
       - MQTT_BROKER=freenas.kherrala.fi
       - MQTT_PORT=1883

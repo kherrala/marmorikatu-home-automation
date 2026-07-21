@@ -17,9 +17,9 @@ SONOFF SNZB-03PR2 (PIR)   Aqara FP300 (mmWave)
                      lights-optimizer  (per-room auto-on / vacancy-off)
 ```
 
-Everything except the two Zigbee containers is already running; those sit behind
-the **`presence` compose profile** so they don't start until the hardware is on
-the network.
+All services — including the two Zigbee containers (`zigbee2mqtt` + `presence`) —
+start by default with `docker compose up -d`. The coordinator IP is baked into the
+compose config (`SLZB_HOST` default `192.168.1.218`); set `SLZB_HOST` only if it moves.
 
 ---
 
@@ -43,9 +43,10 @@ its **IP address**. In the SLZB web UI set the coordinator **Mode = Zigbee2MQTT*
 ### 2. Start Zigbee2MQTT
 On the server (`~/marmorikatu-home-automation`, `git pull` first):
 ```bash
-SLZB_HOST=<slzb-ip> docker compose --profile presence up -d zigbee2mqtt
+docker compose up -d zigbee2mqtt
 ```
-`SLZB_HOST` fills `tcp://<ip>:6638` in the compose env (persist it in a `.env`
+The coordinator defaults to `tcp://192.168.1.218:6638`; only if it moves, override
+with `SLZB_HOST=<slzb-ip> docker compose up -d zigbee2mqtt` (persist in a `.env`
 file: `echo "SLZB_HOST=<slzb-ip>" >> .env`). Watch it come up:
 `docker logs -f marmorikatu-zigbee2mqtt` (expect "Coordinator firmware …",
 "Zigbee2MQTT started"). The web frontend is at `http://<server>:8080`.
@@ -81,9 +82,9 @@ so partial coverage is fine.
 
 ### 5. Start the Presence Engine
 ```bash
-docker compose --profile presence up -d presence
+docker compose up -d presence
 ```
-(Both together next time: `SLZB_HOST=<ip> docker compose --profile presence up -d`.)
+(Both containers now start with a plain `docker compose up -d` — no profile flag.)
 
 ### 6. Verify
 ```bash
