@@ -16,7 +16,7 @@
   },
 
   "devices": {
-    "_example_fp300_living": "living_room",
+    "fp300_living": "living_room",
     "_example_snzb_hall_down": "hall_down",
     "_example_snzb_wc_down": "wc_down",
     "_example_snzb_bath_up": "bath_up",
