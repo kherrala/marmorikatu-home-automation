@@ -85,26 +85,41 @@ def process_prices(data):
 
 
 def write_to_influxdb(points):
-    """Write points to InfluxDB."""
+    """Write points to InfluxDB. Returns True on success, False on failure."""
     try:
         write_api.write(bucket=INFLUXDB_BUCKET, org=INFLUXDB_ORG, record=points)
         print(f"Wrote {len(points)} electricity price points to InfluxDB")
+        return True
     except Exception as e:
         print(f"Error writing to InfluxDB: {e}")
+        return False
 
 
 def poll_and_store():
-    """Fetch prices and store to InfluxDB. Returns True if tomorrow's prices were included."""
+    """Fetch prices and store them to InfluxDB.
+
+    Returns (tomorrow_available, write_ok):
+      tomorrow_available — the API response already carries tomorrow's prices.
+      write_ok           — the InfluxDB write actually succeeded.
+
+    The caller must only fall through to the once-a-day sleep when BOTH are true.
+    Keying the sleep on tomorrow_available alone (as before) meant a *failed*
+    write — e.g. InfluxDB down at 14:15 — still looked "done", so the poller
+    slept ~24h on prices that never landed, and today's prices stayed missing
+    with no re-fetch. Since the API is TodayAndDayForward, retrying until the
+    write succeeds backfills today automatically the moment InfluxDB is back.
+    """
     data = fetch_prices()
     if not data:
         print("No price data received")
-        return False
+        return False, False
 
     tomorrow_available = has_tomorrow_prices(data)
 
+    write_ok = False
     points = process_prices(data)
     if points:
-        write_to_influxdb(points)
+        write_ok = write_to_influxdb(points)
         prices = [entry.get("PriceWithTax", 0) * 100.0 for entry in data]
         print(f"Price range: {min(prices):.1f} - {max(prices):.1f} c/kWh ({len(data)} entries)")
         if tomorrow_available:
@@ -112,7 +127,7 @@ def poll_and_store():
         else:
             print("Tomorrow's prices not yet available")
 
-    return tomorrow_available
+    return tomorrow_available, write_ok
 
 
 def seconds_until_next_publish():
@@ -171,20 +186,24 @@ def main():
 
     # Initial fetch
     print("Starting initial fetch...")
-    has_tomorrow = poll_and_store()
+    tomorrow_available, write_ok = poll_and_store()
 
     while running:
-        if has_tomorrow:
-            # Tomorrow's prices already fetched — sleep until next publish window
+        if tomorrow_available and write_ok:
+            # Tomorrow's prices fetched AND stored — sleep until the next publish.
             wait = seconds_until_next_publish()
             print(f"Next check at {PUBLISH_HOUR}:{PUBLISH_MINUTE:02d} EET "
                   f"(sleeping {wait / 3600:.1f} hours)")
             sleep_interruptible(wait)
-            if not running:
-                break
-            has_tomorrow = poll_and_store()
+        elif not write_ok:
+            # The write did not land (e.g. InfluxDB down, or a fetch returned no
+            # data). Retry soon regardless of the publish window so today's prices
+            # get stored as soon as InfluxDB is reachable again, rather than
+            # sleeping a whole day on data that never persisted.
+            print(f"Prices not stored; retrying in {RETRY_INTERVAL} seconds...")
+            sleep_interruptible(RETRY_INTERVAL)
         else:
-            # Tomorrow's prices not yet available — retry every RETRY_INTERVAL
+            # Stored fine, but tomorrow's prices aren't published yet.
             now_eet = datetime.now(EET)
             publish_time = now_eet.replace(hour=PUBLISH_HOUR, minute=PUBLISH_MINUTE,
                                            second=0, microsecond=0)
@@ -195,17 +214,15 @@ def main():
                       f"{PUBLISH_HOUR}:{PUBLISH_MINUTE:02d} EET "
                       f"({wait / 3600:.1f} hours)")
                 sleep_interruptible(wait)
-                if not running:
-                    break
-                has_tomorrow = poll_and_store()
             else:
                 # In publish window — retry every RETRY_INTERVAL
                 print(f"Tomorrow's prices not yet available, "
                       f"retrying in {RETRY_INTERVAL} seconds...")
                 sleep_interruptible(RETRY_INTERVAL)
-                if not running:
-                    break
-                has_tomorrow = poll_and_store()
+
+        if not running:
+            break
+        tomorrow_available, write_ok = poll_and_store()
 
     if influx_client:
         influx_client.close()
