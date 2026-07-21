@@ -170,9 +170,14 @@ services:
     environment:
       - TZ=Europe/Helsinki
       - ZIGBEE2MQTT_CONFIG_MQTT_SERVER=mqtt://freenas.kherrala.fi:1883
-      # SLZB-06U (CC2652P) over the network. Set SLZB_HOST to its IP.
-      - ZIGBEE2MQTT_CONFIG_SERIAL_PORT=tcp://${SLZB_HOST:-192.168.1.50}:6638
+      # SLZB-06U (CC2652P) over the network at 192.168.1.218:6638.
+      # Override the IP with SLZB_HOST if it ever changes.
+      - ZIGBEE2MQTT_CONFIG_SERIAL_PORT=tcp://${SLZB_HOST:-192.168.1.218}:6638
+      - ZIGBEE2MQTT_CONFIG_SERIAL_BAUDRATE=115200
       - ZIGBEE2MQTT_CONFIG_SERIAL_ADAPTER=zstack
+      - ZIGBEE2MQTT_CONFIG_SERIAL_DISABLE_LED=false
+      # Coordinator TX power (dBm), max for the CC2652P.
+      - ZIGBEE2MQTT_CONFIG_ADVANCED_TRANSMIT_POWER=20
     restart: unless-stopped
 
   # Presence Engine: normalizes Zigbee occupancy (Aqara FP300 mmWave, SONOFF
@@ -256,7 +261,10 @@ services:
     ports:
       - "3002:3002"
     environment:
-      - MCP_URLS=http://mcp:3001/mcp/,http://remind:8765/sse?db=home,http://playwright-mcp:3025/sse
+      # db=kiosk: the remind 0.12.x rewrite has an incompatible on-disk schema,
+      # so we start a fresh DB rather than migrate. The old home.db stays on the
+      # remind-data volume, unused, for rollback.
+      - MCP_URLS=http://mcp:3001/mcp/,http://remind:8765/sse?db=kiosk,http://playwright-mcp:3025/sse
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - CLAUDE_MODEL=claude-haiku-4-5-20251001
@@ -298,7 +306,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8765/api/v1/stats?db=home')"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8765/api/v1/stats?db=kiosk')"]
       interval: 30s
       timeout: 10s
       retries: 3
