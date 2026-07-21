@@ -168,6 +168,9 @@ class Cat:
 CATS: dict[str, Cat] = {
     #                 auto_on daylt  overn  away   cap                     hold             room            kind
     "living":     Cat(True,  False, True,  True,  None,                    MANUAL_HOLD_MIN, "living_core",  "mmwave"),
+    # Full room light switched on deliberately (e.g. Olohuone LED next to the
+    # auto-on kattovalo): NEVER auto-on, but still vacancy/overnight/away-off.
+    "secondary":  Cat(False, False, True,  True,  None,                    MANUAL_HOLD_MIN, None,           "mmwave"),
     "window":     Cat(False, True,  True,  True,  None,                    SHORT_HOLD_MIN,  None,           None),
     "accent":     Cat(False, False, True,  True,  None,                    MANUAL_HOLD_MIN, None,           None),
     # Transit + toilet + bedroom auto-ON on motion when dark (needs a real PIR
@@ -204,9 +207,11 @@ LIGHT_ROOM: dict[int, str] = {
 # Light index → category. Every index in LIGHT_LABELS is covered. Special-block
 # lights (porch 47, laude 4, post-sauna 1/38/39) are handled outside the loop.
 CATEGORY_OF: dict[int, str] = {
-    # LIVING — open-plan kitchen / dining / living core (5 = Olohuone LED, a full
-    # room light, not a strip — behaves like the living-room ceilings 54/55)
-    5: "living", 8: "living", 19: "living", 40: "living", 54: "living", 55: "living",
+    # LIVING — open-plan kitchen / dining / living core
+    8: "living", 19: "living", 40: "living", 54: "living", 55: "living",
+    # SECONDARY — full room light, manual-on only (no auto-on), still auto-off.
+    # 5 = Olohuone LED: user wants only the kattovalo (54/55) to auto-on.
+    5: "secondary",
     # WINDOW — decorative window lights, pointless in daylight
     18: "window", 20: "window", 23: "window", 24: "window",
     30: "window", 32: "window", 41: "window", 46: "window",

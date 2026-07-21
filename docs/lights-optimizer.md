@@ -87,7 +87,8 @@ fires for the flags set — an unset flag means that cull never happens for the 
 
 | Category | Lights (idx) | Auto-on | Auto-off criteria |
 |---|---|---|---|
-| **living** | 5,8,19,40,54,55 | dark + occupied (CO₂/presence), dismissable | presence vacancy-off; away; overnight-if-forgotten. **Never** daytime off. |
+| **living** | 8,19,40,54,55 | dark + occupied (CO₂/presence), dismissable | presence vacancy-off; away; overnight-if-forgotten. **Never** daytime off. |
+| **secondary** | 5 | — (manual-on only) | presence vacancy-off; away; overnight-if-forgotten. Full room light you switch on deliberately (Olohuone LED). |
 | **window** | 18,20,23,24,30,32,41,46 | — | daylight (sun up), overnight, away |
 | **accent** (kitchen cabinet LED) | 2,7 | — | overnight, away |
 | **circulation** | 3,25,26,35,37,42 | presence-gated (deferred) | duration cap (25 min), overnight, away |

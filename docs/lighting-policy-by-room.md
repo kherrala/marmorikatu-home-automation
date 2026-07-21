@@ -39,9 +39,12 @@ the evening).
 ## 1. Living core — kitchen · dining · downstairs living room
 
 **Lights:** 8 Keittiö katto, 40 Keittiö kattovalo, 19 Ruokailu, 54 Olohuone
-kattovalo, 55 Olohuone kattovalo 2, 5 Olohuone LED (a full room light, not a
-strip). *(Open-plan; the kitchen Ruuvi CO₂ sensor + the living-room FP300 cover
-the area.)*
+kattovalo, 55 Olohuone kattovalo 2. *(Open-plan; the kitchen Ruuvi CO₂ sensor +
+the living-room FP300 cover the area.)*
+
+> **5 Olohuone LED** is a full room light too, but the household wants **only the
+> kattovalo to auto-on**. It's category `secondary`: never auto-on (switched on
+> deliberately), but still vacancy/overnight/away-off like the rest of the room.
 
 - **Need:** where the family lives — must be lit when someone is here in the
   dark, and **must never go dark on an occupied room**.
