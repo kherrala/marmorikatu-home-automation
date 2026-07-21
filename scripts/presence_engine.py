@@ -282,11 +282,17 @@ def main():
     while running:
         load_config()  # hot-reload on mtime change
         now = time.time()
-        for room, rc in _rooms.items():
-            st = _state.setdefault(room, {"occupied": False, "last_positive": 0.0,
-                                          "illuminance": None, "battery": None,
-                                          "source": "", "last_emit": 0.0})
-            # Expire occupancy after the room's linger.
+        # Only maintain rooms a real sensor has actually reported to. A configured
+        # room with no mapped/paired device never enters _state (on_message creates
+        # it on the first message), so we don't spend InfluxDB writes + MQTT
+        # heartbeats on permanently-vacant empty rooms. Such rooms yield no
+        # presence signal at all → the optimizer holds them comfort-first (None),
+        # which is exactly the intended "no sensor yet" behaviour.
+        for room, st in list(_state.items()):
+            rc = _rooms.get(room)
+            if rc is None:
+                continue  # room dropped from config
+            # Expire occupancy after the room's linger (mmWave: dead-sensor failsafe).
             if st["occupied"] and (now - st["last_positive"]) > rc["linger_s"]:
                 st["occupied"] = False
                 emit_room(room)
