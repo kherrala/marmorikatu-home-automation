@@ -62,6 +62,11 @@ CONFIG_FILE = os.environ.get("PRESENCE_ROOMS_FILE", "/app/config/presence_rooms.
 TICK_S = float(os.environ.get("PRESENCE_TICK_S", "5"))
 # Re-publish/re-write each room at least this often (liveness + InfluxDB freshness).
 HEARTBEAT_S = float(os.environ.get("PRESENCE_HEARTBEAT_S", "60"))
+# Level (mmWave) falling-edge debounce: after an explicit `presence:false`, wait
+# this long for a re-detect before declaring the room vacant. Absorbs a lone
+# spurious false from a battery mmWave sensor (which can't run the radar
+# continuously); a genuine departure simply stays false and clears after it.
+FALLING_CONFIRM_S = float(os.environ.get("PRESENCE_FALLING_CONFIRM_S", "60"))
 
 # Default per-type behaviour when a room omits it.
 # mmWave is held occupied until an explicit falling edge, so its linger is a
@@ -135,22 +140,26 @@ def _positive(payload: dict) -> bool | None:
     return None
 
 
-def _next_occupancy(room_type, occupied: bool, pos) -> tuple[bool, bool]:
-    """Decide a room's next occupancy from one sensor signal.
+def _tick_vacancy(occupied, pending_since, last_positive, last_emit, now,
+                  confirm_s, linger_s, heartbeat_s):
+    """Per-tick maintenance decision for one room. Returns:
+      'clear'     — go vacant + emit: a confirmed falling edge (mmWave `pending`
+                    held for confirm_s with no re-detect), or the dead-sensor
+                    failsafe when no explicit false ever arrived (linger_s).
+      'heartbeat' — re-emit current state (InfluxDB freshness / liveness).
+      None        — nothing to do.
 
-    Returns (new_occupied, emit_now).
-
-    mmWave (level) sensors report both edges and hold presence while they see
-    you, so we HOLD occupied from the rising edge until an explicit falling edge
-    — the tick-loop linger is only a failsafe for these. PIR (pulse) sensors
-    only fire on motion; their `false` is the gap between re-triggers, so it's
-    ignored here and the linger timer bridges it.
+    A pending falling edge is honoured only after confirm_s, so a lone spurious
+    `presence:false` followed by a re-detect (which resets pending_since to 0)
+    never turns the room vacant.
     """
-    if pos is True:
-        return True, not occupied            # rising edge — emit once
-    if pos is False and room_type == "mmwave":
-        return False, occupied               # falling edge — emit if it was occupied
-    return occupied, False                    # no change (PIR false / battery-only report)
+    if occupied and pending_since and (now - pending_since) >= confirm_s:
+        return "clear"
+    if occupied and (now - last_positive) > linger_s:
+        return "clear"
+    if (now - last_emit) > heartbeat_s:
+        return "heartbeat"
+    return None
 
 
 def _num(payload: dict, *keys):
@@ -188,7 +197,8 @@ def on_message(client, userdata, msg):
 
     st = _state.setdefault(room, {"occupied": False, "last_positive": 0.0,
                                   "illuminance": None, "battery": None,
-                                  "source": friendly, "last_emit": 0.0})
+                                  "source": friendly, "last_emit": 0.0,
+                                  "pending_vacant_since": 0.0})
     st["source"] = friendly
     lux = _num(payload, "illuminance_lux", "illuminance")
     if lux is not None:
@@ -198,13 +208,20 @@ def on_message(client, userdata, msg):
         st["battery"] = batt
 
     pos = _positive(payload)
-    if pos is True:
-        st["last_positive"] = time.time()  # refresh the failsafe / linger window
     room_type = (_rooms.get(room) or {}).get("type")
-    new_occupied, emit = _next_occupancy(room_type, st["occupied"], pos)
-    st["occupied"] = new_occupied
-    if emit:
-        emit_room(room)  # rising or (mmWave) falling edge — publish immediately
+    if pos is True:
+        st["last_positive"] = time.time()   # refresh the failsafe / linger window
+        st["pending_vacant_since"] = 0.0     # a re-detect cancels a pending vacancy
+        if not st["occupied"]:
+            st["occupied"] = True
+            emit_room(room)                  # rising edge — publish immediately
+    elif pos is False and room_type == "mmwave":
+        # Level-sensor falling edge: arm the confirmation timer instead of
+        # clearing now. The tick loop clears it after FALLING_CONFIRM_S unless a
+        # re-detect arrives first — see _tick_vacancy.
+        if st["occupied"] and not st["pending_vacant_since"]:
+            st["pending_vacant_since"] = time.time()
+    # PIR `false` is the gap between motion re-triggers — ignored; linger bridges.
 
 
 def emit_room(room: str):
@@ -217,7 +234,11 @@ def emit_room(room: str):
     payload = {
         "room": room,
         "occupied": bool(st["occupied"]),
-        "confidence": rc["confidence"] if st["occupied"] else 0.0,
+        # Confidence = reliability of the reading (sensor quality), NOT occupancy
+        # magnitude. A *confident vacancy* must carry the room's confidence so it
+        # clears the optimizer's PRESENCE_MIN_CONFIDENCE gate and enables
+        # vacancy-off; emitting 0.0 on vacant silently disabled auto-off.
+        "confidence": rc["confidence"],
         "source": st["source"],
         "ts": int(now),
     }
@@ -292,11 +313,15 @@ def main():
             rc = _rooms.get(room)
             if rc is None:
                 continue  # room dropped from config
-            # Expire occupancy after the room's linger (mmWave: dead-sensor failsafe).
-            if st["occupied"] and (now - st["last_positive"]) > rc["linger_s"]:
+            action = _tick_vacancy(
+                st["occupied"], st.get("pending_vacant_since", 0.0),
+                st["last_positive"], st["last_emit"], now,
+                FALLING_CONFIRM_S, rc["linger_s"], HEARTBEAT_S)
+            if action == "clear":
                 st["occupied"] = False
+                st["pending_vacant_since"] = 0.0
                 emit_room(room)
-            elif (now - st["last_emit"]) > HEARTBEAT_S:
+            elif action == "heartbeat":
                 emit_room(room)  # periodic refresh (InfluxDB freshness + liveness)
         touch_health()
         end = now + TICK_S

@@ -52,27 +52,46 @@ def test_type_defaults_present():
     assert pe.TYPE_DEFAULTS["mmwave"]["linger_s"] >= pe.TYPE_DEFAULTS["pir"]["linger_s"]
 
 
-# ── _next_occupancy: per-type occupancy state transitions ─────────────────────
-def test_mmwave_holds_and_emits_on_edges():
-    # Rising edge: vacant → occupied, emit once.
-    assert pe._next_occupancy("mmwave", False, True) == (True, True)
-    # Already occupied, another positive report: stays occupied, no re-emit.
-    assert pe._next_occupancy("mmwave", True, True) == (True, False)
-    # Explicit falling edge: occupied → vacant, emit.
-    assert pe._next_occupancy("mmwave", True, False) == (False, True)
-    # Falling edge while already vacant: no change, no emit.
-    assert pe._next_occupancy("mmwave", False, False) == (False, False)
+# ── _tick_vacancy: per-tick maintenance decision ──────────────────────────────
+# Signature: (occupied, pending_since, last_positive, last_emit, now,
+#             confirm_s, linger_s, heartbeat_s)
+NOW = 10_000.0
+CONFIRM, LINGER, HEARTBEAT = 60.0, 900.0, 60.0
 
 
-def test_pir_latches_on_motion_and_ignores_false():
-    # Motion latches occupancy.
-    assert pe._next_occupancy("pir", False, True) == (True, True)
-    # PIR "false" is the gap between re-triggers — ignored; the linger clears it.
-    assert pe._next_occupancy("pir", True, False) == (True, False)
+def test_confirmed_falling_edge_clears():
+    # Occupied, a falling edge armed CONFIRM+ ago with no re-detect → clear.
+    assert pe._tick_vacancy(True, NOW - 61, NOW - 61, NOW - 5,
+                            NOW, CONFIRM, LINGER, HEARTBEAT) == "clear"
 
 
-def test_battery_only_report_never_changes_occupancy():
-    # pos=None (no occupancy field) must not flip either sensor type.
-    assert pe._next_occupancy("mmwave", True, None) == (True, False)
-    assert pe._next_occupancy("pir", True, None) == (True, False)
-    assert pe._next_occupancy("mmwave", False, None) == (False, False)
+def test_pending_not_yet_confirmed_does_not_clear():
+    # Falling edge armed only 30s ago (< CONFIRM) → not yet vacant.
+    assert pe._tick_vacancy(True, NOW - 30, NOW - 30, NOW - 5,
+                            NOW, CONFIRM, LINGER, HEARTBEAT) is None
+
+
+def test_cancelled_pending_holds_via_heartbeat():
+    # pending_since reset to 0 (a re-detect happened): stays occupied; only a
+    # heartbeat is due since last_emit is stale.
+    assert pe._tick_vacancy(True, 0.0, NOW - 5, NOW - 61,
+                            NOW, CONFIRM, LINGER, HEARTBEAT) == "heartbeat"
+
+
+def test_dead_sensor_failsafe_clears_after_linger():
+    # No explicit false ever arrived, but no positive for > linger_s → clear.
+    assert pe._tick_vacancy(True, 0.0, NOW - 901, NOW - 5,
+                            NOW, CONFIRM, LINGER, HEARTBEAT) == "clear"
+
+
+def test_heartbeat_when_fresh_but_emit_stale():
+    assert pe._tick_vacancy(True, 0.0, NOW - 10, NOW - 61,
+                            NOW, CONFIRM, LINGER, HEARTBEAT) == "heartbeat"
+
+
+def test_nothing_to_do_when_fresh():
+    assert pe._tick_vacancy(True, 0.0, NOW - 10, NOW - 5,
+                            NOW, CONFIRM, LINGER, HEARTBEAT) is None
+    # Vacant room with a recent emit: nothing to do.
+    assert pe._tick_vacancy(False, 0.0, NOW - 10, NOW - 5,
+                            NOW, CONFIRM, LINGER, HEARTBEAT) is None
