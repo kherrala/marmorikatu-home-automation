@@ -284,9 +284,11 @@ _reconnect_events: dict[str, asyncio.Event] = {}
 _DEAD_SESSION_ERRORS = (anyio.ClosedResourceError, anyio.EndOfStream, ConnectionError, BrokenPipeError)
 
 TOOL_CALL_TIMEOUT = 15  # seconds — max time for a single MCP tool call
-# Remind tools call Ollama internally (embeddings + LLM) and need more time
+# Remind's remember/recall embed via Ollama (nomic-embed-text) and need more time.
+# The library rewrite (>=0.10) is deterministic — no LLM, and the old
+# consolidate/ingest/flush_ingest tools are gone; remember/recall are all we call.
 REMIND_TOOL_TIMEOUT = 60
-_REMIND_TOOLS = {"remember", "recall", "consolidate", "ingest", "flush_ingest"}
+_REMIND_TOOLS = {"remember", "recall"}
 
 
 def _invalidate_session(session: ClientSession):
@@ -303,8 +305,10 @@ def _invalidate_session(session: ClientSession):
 
 async def _call_tool_safe(tool_name: str, tool_input: dict, iteration: int, caller: str) -> str:
     """Call an MCP tool with timeout, dead-session detection, and error handling."""
-    # Workaround: remind's remember tool crashes when episode_type is a string
-    # (expects enum, gets str from LLM). Strip it — remind auto-detects the type.
+    # remind's remember now accepts episode_type as a string from a fixed set
+    # (observation/decision/question/preference/meta/outcome/fact). We strip it
+    # anyway: the small local model emits arbitrary/invalid values, and the
+    # default "observation" is fine for kiosk preference capture.
     if tool_name == "remember":
         tool_input = {k: v for k, v in tool_input.items() if k != "episode_type"}
 
@@ -339,15 +343,6 @@ async def _call_tool_safe(tool_name: str, tool_input: dict, iteration: int, call
         msg = f"Error calling {tool_name}: {type(e).__name__}: {e}"
         log.error("[%s] Tool error: %s", caller, msg)
         return msg
-
-
-async def _consolidate_memory():
-    """Trigger remind consolidation after a remember call (non-forced)."""
-    try:
-        result = await _call_tool_safe("consolidate", {}, 0, "auto-consolidate")
-        log.info("Memory consolidation: %s", result[:100])
-    except Exception as e:
-        log.warning("Memory consolidation failed: %s", e)
 
 
 def _tools_to_openai(tools: list[dict]) -> list[dict]:
@@ -621,9 +616,6 @@ async def chat_endpoint(request: Request) -> JSONResponse:
             await _call_tool_safe("remember", {"content": last_msg}, 0, "auto-remember")
             result["tool_calls"].append({"tool": "remember", "input": {"content": last_msg}})
 
-        if any(tc.get("tool") == "remember" for tc in result.get("tool_calls", [])):
-            asyncio.create_task(_consolidate_memory())
-
     return JSONResponse(result)
 
 
@@ -710,8 +702,6 @@ async def chat_stream_endpoint(request: Request) -> Response:
             log.info("Stream auto-remember: user said 'muista'")
             await _call_tool_safe("remember", {"content": last_msg}, 0, "auto-remember")
             all_tool_calls.append({"tool": "remember", "input": {"content": last_msg}})
-        if any(tc.get("tool") == "remember" for tc in all_tool_calls):
-            asyncio.create_task(_consolidate_memory())
 
     return StreamingResponse(
         generate(),

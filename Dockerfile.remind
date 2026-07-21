@@ -1,8 +1,13 @@
 FROM python:3.12-slim
 WORKDIR /app
 # Pin numpy<2.1 — server CPU lacks X86_V2 instructions required by numpy 2.4+
+# (remind-mcp needs numpy>=2.0.0, so <2.1 still satisfies it).
+# [ollama] pulls httpx — required by the Ollama embedding provider (nomic-embed-text).
+# Version pinned: the 0.x line has already shipped one API-breaking rewrite
+# (LLM layer dropped, consolidate/ingest tools removed) — pin so an upstream
+# release can't silently break the kiosk memory path again. Bump deliberately.
 RUN pip install --no-cache-dir "numpy>=2.0,<2.1" && \
-    pip install --no-cache-dir remind-mcp
+    pip install --no-cache-dir "remind-mcp[ollama]==0.12.4"
 COPY remind-config.json /app/remind.config.json
 EXPOSE 8765
 # Copy config at runtime (volume mounts /root/.remind/ and would shadow build-time copy)

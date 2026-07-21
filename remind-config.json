@@ -1,18 +1,12 @@
 {
-  "llm_provider": "ollama",
   "embedding_provider": "ollama",
   "ollama": {
     "url": "http://192.168.1.36:11434",
-    "llm_model": "gemma4:e4b",
-    "embedding_model": "nomic-embed-text",
-    "ingest_model": "gemma4:e4b"
+    "embedding_model": "nomic-embed-text"
   },
-  "db_url": "sqlite:////data/remind.db",
-  "auto_consolidate": true,
-  "consolidation_threshold": 2,
   "decay": {
     "enabled": true,
-    "decay_interval": 604800,
+    "decay_interval": 20,
     "decay_rate": 0.05
   }
 }

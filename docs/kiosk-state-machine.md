@@ -162,8 +162,8 @@ Process transcribed text: detect farewells, generate AI responses, speak them, a
 
 ### Memory Integration
 - System prompt instructs the model to call `recall` at conversation start and `remember` to store user preferences, news highlights, and home concerns.
-- The bridge strips `episode_type` from remember calls (workaround for a remind library bug).
-- After any `remember` call, the bridge triggers non-forced consolidation in the background.
+- The bridge strips `episode_type` from remember calls — the local model emits arbitrary values, and remind's default `observation` type is fine for kiosk capture.
+- Remind (>=0.10) is a deterministic memory layer with no LLM: it embeds via Ollama (`nomic-embed-text`) and curates facts by clustering. The old auto-`consolidate` step was removed — that tool no longer exists.
 
 ### Acceptance Criteria
 - [ ] User says "Heippa" → goodbye spoken, greeting dismissed
