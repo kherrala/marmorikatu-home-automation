@@ -17,12 +17,19 @@ The lights-optimizer consumes exactly this (its `presence_for_room()` reads the
 `presence` measurement) — so adding a sensor lights up that room's automation
 with no optimizer change.
 
-Room state ownership: the engine owns the occupancy *timing*. A room goes
-occupied on the first positive signal and stays occupied until `linger_s` after
-the last positive signal, then flips to vacant. mmWave rooms use a short linger
-(the sensor already reports stillness); PIR rooms use a longer one so the light
-doesn't drop between re-triggers. Consumers therefore see a clean, debounced
-occupied/vacant — they don't need their own timers.
+Room state ownership: the engine owns the occupancy *timing*, and the model
+differs by sensor kind:
+
+  * mmWave (level, e.g. FP300) reports an explicit rising AND falling edge and
+    holds presence while it sees you — but Z2M only re-publishes that level
+    sporadically (seconds to minutes apart). So the room is HELD occupied from
+    the `true` edge until the `false` edge; `linger_s` is only a long
+    dead-sensor failsafe, not the primary timer.
+  * PIR (pulse, e.g. SNZB-03PR2) only fires on motion; its `occupancy:false` is
+    just the gap between re-triggers, so it's ignored and `linger_s` bridges the
+    gaps — the room stays occupied until `linger_s` after the last motion.
+
+Consumers therefore see a clean, debounced occupied/vacant — no timers needed.
 
 Config: config/presence_rooms.json (hot-reloaded on mtime change) maps each
 Zigbee2MQTT `friendly_name` to a room, and each room to a sensor type + linger.
@@ -57,8 +64,12 @@ TICK_S = float(os.environ.get("PRESENCE_TICK_S", "5"))
 HEARTBEAT_S = float(os.environ.get("PRESENCE_HEARTBEAT_S", "60"))
 
 # Default per-type behaviour when a room omits it.
+# mmWave is held occupied until an explicit falling edge, so its linger is a
+# long DEAD-SENSOR FAILSAFE (must exceed the sporadic re-report gap, else a
+# still-present person expires between reports). PIR linger is the real timer
+# that bridges motion re-triggers.
 TYPE_DEFAULTS = {
-    "mmwave": {"linger_s": 30, "confidence": 0.95},
+    "mmwave": {"linger_s": 900, "confidence": 0.95},
     "pir":    {"linger_s": 120, "confidence": 0.85},
 }
 
@@ -124,6 +135,24 @@ def _positive(payload: dict) -> bool | None:
     return None
 
 
+def _next_occupancy(room_type, occupied: bool, pos) -> tuple[bool, bool]:
+    """Decide a room's next occupancy from one sensor signal.
+
+    Returns (new_occupied, emit_now).
+
+    mmWave (level) sensors report both edges and hold presence while they see
+    you, so we HOLD occupied from the rising edge until an explicit falling edge
+    — the tick-loop linger is only a failsafe for these. PIR (pulse) sensors
+    only fire on motion; their `false` is the gap between re-triggers, so it's
+    ignored here and the linger timer bridges it.
+    """
+    if pos is True:
+        return True, not occupied            # rising edge — emit once
+    if pos is False and room_type == "mmwave":
+        return False, occupied               # falling edge — emit if it was occupied
+    return occupied, False                    # no change (PIR false / battery-only report)
+
+
 def _num(payload: dict, *keys):
     for k in keys:
         if k in payload and isinstance(payload[k], (int, float)):
@@ -170,14 +199,12 @@ def on_message(client, userdata, msg):
 
     pos = _positive(payload)
     if pos is True:
-        st["last_positive"] = time.time()
-        if not st["occupied"]:
-            st["occupied"] = True
-            emit_room(room)  # rising edge — publish immediately
-    elif pos is False:
-        # A device that explicitly reports vacant just stops refreshing the
-        # linger; the tick loop flips the room vacant once linger_s elapses.
-        pass
+        st["last_positive"] = time.time()  # refresh the failsafe / linger window
+    room_type = (_rooms.get(room) or {}).get("type")
+    new_occupied, emit = _next_occupancy(room_type, st["occupied"], pos)
+    st["occupied"] = new_occupied
+    if emit:
+        emit_room(room)  # rising or (mmWave) falling edge — publish immediately
 
 
 def emit_room(room: str):
