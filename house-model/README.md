@@ -14,7 +14,8 @@ photos. Levels +132.86 / +135.90 / +138.91, ridge +143.60.
 | `viewer.html` | three.js reference viewer (fetches the .glb next to it) |
 | `marmorikatu-3d.html` | Same viewer fully self-contained (offline / WebView-ready) |
 | `cameras.json` | Generated per-room camera presets + light anchor positions |
-| `spec.py` / `bpy_backend.py` / `seina_planks.png` / `kiveys_pavers.png` / `lattia_tammi.png` | Parametric source of truth + textures (walls, paving, whitewashed-oak floors) |
+| `spec.py` / `bpy_backend.py` | Parametric source of truth |
+| `tex/*.jpg` | PBR textures (Poly Haven CC0, palette-matched: siding, floor, pavers, concrete, brick, lawn) + normal maps |
 
 Rebuild + re-export in Blender's Python console:
 

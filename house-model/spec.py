@@ -31,6 +31,11 @@ def _wall(B,name,axis,c,a0,a1,z0,h,t,ops,mat):
         if hi-lo<=0.005 or zt-zb<=0.005: return
         if axis=='x': B.box(nm,(c-t/2,c+t/2),(lo,hi),(z0+zb,z0+zt),mat)
         else:         B.box(nm,(lo,hi),(c-t/2,c+t/2),(z0+zb,z0+zt),mat)
+    tag='xfr' if mat in ('WallExt','WallExt2','ConcreteW') else 'ifr'   # trim hides with its wall layer
+    def frame(nm,lo,hi,zb,zt):
+        if hi-lo<=0.004 or zt-zb<=0.004: return
+        if axis=='x': B.box(nm,(c-t/2-0.015,c+t/2+0.015),(lo,hi),(z0+zb,z0+zt),'Frame')
+        else:         B.box(nm,(lo,hi),(c-t/2-0.015,c+t/2+0.015),(z0+zb,z0+zt),'Frame')
     for (kind,o0,o1,zb,zt) in ops:
         emit(f'{name}.seg{i}',cur,o0,0,h); i+=1
         emit(f'{name}.sill{i}',o0,o1,0,zb)
@@ -39,10 +44,18 @@ def _wall(B,name,axis,c,a0,a1,z0,h,t,ops,mat):
         if kind in ('win','glassdoor'):
             if axis=='x': B.box(f'{name}.glass{i}',(c-g/2,c+g/2),(o0+0.02,o1-0.02),(z0+zb+0.02,z0+zt-0.02),'Glass')
             else:         B.box(f'{name}.glass{i}',(o0+0.02,o1-0.02),(c-g/2,c+g/2),(z0+zb+0.02,z0+zt-0.02),'Glass')
-        if kind in ('door','glassdoor') and kind=='door':
+        if kind=='door':
             d=0.04
             if axis=='x': B.box(f'{name}.leaf{i}',(c-d/2,c+d/2),(o0+0.01,o1-0.01),(z0,z0+zt-0.02),'Door')
             else:         B.box(f'{name}.leaf{i}',(o0+0.01,o1-0.01),(c-d/2,c+d/2),(z0,z0+zt-0.02),'Door')
+            if axis=='x': B.box(f'{name}.hnd{i}',(c-d/2-0.05,c+d/2+0.05),(o1-0.22,o1-0.08),(z0+0.98,z0+1.02),'Metal')
+            else:         B.box(f'{name}.hnd{i}',(o1-0.22,o1-0.08),(c-d/2-0.05,c+d/2+0.05),(z0+0.98,z0+1.02),'Metal')
+        # white trim: jambs + head for every opening, bottom board for windows
+        f=0.055
+        frame(f'{name}.{tag}L{i}',o0,o0+f,zb,zt)
+        frame(f'{name}.{tag}R{i}',o1-f,o1,zb,zt)
+        frame(f'{name}.{tag}T{i}',o0+f,o1-f,zt-f,zt)
+        if kind=='win': frame(f'{name}.{tag}B{i}',o0+f,o1-f,zb,zb+f)
         cur=o1
     emit(f'{name}.seg{i}',cur,a1,0,h)
 
@@ -109,21 +122,21 @@ def build_kellari(B):
     B.zoff=Z_K
     toilet(B,'K.wc.wc',0.85,7.18,'S')
     B.box('K.wc.basin',(1.45,1.85),(7.25,7.55),(0.55,0.87),'Ceramic')
-    B.box('K.pool.body',(1.03,3.53),(1.63,3.03),(0.55,0.75),'WoodFurn')       # billiard
-    B.box('K.pool.felt',(1.15,3.41),(1.75,2.91),(0.75,0.78),'SofaGreen')
-    B.box('K.pool.railW',(1.03,1.15),(1.63,3.03),(0.75,0.83),'WoodFurn')
-    B.box('K.pool.railE',(3.41,3.53),(1.63,3.03),(0.75,0.83),'WoodFurn')
-    B.box('K.pool.railS',(1.15,3.41),(1.63,1.75),(0.75,0.83),'WoodFurn')
-    B.box('K.pool.railN',(1.15,3.41),(2.91,3.03),(0.75,0.83),'WoodFurn')
-    for i,(lx,ly) in enumerate([(1.08,1.68),(3.32,1.68),(1.08,2.87),(3.32,2.87)]):
+    B.box('K.pool.body',(7.55,10.05),(4.95,6.35),(0.55,0.75),'WoodFurn')      # billiard, east side
+    B.box('K.pool.felt',(7.67,9.93),(5.07,6.23),(0.75,0.78),'SofaGreen')
+    B.box('K.pool.railW',(7.55,7.67),(4.95,6.35),(0.75,0.83),'WoodFurn')
+    B.box('K.pool.railE',(9.93,10.05),(4.95,6.35),(0.75,0.83),'WoodFurn')
+    B.box('K.pool.railS',(7.67,9.93),(4.95,5.07),(0.75,0.83),'WoodFurn')
+    B.box('K.pool.railN',(7.67,9.93),(6.23,6.35),(0.75,0.83),'WoodFurn')
+    for i,(lx,ly) in enumerate([(7.60,5.00),(9.84,5.00),(7.60,6.19),(9.84,6.19)]):
         B.box(f'K.pool.leg{i}',(lx,lx+0.16),(ly,ly+0.16),(0,0.55),'WoodFurn')
-    B.box('K.cuerack',(1.60,2.40),(0.46,0.50),(1.05,1.95),'WoodFurn')          # cues on the W wall
-    B.box('K.screen.frame',(6.88,9.88),(7.51,7.55),(0.32,2.36),'TVBlack')      # 3x2 m screen, S end
-    B.box('K.screen.face',(6.98,9.78),(7.495,7.51),(0.42,2.26),'White')
-    sofa(B,'K.sofaA',6.78,9.98,3.93,4.88,'S','FabricBlue')                     # corner sofa facing screen
-    sofa(B,'K.sofaB',6.88,7.78,4.88,6.88,'W','FabricBlue')
-    rug(B,'K.rug',7.9,10.1,5.0,7.2)
-    B.box('K.media',(10.15,10.65),(7.10,7.46),(0,0.40),'Cabinet')              # AV cabinet beside screen
+    B.box('K.cuerack',(8.20,9.00),(7.51,7.55),(1.05,1.95),'WoodFurn')          # cues on the E wall
+    B.box('K.screen.frame',(0.90,3.90),(0.42,0.46),(0.32,2.36),'TVBlack')      # 3x2 m theater screen, W wall
+    B.box('K.screen.face',(1.00,3.80),(0.46,0.475),(0.42,2.26),'White')
+    sofa(B,'K.sofaA',1.00,4.20,3.10,4.05,'N','FabricBlue')                     # corner sofa facing screen
+    sofa(B,'K.sofaB',3.30,4.20,1.10,3.10,'E','FabricBlue')
+    rug(B,'K.rug',1.0,4.0,0.9,2.9)
+    B.box('K.media',(4.40,4.90),(0.44,0.80),(0,0.40),'Cabinet')                # AV cabinet beside screen
     table(B,'K.desk',9.10,10.50,0.50,1.25,0.74)                                # office desk, SW corner
     B.box('K.monitor',(9.45,10.15),(0.56,0.60),(0.86,1.28),'TVBlack')
     chair(B,'K.deskch',9.80,1.75,0)
@@ -280,8 +293,8 @@ def build_krs1(B):
     B.slab('T.deck',[(6.00,-3.40),(16.98,-3.40),(16.98,3.30),(14.28,3.30),(14.28,0.0),(6.00,0.0)],-0.12,-0.03,'Deck')
     def railseg(nm,x0,x1,y0,y1,axis='x'):
         B.box(nm+'.top',(x0,x1),(y0,y1),(0.86,0.94),'White')            # white top rail
-        for j,(z0,z1) in enumerate([(0.14,0.26),(0.32,0.44),(0.50,0.62),(0.66,0.78)]):
-            B.box(f'{nm}.sl{j}',(x0,x1),(y0,y1),(z0,z1),'SlatGray')     # gray louver slats
+        for j,(z0,z1) in enumerate([(0.10,0.185),(0.225,0.31),(0.35,0.435),(0.475,0.56),(0.60,0.685),(0.725,0.81)]):
+            B.box(f'{nm}.sl{j}',(x0,x1),(y0,y1),(z0,z1),'SlatGray')     # dense white louver slats (photo)
         n=max(1,int((x1-x0 if axis=='x' else y1-y0)/1.8))
         for k in range(n+1):
             if axis=='x': px=x0+k*(x1-x0)/n; B.box(f'{nm}.p{k}',(px-0.05,px+0.05),(y0-0.01,y1+0.01),(0.0,0.94),'White')
@@ -289,7 +302,7 @@ def build_krs1(B):
     railseg('T.rail.s1',6.0,16.98,-3.40,-3.32)                 # continuous south rail (no opening)
     railseg('T.rail.w',6.0,6.08,-3.40,-1.60,axis='y')   # opening y -1.6..0: terrace entry beside the front door
     railseg('T.rail.e',16.90,16.98,-3.40,3.30,axis='y')
-    def louver(nm,xs,ys,z0,z1,board=0.14,gap=0.11,mat='SlatGray'):
+    def louver(nm,xs,ys,z0,z1,board=0.09,gap=0.038,mat='SlatGray'):     # dense boards per photo
         z=z0; i=0
         while z<z1-0.01:
             B.box(f'{nm}.b{i}',xs,ys,(z,min(z1,z+board)),mat); z+=board+gap; i+=1
@@ -311,18 +324,44 @@ def build_krs1(B):
     # behind the carport: paved upper terrace at drive level, then planted shelves
     # stepping down; the lowest shelf stays raised ABOVE the basement yard slab
     B.slab('T.back.pave',[(9.00,-8.90),(10.30,-8.90),(10.30,-5.30),(9.00,-5.30)],-0.61,-0.55,'Paver')
-    B.box('T.back.fill',(9.00,10.30),(-8.90,-5.30),(-3.00,-0.61),'Block')
-    B.slab('T.back.slab',[(10.30,-8.90),(17.30,-8.90),(17.30,-4.70),(10.30,-4.70)],-3.12,-3.00,'ConcreteF')
+    B.box('T.back.fill',(9.00,10.30),(-8.90,-5.30),(-3.00,-0.61),'TierBrick')
+    B.slab('T.back.slab',[(10.30,-8.90),(17.30,-8.90),(17.30,-4.70),(10.30,-4.70)],-3.12,-3.00,'Grass')
     SHELF=[-0.55,-1.15,-1.75,-2.35]
     for i,zt in enumerate(SHELF):
         x0=10.30+i*1.15
         B.box(f'T.rsoil{i}',(x0,x0+1.03),(-8.85,-5.35),(-3.00,zt-0.12),'Soil')
         B.box(f'T.rveg{i}',(x0+0.06,x0+0.97),(-8.75,-5.45),(zt-0.14,zt),'Plant')
-        B.box(f'T.rwall{i}',(x0+1.03,x0+1.15),(-8.90,-5.30),(-3.05,zt),'Block')
-    # outdoor stair to the basement yard: from the drive (-0.55) to the slab (-3.00)
+        B.box(f'T.rwall{i}',(x0+1.03,x0+1.15),(-8.90,-5.30),(-3.05,zt),'TierBrick')
+        for j in range(5):                                   # massed perennials (photo)
+            py=-8.50+j*0.74
+            r=0.24+((i+2*j)%3)*0.05
+            B.sph(f'T.rpl{i}{j}a',x0+0.30,py,zt+r*0.45,r,'Plant')
+            B.sph(f'T.rpl{i}{j}b',x0+0.72,py+0.34,zt+r*0.35,r*0.82,'Plant2')
+    # boundary hedge along the west edge of the lower yard (photo)
+    B.box('T.hedge.base',(9.30,17.25),(-9.15,-8.62),(-3.00,-1.45),'Plant')
+    for k in range(9):
+        hx=9.75+k*0.85
+        B.sph(f'T.hedge.t{k}',hx,-8.88,-1.38,0.40,'Plant2' if k%2 else 'Plant')
+    # lawn on every unpaved yard surface (photos); east side slopes continuously down
+    B.slab('T.lawnN.slab',[(-2.80,-0.30),(0.0,-0.30),(0.0,8.60),(-2.80,8.60)],-0.92,-0.80,'Grass')
+    B.roofquad('T.lawnE.slab',[(0.0,7.98,-0.82),(17.30,7.98,-2.95),(17.30,9.80,-2.95),(0.0,9.80,-0.82)],0.12,'Grass')
+    B.slab('T.lawnSE2.slab',[(16.98,3.40),(17.30,3.40),(17.30,7.98),(16.98,7.98)],-3.07,-2.95,'Grass')
+    # trampoline on the back lawn (photos)
+    B.cyl('T.tramp.mat',16.02,-6.70,-2.12,-2.06,1.10,'TVBlack',24)
+    B.cyl('T.tramp.pad',16.02,-6.70,-2.06,-2.02,1.20,'TVBlack',24)
+    for k in range(4):
+        import math as _m
+        ang=_m.pi/4+k*_m.pi/2
+        B.cyl(f'T.tramp.leg{k}',16.02+0.95*_m.cos(ang),-6.70+0.95*_m.sin(ang),-3.00,-2.06,0.030,'Metal',8)
+    for k in range(6):
+        import math as _m
+        ang=k*_m.pi/3
+        B.cyl(f'T.tramp.post{k}',16.02+1.18*_m.cos(ang),-6.70+1.18*_m.sin(ang),-2.02,-0.78,0.020,'TVBlack',8)
+    B.cyl('T.tramp.net',16.02,-6.70,-2.00,-0.82,1.16,'Railing',24)
+    # outdoor stair to the basement yard, tight against the terrace skirt (photo)
     for i in range(14):
         xs=9.30+i*0.33; zt=-0.55-(i+1)*0.175
-        B.box(f'T.gstep{i}',(xs,xs+0.35),(-5.25,-4.15),(zt-0.18,zt),'ConcreteF')
+        B.box(f'T.gstep{i}',(xs,xs+0.35),(-4.50,-3.45),(zt-0.18,zt),'ConcreteF')
     # rattan lounge set under the canopy (per photo) + dining set east
     sofa(B,'T.sofa1',9.25,11.75,-3.10,-2.40,'S','Rattan')
     sofa(B,'T.sofa2',11.05,11.75,-2.40,-1.15,'E','Rattan')
@@ -404,7 +443,7 @@ def build_krs2(B):
     B.slab('F2.balcT',[(-1.19,4.01),(0,4.01),(0,7.76),(-1.19,7.76)],Z_2-0.02,Z_2+0.02,'Deck')
     for nm,(x0,x1,y0,y1) in {'w':(-1.21,-1.13,3.99,7.78),'s':(-1.21,0,3.99,4.07),'n':(-1.21,0,7.70,7.78)}.items():
         B.box(f'F2.brail.{nm}.top',(x0,x1),(y0,y1),(Z_2+0.96,Z_2+1.06),'White')
-        for j,(z0,z1) in enumerate([(0.10,0.24),(0.32,0.46),(0.54,0.68),(0.76,0.90)]):
+        for j,(z0,z1) in enumerate([(0.10,0.185),(0.225,0.31),(0.35,0.435),(0.475,0.56),(0.60,0.685),(0.725,0.81)]):
             B.box(f'F2.brail.{nm}.sl{j}',(x0,x1),(y0,y1),(Z_2+z0,Z_2+z1),'White')
     B.zoff=Z_2
     chair(B,'F2.bal.ch1',-0.62,4.75,180,'DeckRail'); chair(B,'F2.bal.ch2',-0.62,6.90,0,'DeckRail')
@@ -468,6 +507,28 @@ def build_roof(B):
     B.box('R.band.blk',(10.84,10.975),(0.0,7.98),(2.56,3.00),'WallInt')
     B.cyl('R.chimney',11.23,5.90,2.55,8.24,0.16,'TVBlack')     # round black steel flue
     B.cyl('R.chimcap',11.23,5.90,8.24,8.34,0.24,'TVBlack')
+    # standing-seam ribs (julkisivut: seams every ~0.55 m)
+    k=0; x=-0.17
+    while x<11.42:
+        B.roofquad(f'R.ribS{k}',[(x-0.012,-0.53,mz(-0.53)+0.02),(x+0.012,-0.53,mz(-0.53)+0.02),
+                                 (x+0.012,yr,7.70+0.02),(x-0.012,yr,7.70+0.02)],0.018,'Roof')
+        B.roofquad(f'R.ribN{k}',[(x-0.012,yr,7.70+0.02),(x+0.012,yr,7.70+0.02),
+                                 (x+0.012,8.51,mz(8.51)+0.02),(x-0.012,8.51,mz(8.51)+0.02)],0.018,'Roof')
+        x+=0.55; k+=1
+    k=0; x=11.25
+    while x<17.40:
+        B.roofquad(f'R.ribWS{k}',[(x-0.012,-0.42,2.68),(x+0.012,-0.42,2.68),(x+0.012,4.68,3.32),(x-0.012,4.68,3.32)],0.018,'Roof')
+        B.roofquad(f'R.ribWN{k}',[(x-0.012,4.68,3.32),(x+0.012,4.68,3.32),(x+0.012,8.40,2.74),(x-0.012,8.40,2.74)],0.018,'Roof')
+        x+=0.55; k+=1
+    # gutters + downpipes (Metal)
+    B.box('R.gut.s',(-0.45,11.43),(-0.68,-0.55),(6.10,6.24),'Metal')
+    B.box('R.gut.n',(-0.45,11.43),(8.53,8.66),(6.10,6.24),'Metal')
+    B.box('R.gut.ws',(11.43,17.42),(-0.56,-0.44),(2.52,2.65),'Metal')
+    B.box('R.gut.wn',(11.43,17.42),(8.42,8.54),(2.58,2.71),'Metal')
+    for nm,(px,py,zt2,zb2) in {'p1':(0.30,-0.40,6.10,-0.72),'p2':(10.55,-0.40,6.10,-0.55),
+                               'p3':(0.30,8.28,6.10,-0.85),'p4':(10.55,8.28,6.10,-1.20),
+                               'p5':(17.20,-0.38,2.52,-0.12),'p6':(17.20,8.30,2.58,-3.00)}.items():
+        B.cyl(f'R.pipe.{nm}',px,py,zb2,zt2,0.045,'Metal',10)
 
 # ================================================================= AUTOKATOS/TR
 def build_katos(B):
@@ -495,12 +556,21 @@ def build_katos(B):
         B.box(f'TR.post{i}',(px,px+0.14),(py,py+0.14),(zf,zf+3.00),'WoodFurn')
     zz=zf+0.10; i=0
     while zz<zf+2.70:
-        B.box(f'TR.screen.b{i}',(X0+0.16,2.70),(Y1-0.12,Y1-0.05),(zz,zz+0.15),'SlatGray'); zz+=0.30; i+=1
+        B.box(f'TR.screen.b{i}',(X0+0.16,2.70),(Y1-0.12,Y1-0.05),(zz,zz+0.09),'SlatGray'); zz+=0.128; i+=1
     B.room('Room_katos_VAR',[(Xv+0.12,Y0+0.12),(X1-0.12,Y0+0.12),(X1-0.12,Y1-0.12),(Xv+0.12,Y1-0.12)],'ConcreteF',z=-0.05)
     B.room('Room_katos_AUTOKATOS',[(X0+0.07,Y0+0.12),(Xv,Y0+0.12),(Xv,Y1-0.05),(X0+0.07,Y1-0.05)],'ConcreteF',z=zf)
     # gable roof: ridge along x at y=-7.00, eave z2.76, ridge z3.62 (under-roof faces)
     B.roofquad('TR.roof.w',[(X0-0.30,Y0-0.30,2.88),(X1+0.30,Y0-0.30,2.88),(X1+0.30,-7.00,3.74),(X0-0.30,-7.00,3.74)],0.12,'Roof')
     B.roofquad('TR.roof.e',[(X0-0.30,-7.00,3.74),(X1+0.30,-7.00,3.74),(X1+0.30,Y1+0.30,2.88),(X0-0.30,Y1+0.30,2.88)],0.12,'Roof')
+    k=0; rx=X0-0.10
+    while rx<X1+0.30:
+        B.roofquad(f'TR.ribW{k}',[(rx-0.012,Y0-0.28,2.90),(rx+0.012,Y0-0.28,2.90),(rx+0.012,-7.00,3.76),(rx-0.012,-7.00,3.76)],0.018,'Roof')
+        B.roofquad(f'TR.ribE{k}',[(rx-0.012,-7.00,3.76),(rx+0.012,-7.00,3.76),(rx+0.012,Y1+0.28,2.90),(rx-0.012,Y1+0.28,2.90)],0.018,'Roof')
+        rx+=0.55; k+=1
+    B.box('TR.gut.w',(X0-0.30,X1+0.30),(Y0-0.42,Y0-0.29),(2.72,2.86),'Metal')
+    B.box('TR.gut.e',(X0-0.30,X1+0.30),(Y1+0.29,Y1+0.42),(2.72,2.86),'Metal')
+    B.cyl('TR.pipe.a',X0-0.20,Y0-0.34,-0.70,2.72,0.04,'Metal',10)
+    B.cyl('TR.pipe.b',X1+0.20,Y0-0.34,-0.62,2.72,0.04,'Metal',10)
     for nm,gx in [('n',X0-0.18),('s',X1+0.18)]:
         B.prism(f'TR.gable.{nm}',gx-0.06,gx+0.06,
                 [(Y0,zf+hw),(Y1,zf+hw),(Y1,2.76),(-7.00,3.62),(Y0,2.76)],'WallExt2',axis='x')
@@ -567,8 +637,9 @@ def build_lights(B):
     L('Light_katos_VAR',7.20,-7.00,2.30)
     L('Light_ulko_katos',6.25,-5.10,2.10,'wall_ny')
     B.floor='terassi'
-    L('Light_ulko_piha_1',12.50,-4.05,-3.00,'boll'); L('Light_ulko_piha_2',14.50,-4.05,-3.00,'boll')
-    L('Light_ulko_piha_3',16.40,-4.05,-3.00,'boll')
+    # yard lights as wall lanterns on the terrace louver skirt (photo)
+    L('Light_ulko_piha_1',12.00,-3.41,-1.30,'wall_s'); L('Light_ulko_piha_2',14.20,-3.41,-1.30,'wall_s')
+    L('Light_ulko_piha_3',16.40,-3.41,-1.30,'wall_s')
 
 def build_all(B):
     build_kellari(B); build_krs1(B); build_krs2(B); build_roof(B); build_katos(B); build_lights(B)

@@ -111,7 +111,19 @@ async function parseGLB(buf){
         mat.map=t; mat.color.set(0xffffff);
       }
     }
-    mat.name=m.name||''; return mat;
+    if(m.normalTexture&&g.textures){
+      const src=g.textures[m.normalTexture.index].source;
+      if(bitmaps[src]){
+        const t=new THREE.CanvasTexture(bitmaps[src]);
+        t.flipY=false; t.wrapS=t.wrapT=THREE.RepeatWrapping;
+        mat.normalMap=t;
+        const ns=m.normalTexture.scale!==undefined?m.normalTexture.scale:1;
+        mat.normalScale.set(ns,ns);
+      }
+    }
+    mat.name=m.name||'';
+    mat.envMapIntensity=(m.name==='Glass'||m.name==='Railing'||m.name==='Canopy')?1.1:0.6;
+    return mat;
   });
   const fallback=new THREE.MeshStandardMaterial({color:0xcccccc,roughness:.8});
   function buildMesh(mi){
@@ -123,7 +135,9 @@ async function parseGLB(buf){
       else geo.computeVertexNormals();
       if(prim.attributes.TEXCOORD_0!==undefined) geo.setAttribute('uv',new THREE.BufferAttribute(accData(prim.attributes.TEXCOORD_0),2));
       if(prim.indices!==undefined) geo.setIndex(new THREE.BufferAttribute(accData(prim.indices),1));
-      grp.add(new THREE.Mesh(geo,prim.material!==undefined?mats[prim.material]:fallback));
+      const mesh=new THREE.Mesh(geo,prim.material!==undefined?mats[prim.material]:fallback);
+      mesh.castShadow=!mesh.material.transparent; mesh.receiveShadow=true;
+      grp.add(mesh);
     }
     return grp.children.length===1?grp.children[0]:grp;
   }
@@ -149,12 +163,41 @@ const canvas=document.getElementById('c');
 const renderer=new THREE.WebGLRenderer({canvas,antialias:true,alpha:true});
 renderer.setPixelRatio(Math.min(devicePixelRatio,2));
 renderer.outputEncoding=THREE.sRGBEncoding;
+renderer.toneMapping=THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure=1.08;
+renderer.shadowMap.enabled=true;
+renderer.shadowMap.type=THREE.PCFSoftShadowMap;
 const scene=new THREE.Scene();
 const camera=new THREE.PerspectiveCamera(46,1,0.1,300);
-scene.add(new THREE.HemisphereLight(0xf4f6ff,0x9a917f,0.95));
-const dl=new THREE.DirectionalLight(0xfff2dd,1.05); dl.position.set(18,30,10); scene.add(dl);
-const dl2=new THREE.DirectionalLight(0xdde8ff,0.35); dl2.position.set(-14,12,-16); scene.add(dl2);
+scene.add(new THREE.HemisphereLight(0xf4f6ff,0x9a917f,0.42));
+const dl=new THREE.DirectionalLight(0xfff1d6,1.35); dl.position.set(24,34,16);
+dl.castShadow=true; dl.shadow.mapSize.set(2048,2048);
+dl.shadow.camera.left=-24; dl.shadow.camera.right=24; dl.shadow.camera.top=24; dl.shadow.camera.bottom=-24;
+dl.shadow.camera.near=2; dl.shadow.camera.far=110; dl.shadow.bias=-0.0006; dl.shadow.normalBias=0.03;
+dl.target.position.set(8.5,0,-2); scene.add(dl); scene.add(dl.target);
+const dl2=new THREE.DirectionalLight(0xdde8ff,0.16); dl2.position.set(-14,12,-16); scene.add(dl2);
+// procedural environment (PMREM) so PBR materials get soft sky/ground ambience
+{
+  const es=new THREE.Scene();
+  const sky=new THREE.Mesh(new THREE.SphereGeometry(50,24,16),
+    new THREE.MeshBasicMaterial({side:THREE.BackSide,vertexColors:true}));
+  const pos=sky.geometry.attributes.position, cols=[];
+  const cTop=new THREE.Color(0x9fbde4), cHor=new THREE.Color(0xf3ede2), cGnd=new THREE.Color(0x6e6a60);
+  for(let i=0;i<pos.count;i++){const y=pos.getY(i)/50;
+    const c=y>0?cHor.clone().lerp(cTop,Math.pow(y,0.65)):cHor.clone().lerp(cGnd,Math.pow(-y,0.5));
+    cols.push(c.r,c.g,c.b);}
+  sky.geometry.setAttribute('color',new THREE.Float32BufferAttribute(cols,3));
+  es.add(sky);
+  const sunq=new THREE.Mesh(new THREE.PlaneGeometry(13,13),new THREE.MeshBasicMaterial());
+  sunq.material.color.setScalar(5.5);
+  sunq.position.set(24,34,16); sunq.lookAt(0,0,0); es.add(sunq);
+  const pm=new THREE.PMREMGenerator(renderer);
+  scene.environment=pm.fromScene(es,0.035).texture; pm.dispose();
+}
+const shadowGround=new THREE.Mesh(new THREE.PlaneGeometry(90,90),new THREE.ShadowMaterial({opacity:0.15}));
+shadowGround.rotation.x=-Math.PI/2; shadowGround.position.y=-3.54; shadowGround.receiveShadow=true; scene.add(shadowGround);
 const grid=new THREE.GridHelper(60,60,0xb9c2cc,0xcfd6dd);
+grid.material.transparent=true; grid.material.opacity=0.4;
 grid.position.y=-3.55; scene.add(grid);
 
 // orbit ------------------------------------------------------------------
@@ -262,7 +305,7 @@ getModel().then(async buf=>{
   });
   root.traverse(o=>{
     if(['Kellari','Krs1','Krs2','Katto','Terassi','Katos'].includes(o.name)){groups[o.name]=o;baseY[o.name]=o.position.y;}
-    if(o.isMesh && o.name.startsWith('Room_')){o.userData.room=true; o.material=o.material.clone();}
+    if(o.isMesh && o.name.startsWith('Room_')){o.userData.room=true; o.material=o.material.clone(); o.castShadow=false;}
   });
   document.getElementById('load').style.display='none';
   applyFixtureVis();

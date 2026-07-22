@@ -4,18 +4,20 @@ import bpy, bmesh, math, sys, os
 from mathutils import Vector
 
 MATS = {  # name: (hex, rough, metallic, alpha)
- 'WallExt':('B3A292',0.80,0,1),'WallExt2':('B9AB9C',0.80,0,1),'WallInt':('F4F2EC',0.90,0,1),
+ 'WallExt':('A0907C',0.80,0,1),'WallExt2':('A89986',0.80,0,1),'WallInt':('F4F2EC',0.90,0,1),
  'DarkWood':('3B3734',0.70,0,1),
  'ConcreteW':('9A968F',0.90,0,1),'Concrete':('B5B2AC',0.95,0,1),'ConcreteF':('C9C6C0',0.95,0,1),
  'Wood':('E0D9CE',0.55,0,1),'Tile':('DEE3E6',0.25,0,1),'TileDark':('AEB6BA',0.30,0,1),
- 'Deck':('6E655E',0.75,0,1),'DeckRail':('C4A484',0.70,0,1),'Roof':('3E4348',0.50,0,1),
+ 'Deck':('6E655E',0.75,0,1),'DeckRail':('C4A484',0.70,0,1),'Roof':('3E4348',0.45,0.25,1),
+ 'Frame':('F7F6F2',0.35,0,1),
  'Glass':('BFD9E8',0.08,0,0.30),'Door':('E9E7E1',0.60,0,1),'StairWood':('C7A06B',0.50,0,1),
  'Railing':('C8D4DA',0.20,0,0.45),'Chimney':('77726D',0.90,0,1),'SaunaWood':('D6B183',0.60,0,1),
  'Metal':('A8ADB2',0.35,0.8,1),'Ceramic':('F7F6F2',0.15,0,1),'Counter':('44464A',0.35,0,1),
  'Cabinet':('F0EEE8',0.50,0,1),'CabinetDark':('565A5E',0.50,0,1),'Appliance':('C6C9CC',0.30,0.6,1),
  'WoodFurn':('B58B5E',0.55,0,1),'BedWhite':('F4F2EA',0.85,0,1),'SofaWhite':('EDEAE2',0.90,0,1),
  'SofaGreen':('7A8F6E',0.90,0,1),'FabricBlue':('7C8FA0',0.90,0,1),'Rug':('CDD3D6',0.98,0,1),
- 'Plant':('5E7F52',0.85,0,1),'Pot':('8B8E92',0.70,0,1),'TVBlack':('1E2022',0.40,0,1),
+ 'Plant':('5E7F52',0.85,0,1),'Plant2':('86A272',0.85,0,1),'Pot':('8B8E92',0.70,0,1),
+ 'Grass':('7DA05F',0.95,0,1),'TierBrick':('5E5F62',0.85,0,1),'TVBlack':('1E2022',0.40,0,1),
  'Slat':('6B5136',0.70,0,1),'SlatGray':('E3E4E0',0.65,0,1),'Rattan':('4A4B4D',0.85,0,1),
  'LightOff':('F1EFE8',0.35,0,1),'Paver':('9C9C9A',0.85,0,1),
  'Block':('7E7F80',0.90,0,1),'Soil':('6E5B48',0.95,0,1),
@@ -28,6 +30,19 @@ def srgb2lin(c):
 
 FLOORCOL = {'kellari':'Kellari','1krs':'Krs1','terassi':'Terassi','2krs':'Krs2','katto':'Katto','katos':'Katos'}
 CATS = ['seinat_ulko','seinat_sisa','lasit','ovet','lattia','huoneet','portaat','kalusteet','valot']
+# PBR texture sets (house-model/tex/, Poly Haven CC0, palette-matched):
+# mat -> (diffuse, normal, uv kind: 'wall' u=(x+y) v=z | 'plan' u=x v=y, uv scale)
+TEXSETS = {
+ 'WallExt' :('siding_diff.jpg' ,'siding_nor.jpg' ,'wall',0.75),
+ 'WallExt2':('siding2_diff.jpg','siding2_nor.jpg','wall',0.75),
+ 'Wood'    :('floor_diff.jpg'  ,'floor_nor.jpg'  ,'plan',0.75),
+ 'Paver'   :('paver_diff.jpg'  ,'paver_nor.jpg'  ,'plan',0.5),
+ 'ConcreteW':('concrete_diff.jpg','concrete_nor.jpg','wall',0.5),
+ 'ConcreteF':('concrete_diff.jpg','concrete_nor.jpg','plan',0.5),
+ 'Deck'    :('deck_diff.jpg'   ,'siding_nor.jpg' ,'plan',0.75),
+ 'Grass'   :('grass_diff.jpg'  ,'grass_nor.jpg'  ,'plan',0.5),
+ 'TierBrick':('tierbrick_diff.jpg','paver_nor.jpg','wall',0.5),
+}
 
 class BlenderB:
     def __init__(self, base=None):
@@ -35,14 +50,17 @@ class BlenderB:
         self.mats={}; self.cols={}; self.emp={}; self.count=0
         scn=bpy.context.scene
         self.root=bpy.data.objects.new('Talo',None); scn.collection.objects.link(self.root)
-        plank=None; paver=None; lattia=None
+        teximg={}
         if base:
-            try: plank=bpy.data.images.load(base+'/seina_planks.png', check_existing=True)
-            except Exception: plank=None
-            try: paver=bpy.data.images.load(base+'/kiveys_pavers.png', check_existing=True)
-            except Exception: paver=None
-            try: lattia=bpy.data.images.load(base+'/lattia_tammi.png', check_existing=True)
-            except Exception: lattia=None
+            for m,(dif,nor,_,_s) in TEXSETS.items():
+                pair=[]
+                for fn,cs in ((dif,'sRGB'),(nor,'Non-Color')):
+                    try:
+                        img=bpy.data.images.load(base+'/tex/'+fn, check_existing=True)
+                        img.colorspace_settings.name=cs
+                        pair.append(img)
+                    except Exception: pair.append(None)
+                teximg[m]=pair
         for m,(hx,rf,mt,al) in MATS.items():
             mat=bpy.data.materials.new(m); mat.use_nodes=True
             b=mat.node_tree.nodes.get('Principled BSDF')
@@ -54,15 +72,16 @@ class BlenderB:
                 except Exception: pass
                 try: mat.surface_render_method='BLENDED'
                 except Exception: pass
-            if plank and m in ('WallExt','WallExt2'):
-                tex=mat.node_tree.nodes.new('ShaderNodeTexImage'); tex.image=plank
-                mat.node_tree.links.new(tex.outputs['Color'], b.inputs['Base Color'])
-            if paver and m=='Paver':
-                tex=mat.node_tree.nodes.new('ShaderNodeTexImage'); tex.image=paver
-                mat.node_tree.links.new(tex.outputs['Color'], b.inputs['Base Color'])
-            if lattia and m=='Wood':
-                tex=mat.node_tree.nodes.new('ShaderNodeTexImage'); tex.image=lattia
-                mat.node_tree.links.new(tex.outputs['Color'], b.inputs['Base Color'])
+            if m in teximg:
+                dimg,nimg=teximg[m]
+                if dimg:
+                    tex=mat.node_tree.nodes.new('ShaderNodeTexImage'); tex.image=dimg
+                    mat.node_tree.links.new(tex.outputs['Color'], b.inputs['Base Color'])
+                if nimg:
+                    ntex=mat.node_tree.nodes.new('ShaderNodeTexImage'); ntex.image=nimg
+                    nm=mat.node_tree.nodes.new('ShaderNodeNormalMap'); nm.inputs['Strength'].default_value=0.85
+                    mat.node_tree.links.new(ntex.outputs['Color'], nm.inputs['Color'])
+                    mat.node_tree.links.new(nm.outputs['Normal'], b.inputs['Normal'])
             self.mats[m]=mat
         for f,cn in FLOORCOL.items():
             col=bpy.data.collections.new(cn); scn.collection.children.link(col); self.cols[f]=col
@@ -71,6 +90,8 @@ class BlenderB:
         n=name.lower()
         if name.startswith('Light_'): return 'valot'
         if self.floor=='katto': return None
+        if mat=='Frame': return 'seinat_ulko' if '.xfr' in n else 'seinat_sisa'
+        if '.hnd' in n: return 'ovet'
         if mat=='Glass' or '.glass' in n: return 'lasit'
         if mat=='Door' or '.leaf' in n: return 'ovet'
         if mat in('WallExt','WallExt2','ConcreteW') : return 'seinat_ulko'
@@ -80,14 +101,14 @@ class BlenderB:
         if '.st' in n and ('sta' in n or '.step' in n) or '.stA' in name or '.stB' in name or '.stLand' in name or '.exstair' in n: return 'portaat'
         return 'kalusteet'
     def _add(self,name,mesh,mat):
-        if mat in ('WallExt','WallExt2','Paver','Wood'):
+        if mat in TEXSETS:
+            kind,s=TEXSETS[mat][2],TEXSETS[mat][3]
             try:
                 uvl=mesh.uv_layers.new()
                 for li,l in enumerate(mesh.loops):
                     co=mesh.vertices[l.vertex_index].co
-                    if mat=='Paver':  uvl.data[li].uv=(co.x*0.5, co.y*0.5)
-                    elif mat=='Wood': uvl.data[li].uv=(co.x*0.42, co.y*0.42)
-                    else:             uvl.data[li].uv=((co.x+co.y)*0.4, co.z*0.4)
+                    if kind=='plan': uvl.data[li].uv=(co.x*s, co.y*s)
+                    else:            uvl.data[li].uv=((co.x+co.y)*s, co.z*s)
             except Exception: pass
         obj=bpy.data.objects.new(name,mesh)
         obj.data.materials.append(self.mats[mat])
@@ -100,6 +121,11 @@ class BlenderB:
                 e=bpy.data.objects.new(f'{FLOORCOL[self.floor]}_{cat}',None)
                 col.objects.link(e); e.parent=self.emp[self.floor]; self.emp[key]=e
             obj.parent=self.emp[key]
+        if cat in ('kalusteet','portaat','ovet'):
+            try:
+                mod=obj.modifiers.new('bev','BEVEL'); mod.width=0.011; mod.segments=1
+                mod.limit_method='ANGLE'; mod.angle_limit=0.9
+            except Exception: pass
         self.count+=1
         return obj
     def box(self,name,xs,ys,zs,mat):
@@ -167,6 +193,37 @@ def hk_lightcam():
     bg=scn.world.node_tree.nodes.get('Background')
     bg.inputs[0].default_value=(0.85,0.87,0.90,1); bg.inputs[1].default_value=0.5
 
+# CC0 hero furniture (Poly Haven models cached in assets.blend); replaces the
+# parametric stand-ins by name. Missing assets.blend -> stand-ins stay.
+HEROES=[  # (asset object, floor, replaces-prefix, location, rot-z, scale)
+ # Poly Haven's furniture models proved antique-styled - wrong for this house.
+ # The loader stays: drop modern CC0 pieces into assets.blend and list them here.
+]
+def hk_heroes(base):
+    lib=base+'/assets.blend'
+    if not os.path.exists(lib): return 'no assets.blend'
+    FL={'1krs':'Krs1','2krs':'Krs2','kellari':'Kellari','terassi':'Terassi','katos':'Katos'}
+    need=sorted(set(h[0] for h in HEROES))
+    with bpy.data.libraries.load(lib) as (s,d):
+        avail={n.split('.')[0]: n for n in s.objects}   # tolerate .001 suffixes
+        d.objects=[avail[k] for k in need if k in avail]
+    protos={o.name.split('.')[0]:o for o in d.objects if o}
+    n=0
+    for key,floor,repl,loc,rz,sc in HEROES:
+        p=protos.get(key)
+        if not p: continue
+        for o in list(bpy.data.objects):
+            if o.name==repl or o.name.startswith(repl+'.'):
+                bpy.data.objects.remove(o,do_unlink=True)
+        ob=p.copy(); ob.name=repl
+        col=bpy.data.collections.get(FL[floor])
+        (col or bpy.context.scene.collection).objects.link(ob)
+        par=bpy.data.objects.get(FL[floor]+'_kalusteet')
+        if par: ob.parent=par
+        ob.location=loc; ob.rotation_euler=(0,0,rz); ob.scale=(sc,sc,sc)
+        n+=1
+    return f'heroes placed: {n}'
+
 def hk_run(base):
     if base not in sys.path: sys.path.insert(0,base)
     import importlib
@@ -175,6 +232,7 @@ def hk_run(base):
     hk_clear()
     B=BlenderB(base)
     spec.build_all(B)
+    hk_heroes(base)
     hk_lightcam()
     return f'built {B.count} objects'
 
