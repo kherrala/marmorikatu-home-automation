@@ -89,3 +89,14 @@ def test_battery_low_temp_compensated():
     assert a._battery_low(2.25, -18.0) is True     # freezer: genuinely low
     assert a._battery_low(2.05, -25.0) is False   # deep cold: thr 2.0
     assert a._battery_low(None, 20.0) is False    # no voltage → not low
+
+
+# ── _iv_boost_transition: MVHR humidity-boost enter/leave ─────────────────────
+def test_iv_boost_transition():
+    assert a._iv_boost_transition(1, 2, boost_mode=2) == "on"    # normal → boost
+    assert a._iv_boost_transition(2, 1, boost_mode=2) == "off"   # boost → normal
+    assert a._iv_boost_transition(1, 1, boost_mode=2) is None    # no change
+    assert a._iv_boost_transition(2, 2, boost_mode=2) is None    # still boosting
+    assert a._iv_boost_transition(None, 2, boost_mode=2) is None  # first reading, no edge
+    # a change that doesn't cross the boost value is not a boost transition
+    assert a._iv_boost_transition(1, 3, boost_mode=2) is None

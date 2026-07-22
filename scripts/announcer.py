@@ -437,6 +437,22 @@ class Influx:
                     slot["ts"] = ts
         return out
 
+    def latest_iv_mode(self) -> tuple[float | None, datetime | None]:
+        """Latest Casa MVHR OperatingMode (hvac.IV_tila)."""
+        flux = (
+            f'from(bucket: "{INFLUXDB_BUCKET}")\n'
+            f'  |> range(start: -15m)\n'
+            f'  |> filter(fn: (r) => r._measurement == "hvac" and r._field == "IV_tila")\n'
+            f'  |> last()\n'
+        )
+        for table in self._query(flux):
+            for rec in table.records:
+                try:
+                    return float(rec.get_value()), rec.get_time()
+                except (TypeError, ValueError):
+                    pass
+        return None, None
+
     def latest_outdoor_temp(self) -> tuple[float | None, datetime | None]:
         flux = (
             f'from(bucket: "{INFLUXDB_BUCKET}")\n'
@@ -593,6 +609,25 @@ FRIDGE_SENSOR   = os.environ.get("RUUVI_FRIDGE_NAME", "Jääkaappi")
 FREEZER_WARM_C  = float(os.environ.get("FREEZER_WARM_C", "-15"))
 FRIDGE_WARM_C   = float(os.environ.get("FRIDGE_WARM_C", "8"))
 RUUVI_OFFLINE_S = float(os.environ.get("RUUVI_OFFLINE_S", "1800"))  # 30 min
+
+# Ventilation humidity-boost ("power") mode. Casa MVHR OperatingMode (IV_tila)
+# switches to IV_BOOST_MODE when it boosts on humidity; it can cycle often, so
+# each direction is rate-limited to IV_BOOST_GAP.
+IV_BOOST_MODE = int(os.environ.get("IV_BOOST_MODE", "2"))
+IV_BOOST_GAP  = float(os.environ.get("IV_BOOST_GAP", "300"))
+
+
+def _iv_boost_transition(prev, cur, boost_mode=IV_BOOST_MODE):
+    """Return 'on'/'off'/None for an IV_tila change that crosses the boost mode."""
+    if prev is None or cur is None or prev == cur:
+        return None
+    was = int(round(prev)) == boost_mode
+    now = int(round(cur)) == boost_mode
+    if now and not was:
+        return "on"
+    if was and not now:
+        return "off"
+    return None
 
 
 def _alarm_should_emit(prio: int, active: bool, prev_active: bool) -> bool:
@@ -880,6 +915,7 @@ class TickState:
         # per Ruuvi sensor_name → {"fridge_warm","battery_low","offline"} bools
         # for rising-edge tracking of the warn-tier environment alerts.
         self.ruuvi_env_state: dict[str, dict] = {}
+        self.iv_mode: float | None = None   # last Casa MVHR OperatingMode
         self.lights_state: dict[int, int] = {}
         self.sauna_state: str = ""
         self.tier: str = ""
@@ -1028,6 +1064,21 @@ def tick(infl: Influx, st: TickState, *, bootstrap: bool = False) -> None:
                        "ruuvi_battery_low", 1, f"ruuvi_battery_low:{name}",
                        ts.timestamp()), min_gap_s=ALARM_REPEAT_S)
         prev["battery_low"] = low
+
+    # --- Ventilation humidity-boost (power) mode enter/leave. Rate-limited per
+    # direction so the MVHR's frequent humidity cycling doesn't spam.
+    iv, iv_ts = infl.latest_iv_mode()
+    if iv is not None:
+        trans = _iv_boost_transition(st.iv_mode, iv)
+        st.iv_mode = iv
+        if not bootstrap and trans:
+            ts_ep = (iv_ts or datetime.now(timezone.utc)).timestamp()
+            if trans == "on":
+                emit(Event("Kosteustehostus.", "iv_boost_on", 1, "iv_boost", ts_ep),
+                     min_gap_s=IV_BOOST_GAP)
+            else:
+                emit(Event("Perustila.", "iv_boost_off", 1, "iv_boost", ts_ep),
+                     min_gap_s=IV_BOOST_GAP)
 
     # --- Sauna state machine.
     sauna_t, sauna_ts = infl.latest_sauna_temp()

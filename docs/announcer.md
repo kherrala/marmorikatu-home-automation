@@ -42,6 +42,7 @@ no new instrumentation required.
 | CO₂ class transition       | `ruuvi.co2` per sensor → good / elevated / high / very_high (both directions) | 1–2      |
 | PM2.5 class transition     | `ruuvi.pm2_5` per sensor → good / elevated / high (both directions) | 1–2              |
 | Aux-heater activation      | `thermia.aux_heater_3kw` / `aux_heater_6kw` rising / falling edge   | 1                |
+| Ventilation humidity boost | `hvac.IV_tila` (OperatingMode) enters/leaves `IV_BOOST_MODE` (2) — "Kosteustehostus." / "Perustila.", rate-limited per direction (`IV_BOOST_GAP`) as it cycles often | 1 |
 | Outdoor temperature class  | `hvac.Ulkolampotila` — warm / cold / freeze / deep transitions      | 0–2              |
 | Indoor temperature out of range | `rooms.<sensor>` < 18 °C or > 26 °C with hysteresis            | 1                |
 | PLC heartbeat              | `plc_publisher` no fresh write in 180 s → lost / recovered          | 0–1              |
