@@ -65,6 +65,18 @@
       "tooltip": "Heating control and optimization",
       "type": "link",
       "url": "/d/heating-control/lammityksen-ohjaus"
+    },
+    {
+      "asDropdown": false,
+      "icon": "eye",
+      "includeVars": true,
+      "keepTime": true,
+      "tags": [],
+      "targetBlank": false,
+      "title": "Läsnäolo",
+      "tooltip": "Presence & light-optimizer activity",
+      "type": "link",
+      "url": "/d/presence-optimizer/lasnaolo-optimointi"
     }
   ],
   "liveNow": false,
