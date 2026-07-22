@@ -581,11 +581,6 @@ def build_katos(B):
     for nm,gx in [('n',X0-0.18),('s',X1+0.18)]:
         B.prism(f'TR.gable.{nm}',gx-0.06,gx+0.06,
                 [(Y0,zf+hw),(Y1,zf+hw),(Y1,2.76),(-7.00,3.62),(Y0,2.76)],'WallExt2',axis='x')
-    # car parked inside the carport bay
-    B.box('TR.car.body',(0.35,4.65),(-7.90,-6.10),(zf+0.30,zf+0.95),'Appliance')
-    B.box('TR.car.cab',(1.15,3.85),(-7.70,-6.30),(zf+0.95,zf+1.45),'Glass')
-    for i,(cx,cy) in enumerate([(1.25,-7.85),(3.75,-7.85),(1.25,-6.15),(3.75,-6.15)]):
-        B.box(f'TR.car.wh{i}',(cx-0.31,cx+0.31),(cy-0.12,cy+0.12),(zf,zf+0.58),'TVBlack')
     B.floor='katos'
     for i,ty in enumerate([4.6,5.6,6.6,7.4]):
         B.cyl(f'TR.thuja{i}.tr',-1.05,ty,-0.78,-0.28,0.06,'WoodFurn')
