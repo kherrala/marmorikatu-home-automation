@@ -82,7 +82,7 @@ Light_ulko_*                   outdoors     etuovi_1/2, tekn, terassi_1/2, parve
 Light_katos_*                  carport      katos_1/2, katos_VAR
 ```
 
-48 anchors total; positions per the valaistus drawings (ceiling points, spots, island +
+49 anchors total; positions per the valaistus drawings (ceiling points, spots, island +
 dining pendants, wall sconces, yard bollards). Sub-parts (cords, poles) carry a `.` suffix —
 the anchor is always the dot-free name. `cameras.json → lights` lists every anchor's world
 position for placing tap targets or badges without traversing the scene.

@@ -18,6 +18,7 @@ MATS = {  # name: (hex, rough, metallic, alpha)
  'SofaGreen':('7A8F6E',0.90,0,1),'FabricBlue':('7C8FA0',0.90,0,1),'Rug':('CDD3D6',0.98,0,1),
  'Plant':('5E7F52',0.85,0,1),'Plant2':('86A272',0.85,0,1),'Pot':('8B8E92',0.70,0,1),
  'Grass':('7DA05F',0.95,0,1),'TierBrick':('5E5F62',0.85,0,1),'TVBlack':('1E2022',0.40,0,1),
+ 'PoolBlue':('4B9FD4',0.90,0,1),'Curtain':('303236',0.95,0,1),'ConcreteDark':('4A4744',0.40,0,1),
  'Slat':('6B5136',0.70,0,1),'SlatGray':('E3E4E0',0.65,0,1),'Rattan':('4A4B4D',0.85,0,1),
  'LightOff':('F1EFE8',0.35,0,1),'Paver':('9C9C9A',0.85,0,1),
  'Block':('7E7F80',0.90,0,1),'Soil':('6E5B48',0.95,0,1),
