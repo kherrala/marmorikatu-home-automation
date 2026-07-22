@@ -498,7 +498,10 @@ services:
       - LOCAL_TZ=Europe/Helsinki
       - HOME_LAT=${HOME_LAT:-61.4978}
       - HOME_LON=${HOME_LON:-23.7610}
-      - CHECK_INTERVAL=60
+      # 5s tick for snappy presence→light response (InfluxDB load is nominal).
+      # Safe against re-issuing commands mid-actuation: within_min_dwell holds a
+      # light for MIN_DWELL after our own command (covers the ~12-13s PLC latency).
+      - CHECK_INTERVAL=5
       - SUN_DARK_ELEVATION_DEG=8
       - SUNRISE_GRACE_MIN=60
       # Manual-grace + duration caps (v2). A human's light is held; transient
