@@ -388,6 +388,55 @@ class Influx:
                         pass
         return out
 
+    def latest_thermia_alarms(self) -> dict[str, tuple[float, datetime]]:
+        """Latest Thermia fault flags (thermia, data_type=alarm, alarm_* fields).
+        Range-limited so a dead ThermIQ feed (>10 min) yields nothing rather than
+        replaying a stale fault. alarm_indoor_sensor is dropped (constant 1)."""
+        flux = (
+            f'from(bucket: "{INFLUXDB_BUCKET}")\n'
+            f'  |> range(start: -10m)\n'
+            f'  |> filter(fn: (r) => r._measurement == "thermia" '
+            f'and r._field =~ /^alarm_/ and r._field != "alarm_indoor_sensor")\n'
+            f'  |> last()\n'
+        )
+        out: dict[str, tuple[float, datetime]] = {}
+        for table in self._query(flux):
+            for rec in table.records:
+                f, v, t = rec.get_field(), rec.get_value(), rec.get_time()
+                if f and v is not None and t is not None:
+                    try:
+                        out[f] = (float(v), t)
+                    except (TypeError, ValueError):
+                        pass
+        return out
+
+    def latest_ruuvi_env(self) -> dict[str, dict]:
+        """Per-sensor latest temperature + voltage (+ freshest time) for the
+        freezer/fridge/battery/offline checks. Wide range so a stalled tag still
+        returns its last-seen time (enables offline detection)."""
+        flux = (
+            f'from(bucket: "{INFLUXDB_BUCKET}")\n'
+            f'  |> range(start: -2h)\n'
+            f'  |> filter(fn: (r) => r._measurement == "ruuvi" '
+            f'and (r._field == "temperature" or r._field == "voltage"))\n'
+            f'  |> last()\n'
+        )
+        out: dict[str, dict] = {}
+        for table in self._query(flux):
+            for rec in table.records:
+                name = rec.values.get("sensor_name")
+                field, val, ts = rec.get_field(), rec.get_value(), rec.get_time()
+                if not name or val is None or ts is None:
+                    continue
+                slot = out.setdefault(name, {})
+                try:
+                    slot[field] = float(val)
+                except (TypeError, ValueError):
+                    continue
+                if slot.get("ts") is None or ts > slot["ts"]:
+                    slot["ts"] = ts
+        return out
+
     def latest_outdoor_temp(self) -> tuple[float | None, datetime | None]:
         flux = (
             f'from(bucket: "{INFLUXDB_BUCKET}")\n'
@@ -509,9 +558,87 @@ ALARM_TEXT_FI = {
     "Alarm_IR_sensor":           ("Ilmanvaihdon IR-tunnistin hälyttää.",                    1),
     "Alarm_overheat_after":      ("Jälkilämmittimen ylikuumeneminen.",                      0),
     "Alarm_fan_failure_supply":  ("Tuloilmapuhaltimen vika.",                               0),
+    "Alarm_fan_failure_extract": ("Poistoilmapuhaltimen vika.",                             0),
+    "Alarm_temp_sensor":         ("Ilmanvaihdon lämpötila-anturin vika.",                   1),
+    "Alarm_service_reminder":    ("Ilmanvaihto kaipaa määräaikaishuoltoa.",                 1),
     "Jalkilammitin_ylikuume":    ("Jälkilämmittimen ylikuumeneminen havaittu.",             0),
     "Esilammitin_ylikuume":      ("Esilämmittimen ylikuumeneminen havaittu.",               0),
 }
+
+# How often a still-active CRITICAL (priority 0) alarm re-announces. Warn/info
+# alarms speak once on the rising edge; criticals repeat until the condition clears.
+ALARM_REPEAT_S = float(os.environ.get("ALARM_REPEAT_S", "300"))
+
+# Thermia heat-pump faults — written to `thermia` (data_type=alarm) as boolean
+# alarm_* fields. d19 hard faults + phase-order + overheating are critical (0,
+# repeat); sensor faults are warn (1, once). alarm_indoor_sensor is omitted on
+# purpose — it is a constant 1 (wireless indoor unit), not a real fault.
+THERMIA_ALARM_TEXT_FI = {
+    "alarm_highpr_pressostate": ("Maalämpöpumpun korkeapainehälytys.",                    0),
+    "alarm_lowpr_pressostate":  ("Maalämpöpumpun matalapainehälytys.",                    0),
+    "alarm_motor_breaker":      ("Maalämpöpumpun kompressorin moottorisuoja on lauennut.", 0),
+    "alarm_low_flow_brine":     ("Maalämpöpumpun liuospiirin virtaus on liian matala.",   0),
+    "alarm_low_temp_brine":     ("Maalämpöpumpun liuoslämpötila on liian matala.",        0),
+    "alarm_3phase_order":       ("Maalämpöpumpun vaihejärjestys on väärin.",              0),
+    "alarm_overheating":        ("Maalämpöpumpun ylikuumeneminen.",                       0),
+    "alarm_outdoor_sensor":     ("Maalämpöpumpun ulkoanturin vika.",                      1),
+    "alarm_supply_sensor":      ("Maalämpöpumpun menoveden anturin vika.",                1),
+    "alarm_return_sensor":      ("Maalämpöpumpun paluuveden anturin vika.",               1),
+    "alarm_hotwater_sensor":    ("Maalämpöpumpun käyttöveden anturin vika.",              1),
+}
+
+# Ruuvi environment alert thresholds (mobile-app parity).
+FREEZER_SENSOR  = os.environ.get("RUUVI_FREEZER_NAME", "Pakastin")
+FRIDGE_SENSOR   = os.environ.get("RUUVI_FRIDGE_NAME", "Jääkaappi")
+FREEZER_WARM_C  = float(os.environ.get("FREEZER_WARM_C", "-15"))
+FRIDGE_WARM_C   = float(os.environ.get("FRIDGE_WARM_C", "8"))
+RUUVI_OFFLINE_S = float(os.environ.get("RUUVI_OFFLINE_S", "1800"))  # 30 min
+
+
+def _alarm_should_emit(prio: int, active: bool, prev_active: bool) -> bool:
+    """Critical (priority 0) alarms re-emit whenever active — the emit cooldown
+    (ALARM_REPEAT_S) paces them to every ~5 min until they clear. Warn/info
+    alarms speak once, on the rising edge (inactive → active)."""
+    if not active:
+        return False
+    if prio == 0:
+        return True
+    return not prev_active
+
+
+def _battery_low(voltage, temp) -> bool:
+    """Temperature-compensated Ruuvi low-battery test — a CR2477 coin cell sags
+    in the cold, so the threshold drops with temperature (Ruuvi's guidance)."""
+    if voltage is None:
+        return False
+    t = 20.0 if temp is None else temp
+    if t < -20.0:
+        thr = 2.0
+    elif t < 0.0:
+        thr = 2.3
+    elif t < 20.0:
+        thr = 2.4
+    else:
+        thr = 2.5
+    return voltage < thr
+
+
+def _emit_alarm_flags(flags: dict, text_map: dict, prev_state: dict,
+                      emit_fn, bootstrap: bool) -> None:
+    """Shared processor for boolean alarm-flag dicts ({field: (val, ts)}):
+    rising-edge for warn/info, repeat-while-active for critical (priority 0)."""
+    for field, (val, ts) in flags.items():
+        prev = prev_state.get(field, 0.0)
+        prev_state[field] = val
+        if bootstrap:
+            continue
+        spec = text_map.get(field)
+        if not spec:
+            continue
+        text, prio = spec
+        if _alarm_should_emit(prio, val > 0.5, prev > 0.5):
+            emit_fn(Event(text, f"alarm_on:{field}", prio, f"alarm:{field}",
+                          ts.timestamp()), min_gap_s=ALARM_REPEAT_S)
 
 TIER_TEXT_FI = {
     "EXPENSIVE": ("Sähkön kallis tunti alkaa nyt.",            1, "tier"),
@@ -749,6 +876,10 @@ class TickState:
 
     def __init__(self):
         self.alarm_flags: dict[str, float] = {}
+        self.thermia_alarms: dict[str, float] = {}
+        # per Ruuvi sensor_name → {"fridge_warm","battery_low","offline"} bools
+        # for rising-edge tracking of the warn-tier environment alerts.
+        self.ruuvi_env_state: dict[str, dict] = {}
         self.lights_state: dict[int, int] = {}
         self.sauna_state: str = ""
         self.tier: str = ""
@@ -849,19 +980,54 @@ def tick(infl: Influx, st: TickState, *, bootstrap: bool = False) -> None:
             return
         deferred.append(ev)
 
-    # --- HVAC alarm flags (rising edges of any boolean flag we know about).
-    flags = infl.latest_alarm_flags()
-    for field, (val, ts) in flags.items():
-        prev = st.alarm_flags.get(field, 0.0)
-        st.alarm_flags[field] = val
-        if bootstrap:
+    # --- HVAC (MVHR) + Thermia heat-pump alarm flags. Critical (priority 0)
+    # alarms repeat every ALARM_REPEAT_S while active; warn/info speak once on
+    # the rising edge. Same processor for both flag sources.
+    _emit_alarm_flags(infl.latest_alarm_flags(), ALARM_TEXT_FI,
+                      st.alarm_flags, emit, bootstrap)
+    _emit_alarm_flags(infl.latest_thermia_alarms(), THERMIA_ALARM_TEXT_FI,
+                      st.thermia_alarms, emit, bootstrap)
+
+    # --- Ruuvi environment alerts: freezer/fridge warm, low battery, offline.
+    # A stale tag (no reading > RUUVI_OFFLINE_S) can't be trusted for its value
+    # alarms, so 'offline' supersedes them. Freezer-warm is critical (repeats);
+    # the rest are warn (rising edge). Bootstrap seeds state without announcing.
+    now_epoch = datetime.now(timezone.utc).timestamp()
+    for name, d in infl.latest_ruuvi_env().items():
+        ts = d.get("ts")
+        if ts is None:
             continue
-        if val > 0.5 and prev <= 0.5:  # rising edge: alarm on
-            spec = ALARM_TEXT_FI.get(field)
-            if spec:
-                text, prio = spec
-                emit(Event(text, f"alarm_on:{field}", prio, f"alarm:{field}",
-                           ts.timestamp()), min_gap_s=300)
+        temp, volt = d.get("temperature"), d.get("voltage")
+        offline = (now_epoch - ts.timestamp()) > RUUVI_OFFLINE_S
+        prev = st.ruuvi_env_state.setdefault(name, {})
+
+        if not bootstrap and offline and not prev.get("offline"):
+            emit(Event(f"{name}: anturi ei vastaa.", "ruuvi_offline", 1,
+                       f"ruuvi_offline:{name}", ts.timestamp()), min_gap_s=ALARM_REPEAT_S)
+        prev["offline"] = offline
+        if offline:
+            continue  # stale data — skip value/battery checks
+
+        if name == FREEZER_SENSOR and temp is not None and temp > FREEZER_WARM_C:
+            if not bootstrap:  # critical: repeat while warm
+                emit(Event(f"Pakastin on lämmennyt, lämpötila {round(temp)} astetta.",
+                           "ruuvi_freezer_warm", 0, "ruuvi_freezer_warm",
+                           ts.timestamp()), min_gap_s=ALARM_REPEAT_S)
+
+        if name == FRIDGE_SENSOR and temp is not None:
+            warm = temp > FRIDGE_WARM_C
+            if not bootstrap and warm and not prev.get("fridge_warm"):
+                emit(Event(f"Jääkaappi on lämmennyt, lämpötila {round(temp)} astetta.",
+                           "ruuvi_fridge_warm", 1, "ruuvi_fridge_warm",
+                           ts.timestamp()), min_gap_s=ALARM_REPEAT_S)
+            prev["fridge_warm"] = warm
+
+        low = _battery_low(volt, temp)
+        if not bootstrap and low and not prev.get("battery_low"):
+            emit(Event(f"Vaihda paristo: {name}, jännite {volt:.1f} volttia.",
+                       "ruuvi_battery_low", 1, f"ruuvi_battery_low:{name}",
+                       ts.timestamp()), min_gap_s=ALARM_REPEAT_S)
+        prev["battery_low"] = low
 
     # --- Sauna state machine.
     sauna_t, sauna_ts = infl.latest_sauna_temp()

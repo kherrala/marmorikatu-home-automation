@@ -64,3 +64,28 @@ def test_auto_on_group_uses_plural_verb():
     ev = a._format_lights_group(rows)
     assert "syttyivät automaattisesti" in ev.text
     assert ev.text.startswith("Olohuone kattovalo ja Olohuone kattovalo 2")
+
+
+# ── _alarm_should_emit: repeat-while-critical vs rising-edge ───────────────────
+def test_critical_alarm_repeats_while_active():
+    # prio 0 emits every time it's active (cooldown paces the repeat)…
+    assert a._alarm_should_emit(0, active=True, prev_active=True) is True
+    assert a._alarm_should_emit(0, active=True, prev_active=False) is True
+    # …and never when inactive.
+    assert a._alarm_should_emit(0, active=False, prev_active=True) is False
+
+
+def test_warn_alarm_fires_once_on_rising_edge():
+    assert a._alarm_should_emit(1, active=True, prev_active=False) is True   # rising
+    assert a._alarm_should_emit(1, active=True, prev_active=True) is False   # still on
+    assert a._alarm_should_emit(1, active=False, prev_active=True) is False  # cleared
+
+
+# ── _battery_low: temperature-compensated CR2477 threshold ────────────────────
+def test_battery_low_temp_compensated():
+    assert a._battery_low(2.45, 22.0) is True    # room temp, < 2.5
+    assert a._battery_low(2.55, 22.0) is False    # room temp, healthy
+    assert a._battery_low(2.35, -18.0) is False   # freezer: sag is normal (thr 2.3)
+    assert a._battery_low(2.25, -18.0) is True     # freezer: genuinely low
+    assert a._battery_low(2.05, -25.0) is False   # deep cold: thr 2.0
+    assert a._battery_low(None, 20.0) is False    # no voltage → not low

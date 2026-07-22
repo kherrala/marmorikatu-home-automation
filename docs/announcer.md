@@ -30,8 +30,11 @@ no new instrumentation required.
 
 | Event class                | Source                                                              | Default priority |
 |----------------------------|---------------------------------------------------------------------|------------------|
-| HVAC freezing alarm        | `hvac` measurement, `sensor_group=alarm`, `Alarm_freezing_danger` rising edge | 0 (critical) |
-| Other HVAC alarm flags     | `Alarm_filter_guard`, `Alarm_efficiency`, fan failures, …          | 0–1              |
+| HVAC freezing alarm        | `hvac` measurement, `sensor_group=alarm`, `Alarm_freezing_danger` | 0 (critical) |
+| Other HVAC alarm flags     | `Alarm_filter_guard`, `Alarm_efficiency`, supply/extract fan failures, after-heater overheat, temp-sensor fault, service reminder, … | 0–1 |
+| Thermia heat-pump faults   | `thermia` (`data_type=alarm`) `alarm_*`: high/low pressure, motor breaker, low brine flow/temp, phase order, overheating (0); outdoor/supply/return/hot-water sensor faults (1). `alarm_indoor_sensor` excluded (constant 1) | 0–1 |
+| Freezer / fridge warm      | `ruuvi` `Pakastin` > −15 °C (0, repeats) · `Jääkaappi` > 8 °C (1)  | 0–1              |
+| Ruuvi battery / offline    | temp-compensated low `voltage` (1) · no reading > 30 min (1)       | 1                |
 | Sauna state                | `ruuvi.temperature` for sensor `Sauna` — heating / hot / cooling / off | 1–2          |
 | Sauna left on (waste)      | Heater continuously in heating/hot ≥ 2 h — repeats every 15 min until off | 0 (critical) |
 | Spot-price tier transition | `heating_optimizer.tier` (CHEAP / NORMAL / EXPENSIVE / PRE_HEAT)    | 1–2              |
@@ -43,7 +46,9 @@ no new instrumentation required.
 | Indoor temperature out of range | `rooms.<sensor>` < 18 °C or > 26 °C with hysteresis            | 1                |
 | PLC heartbeat              | `plc_publisher` no fresh write in 180 s → lost / recovered          | 0–1              |
 | Heat-recovery (LTO) drop   | `(Tuloilma_ennen − Ulko) / (Poisto − Ulko)` < 60 % sustained ≥ 15 min | 1              |
-| Raw light on/off           | `lights.is_on` rising/falling edge                                  | 3 (debug)        |
+| Raw light on/off           | `lights.is_on` rising/falling edge — **suppressed when it echoes an optimizer actuation** (already announced); only unexplained (manual/wall) flips speak | 3 (debug) |
+
+**Repeat-while-active for criticals.** A priority-0 (critical) alarm re-announces every `ALARM_REPEAT_S` (default 300 s / 5 min) for as long as the condition is active, then stops automatically when it clears — the emit cooldown paces the repeat. Warn/info alarms (priority ≥ 1) speak once on the rising edge. This covers freezer-warm, all heat-pump hard faults, coil-freeze danger, and fan failures.
 
 ### Priority tiers
 
