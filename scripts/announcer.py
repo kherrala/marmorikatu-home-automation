@@ -678,6 +678,65 @@ def _format_lights_optimizer(row: dict) -> Event | None:
     return None
 
 
+def _join_fi(names: list[str]) -> str:
+    """Finnish list join: ['A']→'A', ['A','B']→'A ja B', ['A','B','C']→'A, B ja C'."""
+    names = [n for n in names if n]
+    if not names:
+        return "Valot"
+    if len(names) == 1:
+        return names[0]
+    return ", ".join(names[:-1]) + " ja " + names[-1]
+
+
+def _group_key(row: dict):
+    """Group key for merging simultaneous multi-light optimizer events into one
+    announcement. None ⇒ don't group (single-light special cases: sauna laude,
+    porch). Groupable reasons share (decision, reason-family)."""
+    decision = (row.get("decision") or "").lower()
+    reason   = (row.get("reason") or "").lower()
+    if decision not in ("on", "off"):
+        return None
+    if reason.startswith(("sauna_heated", "sauna_cooled", "porch")):
+        return None
+    if reason.startswith("post_sauna"):
+        return ("off", "post_sauna")
+    if decision == "on" and reason == "auto_on_comfort":
+        return ("on", "auto_on_comfort")
+    if decision == "off":
+        return ("off", reason)
+    return None
+
+
+def _format_lights_group(rows: list[dict]) -> Event | None:
+    """One announcement for ≥2 lights that changed together for the same reason.
+    e.g. 'Kylpyhuone alakerta, Sauna siivousvalo ja Tekninen tila sammutettiin
+    saunavuoron päätteeksi.' Passive 'sammutettiin' is number-agnostic; auto-on
+    uses the plural 'syttyivät'."""
+    rows = sorted(rows, key=lambda r: int(r.get("light_id") or 0))
+    decision = (rows[0].get("decision") or "").lower()
+    reason   = (rows[0].get("reason") or "").lower()
+    names = _join_fi([r.get("light_name") or "Valo" for r in rows])
+    ids = "-".join(str(r.get("light_id") or "") for r in rows)
+    ts = max((r.get("ts") or datetime.now(timezone.utc)) for r in rows).timestamp()
+
+    if decision == "on":  # auto_on_comfort
+        return Event(f"{names} syttyivät automaattisesti hämärän aikaan.",
+                     "lights_opt_auto_on", 1, f"lights_opt_on_grp:{ids}", ts)
+    if reason.startswith("post_sauna"):
+        return Event(f"{names} sammutettiin saunavuoron päätteeksi.",
+                     "lights_opt_post_sauna", 1, f"lights_opt_post_sauna_grp:{ids}", ts)
+    OFF = {
+        "daylight_off":  f"{names} sammutettiin — ulkona on valoisaa.",
+        "overnight_off": f"{names} sammutettiin yöksi.",
+        "away_off":      f"{names} sammutettiin, koska kotona ei ole ketään.",
+        "vacancy_off":   f"{names} sammutettiin — huone on tyhjä.",
+        "duration_cap":  f"{names} sammutettiin automaattisesti.",
+    }
+    text = OFF.get(reason, f"{names} sammutettiin automaattisesti.")
+    prio = 2 if reason in ("daylight_off", "overnight_off") else 1
+    return Event(text, "lights_opt_auto_off", prio, f"lights_opt_off_grp:{ids}", ts)
+
+
 # ── State tracking ───────────────────────────────────────────────────────────
 
 class TickState:
@@ -1096,6 +1155,8 @@ def tick(infl: Influx, st: TickState, *, bootstrap: bool = False) -> None:
     #       across multiple polls can't slip a duplicate through.
     rows = infl.lights_optimizer_decisions_since(st.last_lights_opt_seen)
     seen_in_tick: set[str] = set()
+    grouped: dict[tuple, list[dict]] = {}   # (decision, reason) → rows fired together
+    singles: list[dict] = []                # ungroupable (porch, sauna laude)
     for row in rows:
         ts = row.get("ts")
         if ts is None:
@@ -1108,7 +1169,21 @@ def tick(infl: Influx, st: TickState, *, bootstrap: bool = False) -> None:
         if tick_key in seen_in_tick:
             continue
         seen_in_tick.add(tick_key)
+        gk = _group_key(row)
+        if gk is None:
+            singles.append(row)
+        else:
+            grouped.setdefault(gk, []).append(row)
+
+    for row in singles:
         ev = _format_lights_optimizer(row)
+        if ev:
+            emit(ev, min_gap_s=600)
+    # Merge multi-light simultaneous events (e.g. post-sauna 1/38/39, or several
+    # living lights vacancy-off) into a single announcement; size-1 groups keep
+    # the normal per-light phrasing.
+    for grp in grouped.values():
+        ev = _format_lights_optimizer(grp[0]) if len(grp) == 1 else _format_lights_group(grp)
         if ev:
             emit(ev, min_gap_s=600)
 
