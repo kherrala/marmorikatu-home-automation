@@ -1,0 +1,930 @@
+{
+ "coordinate_system": "three.js / glTF: x=plan-x (pohjoinen->etela), y=up (0 = 1krs floor), z=-plan-y (lansi->ita negative)",
+ "floors": {
+  "kellari": {
+   "groups": [
+    "Kellari"
+   ],
+   "mode": "kellari"
+  },
+  "krs1": {
+   "groups": [
+    "Krs1",
+    "Terassi",
+    "Katos"
+   ],
+   "mode": "krs1"
+  },
+  "krs2": {
+   "groups": [
+    "Krs2"
+   ],
+   "mode": "krs2"
+  },
+  "all": {
+   "groups": [
+    "Kellari",
+    "Krs1",
+    "Krs2",
+    "Terassi",
+    "Katto",
+    "Katos"
+   ],
+   "mode": "all"
+  }
+ },
+ "rooms": {
+  "Room_katos_AUTOKATOS": {
+   "center": [
+    2.535,
+    -0.534,
+    6.965
+   ],
+   "size": [
+    5.93,
+    0.008,
+    3.63
+   ],
+   "orbit": {
+    "target": [
+     2.53,
+     0.57,
+     6.96
+    ],
+    "radius": 12.45,
+    "phi": 0.55
+   }
+  },
+  "Room_katos_VAR": {
+   "center": [
+    7.25,
+    -0.034,
+    7.0
+   ],
+   "size": [
+    3.26,
+    0.008,
+    3.56
+   ],
+   "orbit": {
+    "target": [
+     7.25,
+     1.07,
+     7.0
+    ],
+    "radius": 7.48,
+    "phi": 0.55
+   }
+  },
+  "Room_kellari_VAR1": {
+   "center": [
+    5.54,
+    -3.024,
+    -3.99
+   ],
+   "size": [
+    10.26,
+    0.008,
+    7.16
+   ],
+   "orbit": {
+    "target": [
+     5.54,
+     -1.92,
+     -3.99
+    ],
+    "radius": 21.55,
+    "phi": 0.55
+   }
+  },
+  "Room_kellari_VAR2": {
+   "center": [
+    13.755,
+    -3.024,
+    -3.99
+   ],
+   "size": [
+    5.63,
+    0.008,
+    7.16
+   ],
+   "orbit": {
+    "target": [
+     13.75,
+     -1.92,
+     -3.99
+    ],
+    "radius": 15.04,
+    "phi": 0.55
+   }
+  },
+  "Room_kellari_WC": {
+   "center": [
+    1.18,
+    -3.024,
+    -6.76
+   ],
+   "size": [
+    1.54,
+    0.008,
+    1.62
+   ],
+   "orbit": {
+    "target": [
+     1.18,
+     -1.92,
+     -6.76
+    ],
+    "radius": 3.5,
+    "phi": 0.55
+   }
+  },
+  "Room_1krs_ET": {
+   "center": [
+    4.275,
+    0.016,
+    -1.36
+   ],
+   "size": [
+    0.95,
+    0.008,
+    2.12
+   ],
+   "orbit": {
+    "target": [
+     4.27,
+     1.12,
+     -1.36
+    ],
+    "radius": 4.45,
+    "phi": 0.55
+   }
+  },
+  "Room_1krs_ET2": {
+   "center": [
+    5.835,
+    0.016,
+    -3.96
+   ],
+   "size": [
+    4.07,
+    0.008,
+    2.88
+   ],
+   "orbit": {
+    "target": [
+     5.83,
+     1.12,
+     -3.96
+    ],
+    "radius": 8.55,
+    "phi": 0.55
+   }
+  },
+  "Room_1krs_KHH": {
+   "center": [
+    6.18,
+    0.016,
+    -6.665
+   ],
+   "size": [
+    3.38,
+    0.008,
+    2.03
+   ],
+   "orbit": {
+    "target": [
+     6.18,
+     1.12,
+     -6.66
+    ],
+    "radius": 7.1,
+    "phi": 0.55
+   }
+  },
+  "Room_1krs_KT": {
+   "center": [
+    9.445,
+    0.016,
+    -2.91
+   ],
+   "size": [
+    2.95,
+    0.008,
+    5.22
+   ],
+   "orbit": {
+    "target": [
+     9.44,
+     1.12,
+     -2.91
+    ],
+    "radius": 10.96,
+    "phi": 0.55
+   }
+  },
+  "Room_1krs_LH": {
+   "center": [
+    1.345,
+    0.016,
+    -6.59
+   ],
+   "size": [
+    2.09,
+    0.008,
+    2.18
+   ],
+   "orbit": {
+    "target": [
+     1.35,
+     1.12,
+     -6.59
+    ],
+    "radius": 4.58,
+    "phi": 0.55
+   }
+  },
+  "Room_1krs_MH": {
+   "center": [
+    2.0,
+    0.016,
+    -2.075
+   ],
+   "size": [
+    3.4,
+    0.008,
+    3.55
+   ],
+   "orbit": {
+    "target": [
+     2.0,
+     1.12,
+     -2.07
+    ],
+    "radius": 7.45,
+    "phi": 0.55
+   }
+  },
+  "Room_1krs_OH": {
+   "center": [
+    13.82,
+    0.016,
+    -5.575
+   ],
+   "size": [
+    5.72,
+    0.008,
+    4.21
+   ],
+   "orbit": {
+    "target": [
+     13.82,
+     1.12,
+     -5.57
+    ],
+    "radius": 12.01,
+    "phi": 0.55
+   }
+  },
+  "Room_1krs_PH": {
+   "center": [
+    3.44,
+    0.016,
+    -6.59
+   ],
+   "size": [
+    1.9,
+    0.008,
+    2.18
+   ],
+   "orbit": {
+    "target": [
+     3.44,
+     1.12,
+     -6.59
+    ],
+    "radius": 4.58,
+    "phi": 0.55
+   }
+  },
+  "Room_1krs_PORRAS": {
+   "center": [
+    10.24,
+    0.016,
+    -6.615
+   ],
+   "size": [
+    1.1,
+    0.008,
+    2.13
+   ],
+   "orbit": {
+    "target": [
+     10.24,
+     1.12,
+     -6.62
+    ],
+    "radius": 4.47,
+    "phi": 0.55
+   }
+  },
+  "Room_1krs_RUOKAILU": {
+   "center": [
+    12.51,
+    0.016,
+    -1.865
+   ],
+   "size": [
+    3.1,
+    0.008,
+    3.13
+   ],
+   "orbit": {
+    "target": [
+     12.51,
+     1.12,
+     -1.87
+    ],
+    "radius": 6.57,
+    "phi": 0.55
+   }
+  },
+  "Room_1krs_TEKN": {
+   "center": [
+    1.37,
+    0.016,
+    -4.675
+   ],
+   "size": [
+    2.14,
+    0.008,
+    1.45
+   ],
+   "orbit": {
+    "target": [
+     1.37,
+     1.12,
+     -4.68
+    ],
+    "radius": 4.49,
+    "phi": 0.55
+   }
+  },
+  "Room_1krs_TK": {
+   "center": [
+    5.545,
+    0.016,
+    -1.36
+   ],
+   "size": [
+    1.49,
+    0.008,
+    2.12
+   ],
+   "orbit": {
+    "target": [
+     5.55,
+     1.12,
+     -1.36
+    ],
+    "radius": 4.45,
+    "phi": 0.55
+   }
+  },
+  "Room_1krs_VH": {
+   "center": [
+    8.78,
+    0.016,
+    -6.665
+   ],
+   "size": [
+    1.62,
+    0.008,
+    2.03
+   ],
+   "orbit": {
+    "target": [
+     8.78,
+     1.12,
+     -6.66
+    ],
+    "radius": 4.26,
+    "phi": 0.55
+   }
+  },
+  "Room_1krs_VH2": {
+   "center": [
+    7.13,
+    0.016,
+    -1.385
+   ],
+   "size": [
+    1.48,
+    0.008,
+    2.17
+   ],
+   "orbit": {
+    "target": [
+     7.13,
+     1.12,
+     -1.39
+    ],
+    "radius": 4.56,
+    "phi": 0.55
+   }
+  },
+  "Room_1krs_WC": {
+   "center": [
+    3.295,
+    0.016,
+    -4.675
+   ],
+   "size": [
+    1.51,
+    0.008,
+    1.45
+   ],
+   "orbit": {
+    "target": [
+     3.3,
+     1.12,
+     -4.68
+    ],
+    "radius": 3.5,
+    "phi": 0.55
+   }
+  },
+  "Room_2krs_AULA": {
+   "center": [
+    5.49,
+    3.026,
+    -2.875
+   ],
+   "size": [
+    10.38,
+    0.008,
+    5.15
+   ],
+   "orbit": {
+    "target": [
+     5.49,
+     4.13,
+     -2.87
+    ],
+    "radius": 21.8,
+    "phi": 0.55
+   }
+  },
+  "Room_2krs_KPH": {
+   "center": [
+    7.655,
+    3.026,
+    -6.665
+   ],
+   "size": [
+    2.01,
+    0.008,
+    2.03
+   ],
+   "orbit": {
+    "target": [
+     7.65,
+     4.13,
+     -6.66
+    ],
+    "radius": 4.26,
+    "phi": 0.55
+   }
+  },
+  "Room_2krs_MH": {
+   "center": [
+    2.8,
+    3.026,
+    -6.165
+   ],
+   "size": [
+    5.0,
+    0.008,
+    3.03
+   ],
+   "orbit": {
+    "target": [
+     2.8,
+     4.13,
+     -6.16
+    ],
+    "radius": 10.5,
+    "phi": 0.55
+   }
+  },
+  "Room_2krs_MH2": {
+   "center": [
+    1.95,
+    3.026,
+    -2.115
+   ],
+   "size": [
+    3.3,
+    0.008,
+    3.63
+   ],
+   "orbit": {
+    "target": [
+     1.95,
+     4.13,
+     -2.12
+    ],
+    "radius": 7.62,
+    "phi": 0.55
+   }
+  },
+  "Room_2krs_MH3": {
+   "center": [
+    9.06,
+    3.026,
+    -2.115
+   ],
+   "size": [
+    3.24,
+    0.008,
+    3.63
+   ],
+   "orbit": {
+    "target": [
+     9.06,
+     4.13,
+     -2.12
+    ],
+    "radius": 7.62,
+    "phi": 0.55
+   }
+  },
+  "Room_2krs_VH": {
+   "center": [
+    5.975,
+    3.026,
+    -6.665
+   ],
+   "size": [
+    1.15,
+    0.008,
+    2.03
+   ],
+   "orbit": {
+    "target": [
+     5.98,
+     4.13,
+     -6.66
+    ],
+    "radius": 4.26,
+    "phi": 0.55
+   }
+  }
+ },
+ "lights": {
+  "Light_katos_1": {
+   "position": [
+    1.6,
+    2.266,
+    7.0
+   ]
+  },
+  "Light_katos_2": {
+   "position": [
+    4.2,
+    2.266,
+    7.0
+   ]
+  },
+  "Light_katos_VAR": {
+   "position": [
+    7.2,
+    2.286,
+    7.0
+   ]
+  },
+  "Light_ulko_katos": {
+   "position": [
+    6.25,
+    2.1,
+    5.075
+   ]
+  },
+  "Light_kellari_VAR1_1": {
+   "position": [
+    3.0,
+    -0.634,
+    -4.0
+   ]
+  },
+  "Light_kellari_VAR1_2": {
+   "position": [
+    7.5,
+    -0.634,
+    -4.0
+   ]
+  },
+  "Light_kellari_VAR2_1": {
+   "position": [
+    12.5,
+    -0.634,
+    -4.5
+   ]
+  },
+  "Light_kellari_VAR2_2": {
+   "position": [
+    15.5,
+    -0.634,
+    -5.5
+   ]
+  },
+  "Light_kellari_WC": {
+   "position": [
+    1.2,
+    -0.634,
+    -6.75
+   ]
+  },
+  "Light_1krs_ET": {
+   "position": [
+    5.6,
+    2.466,
+    -3.2
+   ]
+  },
+  "Light_1krs_KHH_1": {
+   "position": [
+    5.4,
+    2.426,
+    -7.25
+   ]
+  },
+  "Light_1krs_KHH_2": {
+   "position": [
+    6.4,
+    2.426,
+    -7.25
+   ]
+  },
+  "Light_1krs_KT_1": {
+   "position": [
+    8.35,
+    2.481,
+    -2.0
+   ]
+  },
+  "Light_1krs_KT_2": {
+   "position": [
+    8.35,
+    2.481,
+    -3.3
+   ]
+  },
+  "Light_1krs_KT_3": {
+   "position": [
+    10.24,
+    2.075,
+    -3.78
+   ]
+  },
+  "Light_1krs_LH": {
+   "position": [
+    1.4,
+    2.286,
+    -6.6
+   ]
+  },
+  "Light_1krs_MH": {
+   "position": [
+    2.1,
+    2.466,
+    -2.0
+   ]
+  },
+  "Light_1krs_OH_1": {
+   "position": [
+    13.1,
+    2.521,
+    -6.0
+   ]
+  },
+  "Light_1krs_OH_2": {
+   "position": [
+    14.5,
+    2.521,
+    -6.0
+   ]
+  },
+  "Light_1krs_OH_3": {
+   "position": [
+    15.8,
+    2.521,
+    -6.0
+   ]
+  },
+  "Light_1krs_OH_4": {
+   "position": [
+    12.3,
+    2.521,
+    -5.2
+   ]
+  },
+  "Light_1krs_OH_5": {
+   "position": [
+    16.5,
+    2.521,
+    -5.1
+   ]
+  },
+  "Light_1krs_PH": {
+   "position": [
+    3.2,
+    2.406,
+    -6.6
+   ]
+  },
+  "Light_1krs_PORRAS": {
+   "position": [
+    9.8,
+    2.466,
+    -6.6
+   ]
+  },
+  "Light_1krs_RUOKAILU": {
+   "position": [
+    12.6,
+    1.975,
+    -2.0
+   ]
+  },
+  "Light_1krs_TEKN": {
+   "position": [
+    1.2,
+    2.426,
+    -4.5
+   ]
+  },
+  "Light_1krs_TK": {
+   "position": [
+    5.5,
+    2.466,
+    -0.9
+   ]
+  },
+  "Light_1krs_VH": {
+   "position": [
+    8.7,
+    2.426,
+    -6.6
+   ]
+  },
+  "Light_1krs_VH2": {
+   "position": [
+    6.7,
+    2.426,
+    -0.95
+   ]
+  },
+  "Light_1krs_WC": {
+   "position": [
+    3.3,
+    2.426,
+    -4.6
+   ]
+  },
+  "Light_ulko_etuovi_1": {
+   "position": [
+    4.55,
+    2.15,
+    0.045
+   ]
+  },
+  "Light_ulko_etuovi_2": {
+   "position": [
+    6.85,
+    2.15,
+    0.045
+   ]
+  },
+  "Light_ulko_tekn": {
+   "position": [
+    -0.045,
+    2.15,
+    -3.85
+   ]
+  },
+  "Light_ulko_terassi_1": {
+   "position": [
+    12.2,
+    2.3,
+    0.045
+   ]
+  },
+  "Light_ulko_terassi_2": {
+   "position": [
+    13.8,
+    2.3,
+    0.045
+   ]
+  },
+  "Light_2krs_AULA_1": {
+   "position": [
+    5.3,
+    5.496,
+    -3.3
+   ]
+  },
+  "Light_2krs_AULA_2": {
+   "position": [
+    7.3,
+    5.496,
+    -4.7
+   ]
+  },
+  "Light_2krs_AULA_3": {
+   "position": [
+    4.5,
+    5.496,
+    -1.0
+   ]
+  },
+  "Light_2krs_KPH_1": {
+   "position": [
+    7.1,
+    5.491,
+    -6.3
+   ]
+  },
+  "Light_2krs_KPH_2": {
+   "position": [
+    8.2,
+    5.491,
+    -7.1
+   ]
+  },
+  "Light_2krs_MH": {
+   "position": [
+    2.6,
+    5.496,
+    -6.2
+   ]
+  },
+  "Light_2krs_MH2": {
+   "position": [
+    2.0,
+    5.496,
+    -2.0
+   ]
+  },
+  "Light_2krs_MH3": {
+   "position": [
+    9.0,
+    5.496,
+    -2.0
+   ]
+  },
+  "Light_2krs_PORRAS": {
+   "position": [
+    9.8,
+    5.496,
+    -6.5
+   ]
+  },
+  "Light_2krs_VH": {
+   "position": [
+    5.95,
+    5.496,
+    -6.6
+   ]
+  },
+  "Light_ulko_parveke": {
+   "position": [
+    -0.045,
+    5.16,
+    -6.9
+   ]
+  },
+  "Light_ulko_piha_1": {
+   "position": [
+    12.5,
+    -2.21,
+    4.05
+   ]
+  },
+  "Light_ulko_piha_2": {
+   "position": [
+    14.5,
+    -2.21,
+    4.05
+   ]
+  },
+  "Light_ulko_piha_3": {
+   "position": [
+    16.4,
+    -2.21,
+    4.05
+   ]
+  }
+ },
+ "tween": "easeInOutQuad over 700-900 ms on {target,radius,phi,theta} — see viewer source"
+}
