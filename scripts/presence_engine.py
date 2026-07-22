@@ -70,11 +70,16 @@ FALLING_CONFIRM_S = float(os.environ.get("PRESENCE_FALLING_CONFIRM_S", "60"))
 
 # Default per-type behaviour when a room omits it.
 # mmWave is held occupied until an explicit falling edge, so its linger is a
-# long DEAD-SENSOR FAILSAFE (must exceed the sporadic re-report gap, else a
-# still-present person expires between reports). PIR linger is the real timer
-# that bridges motion re-triggers.
+# long DEAD-SENSOR FAILSAFE only — real departures send an explicit `false`.
+# It MUST exceed the sensor's longest silence while occupied, else a still,
+# present person expires between reports. A battery FP300 holds presence
+# internally and only re-transmits on change or its periodic interval; observed
+# gaps of 15.5 min with 3 people sitting still turned lights off under the old
+# 900 s value. Periodic temp/humidity/lux reports (each carrying presence:true)
+# are guaranteed hourly, so 2 h clears the failsafe well above any live-sensor
+# silence while still catching a genuinely dead sensor.
 TYPE_DEFAULTS = {
-    "mmwave": {"linger_s": 900, "confidence": 0.95},
+    "mmwave": {"linger_s": 7200, "confidence": 0.95},
     "pir":    {"linger_s": 120, "confidence": 0.85},
 }
 
