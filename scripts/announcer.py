@@ -67,6 +67,10 @@ PUSH_TIMEOUT_S = float(os.environ.get("ANNOUNCE_PUSH_TIMEOUT", "5"))
 # Default 3 for initial rollout — surface everything we know how to detect.
 VERBOSITY      = int(os.environ.get("ANNOUNCE_VERBOSITY", "3"))
 POLL_INTERVAL  = int(os.environ.get("ANNOUNCE_POLL_INTERVAL", "30"))
+# Suppress the raw "syttyi/sammui" echo of a light the optimizer just actuated
+# (which already got a richer "...automaattisesti" announcement) — matched by
+# direction, within this window of the optimizer decision (covers PLC latency).
+RAW_ECHO_SUPPRESS_S = float(os.environ.get("RAW_ECHO_SUPPRESS_S", "60"))
 # Liveness: exit non-zero after this many consecutive failed ticks so the
 # container crash-loops visibly instead of looping forever. See scripts/health.py.
 MAX_CONSECUTIVE_FAILURES = int(os.environ.get("MAX_CONSECUTIVE_FAILURES", "5"))
@@ -751,6 +755,9 @@ class TickState:
         self.co2_class: dict[str, str] = {}
         self.pm25_class: dict[str, str] = {}
         self.last_lights_opt_seen: datetime = datetime.now(timezone.utc)
+        # idx → (target_on, decision_epoch): the optimizer's most recent
+        # actuation per light, so the raw on/off block can drop its echo.
+        self.optimizer_acted: dict[int, tuple[bool, float]] = {}
         # Sauna-left-on tracking: when the heater is currently active
         # (state in {heating, hot}), session_start is the moment it most
         # recently left {off, cooling}. Cleared once the heater goes off.
@@ -1124,35 +1131,12 @@ def tick(infl: Influx, st: TickState, *, bootstrap: bool = False) -> None:
             st.lto_low_since = None
             st.lto_low_announced = False
 
-    # --- Light raw on/off (verbose / debug).
-    lights = infl.latest_lights()
-    for idx, (val, ts) in lights.items():
-        prev = st.lights_state.get(idx)
-        st.lights_state[idx] = val
-        if bootstrap or prev is None or prev == val:
-            continue
-        if VERBOSITY < 3:
-            continue
-        name = LIGHT_LABELS.get(idx, (f"Valo {idx}", None))[0]
-        if val == 1:
-            text = f"{name} syttyi."
-            emit(Event(text, "light_on", 3, f"light_on:{idx}", ts.timestamp()),
-                 min_gap_s=15)
-        else:
-            text = f"{name} sammui."
-            emit(Event(text, "light_off", 3, f"light_off:{idx}", ts.timestamp()),
-                 min_gap_s=15)
-
-    # --- lights_optimizer decisions since last poll.
-    # The optimizer publishes the same off-command on consecutive ticks
-    # while waiting for the PLC to actually flip the light — that yielded
-    # duplicate auto-off announcements ~2 min apart (the prior 120 s
-    # cooldown was racing the 60 s tick interval, e.g. 121 s gap → second
-    # push went through). Two-layer dedup:
-    #   (a) within this poll, collapse repeat (light_id, reason) rows so a
-    #       single batch of optimizer ticks announces once.
-    #   (b) cross-poll cooldown raised to 600 s so a slow PLC catching up
-    #       across multiple polls can't slip a duplicate through.
+    # --- lights_optimizer decisions since last poll. Processed BEFORE the raw
+    # on/off block so we can suppress the redundant raw "syttyi/sammui" echo of
+    # any light the optimizer just actuated. The optimizer re-publishes the same
+    # command across ticks while the PLC catches up, so we dedup:
+    #   (a) collapse repeat (light_id, reason) rows within a poll;
+    #   (b) 600 s cross-poll cooldown so a slow catch-up can't slip a duplicate.
     rows = infl.lights_optimizer_decisions_since(st.last_lights_opt_seen)
     seen_in_tick: set[str] = set()
     grouped: dict[tuple, list[dict]] = {}   # (decision, reason) → rows fired together
@@ -1163,6 +1147,14 @@ def tick(infl: Influx, st: TickState, *, bootstrap: bool = False) -> None:
             continue
         if ts > st.last_lights_opt_seen:
             st.last_lights_opt_seen = ts
+        # Record every actuation (even during bootstrap) so the raw block below
+        # can drop its echo, direction-matched.
+        decision = (row.get("decision") or "").lower()
+        if decision in ("on", "off"):
+            try:
+                st.optimizer_acted[int(row.get("light_id"))] = (decision == "on", ts.timestamp())
+            except (TypeError, ValueError):
+                pass
         if bootstrap:
             continue
         tick_key = f"{row.get('light_id', '')}:{row.get('reason', '')}"
@@ -1186,6 +1178,35 @@ def tick(infl: Influx, st: TickState, *, bootstrap: bool = False) -> None:
         ev = _format_lights_optimizer(grp[0]) if len(grp) == 1 else _format_lights_group(grp)
         if ev:
             emit(ev, min_gap_s=600)
+
+    # --- Light raw on/off (verbose / debug). Only announce UNEXPLAINED flips
+    # (a human/wall press) — skip the echo of a change the optimizer just made,
+    # matched by direction within RAW_ECHO_SUPPRESS_S of its decision.
+    lights = infl.latest_lights()
+    for idx, (val, ts) in lights.items():
+        prev = st.lights_state.get(idx)
+        st.lights_state[idx] = val
+        if bootstrap or prev is None or prev == val:
+            continue
+        if VERBOSITY < 3:
+            continue
+        acted = st.optimizer_acted.get(idx)
+        if (acted is not None and acted[0] == (val == 1)
+                and abs(ts.timestamp() - acted[1]) <= RAW_ECHO_SUPPRESS_S):
+            continue  # optimizer already announced this change
+        name = LIGHT_LABELS.get(idx, (f"Valo {idx}", None))[0]
+        if val == 1:
+            text = f"{name} syttyi."
+            emit(Event(text, "light_on", 3, f"light_on:{idx}", ts.timestamp()),
+                 min_gap_s=15)
+        else:
+            text = f"{name} sammui."
+            emit(Event(text, "light_off", 3, f"light_off:{idx}", ts.timestamp()),
+                 min_gap_s=15)
+    # Keep optimizer_acted bounded — drop entries older than 5 min.
+    _cutoff = datetime.now(timezone.utc).timestamp() - 300
+    for _i in [k for k, (_o, t) in st.optimizer_acted.items() if t < _cutoff]:
+        del st.optimizer_acted[_i]
 
     # --- Periodic news headlines (once per clock-hour in the daytime window).
     #     Pushed with force=True so it bypasses ANNOUNCE_VERBOSITY and the
