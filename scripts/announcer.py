@@ -903,6 +903,24 @@ def _format_lights_group(rows: list[dict]) -> Event | None:
     return Event(text, "lights_opt_auto_off", prio, f"lights_opt_off_grp:{ids}", ts)
 
 
+def _raw_light_group_event(changes: list, turned_on: bool) -> "Event | None":
+    """Group simultaneous raw (manual/wall) light changes of the same direction
+    into one debug announcement: 'X syttyi/sammui' for one; 'X, Y ja Z
+    syttyivät/sammuivat' for many. `changes` = [(idx, ts), …]."""
+    if not changes:
+        return None
+    changes = sorted(changes, key=lambda c: c[0])
+    from_labels = [LIGHT_LABELS.get(i, (f"Valo {i}", None))[0] for i, _ in changes]
+    names = _join_fi(from_labels)
+    ids = "-".join(str(i) for i, _ in changes)
+    ts = max(t for _, t in changes).timestamp()
+    single = len(changes) == 1
+    verb = ("syttyi" if single else "syttyivät") if turned_on else \
+           ("sammui" if single else "sammuivat")
+    kind = "light_on" if turned_on else "light_off"
+    return Event(f"{names} {verb}.", kind, 3, f"{kind}:{ids}", ts)
+
+
 # ── State tracking ───────────────────────────────────────────────────────────
 
 class TickState:
@@ -1400,6 +1418,8 @@ def tick(infl: Influx, st: TickState, *, bootstrap: bool = False) -> None:
     # (a human/wall press) — skip the echo of a change the optimizer just made,
     # matched by direction within RAW_ECHO_SUPPRESS_S of its decision.
     lights = infl.latest_lights()
+    raw_on: list = []   # [(idx, ts)] manual/wall flips this poll, by direction
+    raw_off: list = []
     for idx, (val, ts) in lights.items():
         prev = st.lights_state.get(idx)
         st.lights_state[idx] = val
@@ -1411,15 +1431,13 @@ def tick(infl: Influx, st: TickState, *, bootstrap: bool = False) -> None:
         if (acted is not None and acted[0] == (val == 1)
                 and abs(ts.timestamp() - acted[1]) <= RAW_ECHO_SUPPRESS_S):
             continue  # optimizer already announced this change
-        name = LIGHT_LABELS.get(idx, (f"Valo {idx}", None))[0]
-        if val == 1:
-            text = f"{name} syttyi."
-            emit(Event(text, "light_on", 3, f"light_on:{idx}", ts.timestamp()),
-                 min_gap_s=15)
-        else:
-            text = f"{name} sammui."
-            emit(Event(text, "light_off", 3, f"light_off:{idx}", ts.timestamp()),
-                 min_gap_s=15)
+        (raw_on if val == 1 else raw_off).append((idx, ts))
+    # Group flips of the same direction that happened together (e.g. a sauna
+    # switch killing bath + sauna lights at once) into a single announcement.
+    for changes, on in ((raw_on, True), (raw_off, False)):
+        ev = _raw_light_group_event(changes, on)
+        if ev:
+            emit(ev, min_gap_s=15)
     # Keep optimizer_acted bounded — drop entries older than 5 min.
     _cutoff = datetime.now(timezone.utc).timestamp() - 300
     for _i in [k for k, (_o, t) in st.optimizer_acted.items() if t < _cutoff]:

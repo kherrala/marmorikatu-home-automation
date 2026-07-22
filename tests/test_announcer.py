@@ -66,6 +66,33 @@ def test_auto_on_group_uses_plural_verb():
     assert ev.text.startswith("Olohuone kattovalo ja Olohuone kattovalo 2")
 
 
+# ── _raw_light_group_event: group simultaneous manual/wall flips ──────────────
+def _ts(sec):
+    from datetime import datetime, timezone, timedelta
+    return datetime(2026, 1, 1, tzinfo=timezone.utc) + timedelta(seconds=sec)
+
+
+def test_raw_single_light_uses_singular_verb():
+    ev = a._raw_light_group_event([(1, _ts(0))], turned_on=False)
+    assert ev.text == "Kylpyhuone alakerta sammui."
+    ev_on = a._raw_light_group_event([(1, _ts(0))], turned_on=True)
+    assert ev_on.text == "Kylpyhuone alakerta syttyi."
+
+
+def test_raw_multi_light_groups_with_plural_verb():
+    # idx 1 Kylpyhuone alakerta, 38 Sauna siivousvalo, 4 Saunan laude ledi
+    ev = a._raw_light_group_event([(38, _ts(0)), (1, _ts(0)), (4, _ts(0))],
+                                  turned_on=False)
+    # sorted by idx: 1, 4, 38
+    assert ev.text.endswith("sammuivat.")
+    assert ev.text.startswith("Kylpyhuone alakerta, Saunan laude ledi ja Sauna siivousvalo")
+    assert ev.key == "light_off:1-4-38"
+
+
+def test_raw_group_empty_is_none():
+    assert a._raw_light_group_event([], turned_on=False) is None
+
+
 # ── _alarm_should_emit: repeat-while-critical vs rising-edge ───────────────────
 def test_critical_alarm_repeats_while_active():
     # prio 0 emits every time it's active (cooldown paces the repeat)…
