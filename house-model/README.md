@@ -9,7 +9,8 @@ photos. Levels +132.86 / +135.90 / +138.91, ridge +143.60.
 | file | purpose |
 |---|---|
 | `marmorikatu.blend` | Blender scene — rebuild after editing `spec.py` (snippet below) |
-| `marmorikatu-house.glb` | The model (~1.3 MB, textured, y-up glTF) — load this in the app |
+| `marmorikatu-house.glb` | The model (~1.8 MB, textured, y-up glTF) — Android/web |
+| `marmorikatu-house.usdz` | Same model for iOS/SceneKit (USD, Y-up, names preserved) |
 | `viewer.html` | three.js reference viewer (fetches the .glb next to it) |
 | `marmorikatu-3d.html` | Same viewer fully self-contained (offline / WebView-ready) |
 | `cameras.json` | Generated per-room camera presets + light anchor positions |
@@ -131,6 +132,20 @@ or toggle the fixture — everything is addressable by name.
 
 * **Android:** SceneView/Filament — load GLB from assets, `getChildByName("Krs2")…isVisible`,
   Filament picking → node names. Material tweaks via `MaterialInstance` (emissive factor).
+* **iOS (Kotlin/Native `platform.SceneKit.*`, SCNView via UIKitView):** SceneKit does not
+  read glTF — use `marmorikatu-house.usdz`, exported by the same `hk_export` (Blender USD
+  export, textures packed). Bundle it at
+  `marmorikatu-mobile/composeApp/src/commonMain/composeResources/files/marmorikatu-house.usdz`.
+  Guarantees, verified per export with usd-core: **Y-up stage, metersPerUnit 1**, world
+  coordinates identical to the GLB/cameras.json frame; the six `Talo` children
+  (Kellari/Krs1/Krs2/Terassi/Katos/Katto), every `Room_*`/`Light_*` anchor and all material
+  names (`WallExt`, `Glass`, `LightOff`, …) survive verbatim — they are dot-free by design.
+  USD sanitizes the **dots** in non-semantic sub-part names to `_` (`Light_1krs_KT_3.cord`
+  → `Light_1krs_KT_3_cord`, `F1.wS.blk.seg0` → `F1_wS_blk_seg0`): match anchors by
+  `name == anchor || name.startsWith(anchor + "_")` on iOS, `+ "."` on Android — or walk up
+  to the nearest `Room_`/`Light_` ancestor from `SCNHitTestResult.node`. Visibility =
+  `node.hidden`; light on/off = `SCNMaterial.emission` (§4 recipe); camera presets/tweens
+  from `cameras.json` apply unchanged.
 * **Multiplatform today:** ship `marmorikatu-3d.html` in a WebView (offline, ~2.4 MB) and
   drive it with the URL params / a small JS bridge (`focusRoom(name)`, `setLight(name,on)`
   are global functions in the page — call them via `evaluateJavascript`).

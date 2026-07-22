@@ -308,16 +308,17 @@ def build_krs1(B):
     B.box('T.perg.beam2',(8.70,16.98),(-0.20,-0.06),(2.36,2.48),'White')
     B.roofquad('T.perg.canopy',[(8.70,0.0,2.51),(16.98,0.0,2.51),(16.98,-3.45,2.18),(8.70,-3.45,2.18)],0.03,'Canopy')
     B.box('T.perg.lattice',(8.72,8.78),(-3.16,-1.75),(0.94,2.05),'Canopy')   # translucent trellis
-    # terraced garden beds on the slope behind the carport: from the drive ledge
-    # (+135.30 / z-0.60) all the way down to the basement yard (+132.90 / z-3.00)
-    B.slab('T.ledge.slab',[(9.00,-8.90),(10.30,-8.90),(10.30,-5.30),(9.00,-5.30)],-0.72,-0.60,'Plant')
+    # behind the carport: paved upper terrace at drive level, then planted shelves
+    # stepping down; the lowest shelf stays raised ABOVE the basement yard slab
+    B.slab('T.back.pave',[(9.00,-8.90),(10.30,-8.90),(10.30,-5.30),(9.00,-5.30)],-0.61,-0.55,'Paver')
+    B.box('T.back.fill',(9.00,10.30),(-8.90,-5.30),(-3.00,-0.61),'Block')
     B.slab('T.back.slab',[(10.30,-8.90),(17.30,-8.90),(17.30,-4.70),(10.30,-4.70)],-3.12,-3.00,'ConcreteF')
-    TIER=[-0.60,-1.05,-1.70,-2.35,-3.00]
-    for i in range(4):
+    SHELF=[-0.55,-1.15,-1.75,-2.35]
+    for i,zt in enumerate(SHELF):
         x0=10.30+i*1.15
-        B.box(f'T.rwall{i}',(x0-0.12,x0),(-8.90,-5.30),(TIER[i+1]-0.45,TIER[i]),'Block')
-        B.box(f'T.rbed{i}',(x0,x0+1.03),(-8.85,-5.35),(TIER[i+1]-0.30,TIER[i+1]-0.12),'Soil')
-        B.box(f'T.rveg{i}',(x0+0.06,x0+0.97),(-8.75,-5.45),(TIER[i+1]-0.14,TIER[i+1]),'Plant')
+        B.box(f'T.rsoil{i}',(x0,x0+1.03),(-8.85,-5.35),(-3.00,zt-0.12),'Soil')
+        B.box(f'T.rveg{i}',(x0+0.06,x0+0.97),(-8.75,-5.45),(zt-0.14,zt),'Plant')
+        B.box(f'T.rwall{i}',(x0+1.03,x0+1.15),(-8.90,-5.30),(-3.05,zt),'Block')
     # outdoor stair to the basement yard: from the drive (-0.55) to the slab (-3.00)
     for i in range(14):
         xs=9.30+i*0.33; zt=-0.55-(i+1)*0.175

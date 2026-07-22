@@ -186,4 +186,26 @@ def hk_export(base):
     except TypeError:
         bpy.ops.export_scene.gltf(filepath=base+'/marmorikatu-house.glb',export_format='GLB',
             export_apply=True)
+    hk_export_usdz(base)
     return 'exported'
+
+def hk_export_usdz(base, forward='NEGATIVE_Z'):   # NEGATIVE_Z == glTF/cameras.json frame (verified with usd-core)
+    """USDZ for Apple/SceneKit (Kotlin/Native platform.SceneKit). Goal: a natively
+    Y-up stage, meters, world coords identical to the GLB / cameras.json frame."""
+    usdz=base+'/marmorikatu-house.usdz'
+    attempts=[
+        dict(filepath=usdz,convert_orientation=True,export_global_up_selection='Y',
+             export_global_forward_selection=forward,selected_objects_only=False,
+             export_animation=False,export_lights=False,export_cameras=False),
+        dict(filepath=usdz,convert_orientation=True,export_global_up_selection='Y',
+             export_global_forward_selection=forward,selected_objects_only=False),
+        dict(filepath=usdz,selected_objects_only=False),
+        dict(filepath=usdz),
+    ]
+    for kw in attempts:
+        try:
+            bpy.ops.wm.usd_export(**kw)
+            return 'usdz: '+str(sorted(kw.keys()))
+        except TypeError:
+            continue
+    return 'usdz export failed'
