@@ -193,7 +193,7 @@ CATS: dict[str, Cat] = {
 # can't turn off the kitchen. Populate as sensors are installed; a room with no
 # sensor simply yields no presence (comfort-first hold), so this is safe now.
 LIGHT_ROOM: dict[int, str] = {
-    54: "living_room", 55: "living_room", 19: "living_room",   # living-room proper (FP300)
+    54: "living_room", 19: "living_room",                      # living-room proper (FP300)
     5: "living_room",                                          # Olohuone LED, full room light (FP300)
     17: "office",                                              # office (future FP300)
     49: "theater", 50: "theater", 51: "theater",              # basement theater
@@ -207,8 +207,9 @@ LIGHT_ROOM: dict[int, str] = {
 # Light index → category. Every index in LIGHT_LABELS is covered. Special-block
 # lights (porch 47, laude 4, post-sauna 1/38/39) are handled outside the loop.
 CATEGORY_OF: dict[int, str] = {
-    # LIVING — open-plan kitchen / dining / living core
-    8: "living", 19: "living", 40: "living", 54: "living", 55: "living",
+    # LIVING — open-plan kitchen / dining / living core. 55 (Olohuone kattovalo 2)
+    # is NOT physically connected — excluded via DISCONNECTED_IDX below.
+    8: "living", 19: "living", 40: "living", 54: "living",
     # SECONDARY — full room light, manual-on only (no auto-on), still auto-off.
     # 5 = Olohuone LED: user wants only the kattovalo (54/55) to auto-on.
     5: "secondary",
@@ -239,6 +240,11 @@ CATEGORY_OF: dict[int, str] = {
 # Lights handled by dedicated blocks, skipped in the category loop.
 PORCH_IDX = 47
 SPECIAL_IDX = {PORCH_IDX, SAUNA_LAUDE_IDX, *SAUNA_AFTER_LIGHTS}
+
+# PLC outputs with no physical light wired — never evaluate, command, or log them
+# (auto-switching + announcing a phantom light is pure noise). 55 = Olohuone
+# kattovalo 2 (the second olohuone ceiling output is unconnected).
+DISCONNECTED_IDX = {55}
 
 
 # ── Logging ───────────────────────────────────────────────────────────────────
@@ -959,7 +965,7 @@ def check_and_control():
 
     # Category loop.
     for idx, is_on in states.items():
-        if idx in SPECIAL_IDX or idx not in CATEGORY_OF:
+        if idx in SPECIAL_IDX or idx in DISCONNECTED_IDX or idx not in CATEGORY_OF:
             continue
         evaluate_light(idx, is_on, now, sunrise, sunset, is_dark, away)
 

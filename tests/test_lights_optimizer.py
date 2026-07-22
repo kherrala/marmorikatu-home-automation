@@ -22,8 +22,15 @@ def _local(y, mo, d, h, mi=0):
 # ── Coverage / config invariants ──────────────────────────────────────────────
 def test_every_light_index_is_categorized_or_special():
     from light_labels import LIGHT_LABELS
-    covered = set(lo.CATEGORY_OF) | set(lo.SPECIAL_IDX)
+    # Every labeled PLC output is either categorized, handled by a special block,
+    # or explicitly disconnected (no physical light).
+    covered = set(lo.CATEGORY_OF) | set(lo.SPECIAL_IDX) | set(lo.DISCONNECTED_IDX)
     assert covered == set(LIGHT_LABELS), covered.symmetric_difference(set(LIGHT_LABELS))
+
+
+def test_disconnected_lights_are_not_categorized():
+    # A disconnected output must never be evaluated — keep it out of CATEGORY_OF.
+    assert not (lo.DISCONNECTED_IDX & set(lo.CATEGORY_OF))
 
 
 def test_every_category_has_a_behaviour():
