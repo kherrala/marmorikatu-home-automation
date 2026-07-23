@@ -110,28 +110,28 @@ def build_kellari(B):
     wall_x(B,'K.wW',0.07+t/2,0.07,7.91,Z_K,h,t,mat='ConcreteW')
     wall_x(B,'K.div',10.805,0.41,7.57,Z_K,h,0.27,
            ops=[W('door',2.28,3.19,0,2.05)],mat='ConcreteW')
-    # WC in the NE corner (built after the drawings; under the 1krs PH/KHH plumbing)
-    wall_x(B,'K.wc.e',2.00,5.90,7.57,Z_K,H_K,INT)
-    wall_y(B,'K.wc.s',5.90,0.41,2.05,Z_K,H_K,INT,ops=[W('door',0.95,1.80)])
-    B.room('Room_kellari_WC',[(0.41,5.95),(1.95,5.95),(1.95,7.57),(0.41,7.57)],'Tile',z=Z_K)
-    B.room('Room_kellari_VAR1',[(0.41,0.41),(10.67,0.41),(10.67,7.57),(2.10,7.57),(2.10,5.85),(0.41,5.85)],'ConcreteDark',z=Z_K)
+    # WC in the NW corner (built after the drawings; west side per owner)
+    wall_x(B,'K.wc.e',2.00,0.41,2.10,Z_K,H_K,INT)
+    wall_y(B,'K.wc.s',2.10,0.41,2.05,Z_K,H_K,INT,ops=[W('door',0.95,1.80)])
+    B.room('Room_kellari_WC',[(0.41,0.41),(1.95,0.41),(1.95,2.05),(0.41,2.05)],'Tile',z=Z_K)
+    B.room('Room_kellari_VAR1',[(0.41,2.15),(2.10,2.15),(2.10,0.41),(10.67,0.41),(10.67,7.57),(0.41,7.57)],'ConcreteDark',z=Z_K)
     B.room('Room_kellari_VAR2',[(10.94,0.41),(13.66,0.41),(13.66,3.54),(16.57,3.54),(16.57,7.57),(10.94,7.57)],'ConcreteF',z=Z_K)
     B.box('K.shelfV2',(15.2,16.5),(6.9,7.5),(Z_K,Z_K+2.0),'WoodFurn')
     B.box('K.bench',(11.2,13.2),(0.5,1.1),(Z_K,Z_K+0.9),'WoodFurn')
     # --- big room as rec room (owner): billiard N end, screen+sofa S end, desk SW
     B.zoff=Z_K
-    toilet(B,'K.wc.wc',0.85,7.18,'S')
-    B.box('K.wc.basin',(1.45,1.85),(7.25,7.55),(0.55,0.87),'Ceramic')
+    toilet(B,'K.wc.wc',0.85,0.72,'N')
+    B.box('K.wc.basin',(1.55,1.95),(1.45,1.77),(0.55,0.87),'Ceramic')
     # layout per interior photo (camera SW by the desk): screen mid-W wall, olive
     # corner sofa in front, blue-felt billiard E-of-center with 3 black pendants,
     # disco ball + projector mid-room, black curtains on the E wall, TV on N gable
-    B.box('K.pool.body',(5.60,8.10),(5.05,6.45),(0.55,0.75),'DarkWood')
-    B.box('K.pool.felt',(5.72,7.98),(5.17,6.33),(0.75,0.78),'PoolBlue')
-    B.box('K.pool.railW',(5.60,5.72),(5.05,6.45),(0.75,0.83),'DarkWood')
-    B.box('K.pool.railE',(7.98,8.10),(5.05,6.45),(0.75,0.83),'DarkWood')
-    B.box('K.pool.railS',(5.72,7.98),(5.05,5.17),(0.75,0.83),'DarkWood')
-    B.box('K.pool.railN',(5.72,7.98),(6.33,6.45),(0.75,0.83),'DarkWood')
-    for i,(lx,ly) in enumerate([(5.65,5.10),(7.89,5.10),(5.65,6.29),(7.89,6.29)]):
+    B.box('K.pool.body',(4.30,6.80),(5.05,6.45),(0.55,0.75),'DarkWood')
+    B.box('K.pool.felt',(4.42,6.68),(5.17,6.33),(0.75,0.78),'PoolBlue')
+    B.box('K.pool.railW',(4.30,4.42),(5.05,6.45),(0.75,0.83),'DarkWood')
+    B.box('K.pool.railE',(6.68,6.80),(5.05,6.45),(0.75,0.83),'DarkWood')
+    B.box('K.pool.railS',(4.42,6.68),(5.05,5.17),(0.75,0.83),'DarkWood')
+    B.box('K.pool.railN',(4.42,6.68),(6.33,6.45),(0.75,0.83),'DarkWood')
+    for i,(lx,ly) in enumerate([(4.35,5.10),(6.59,5.10),(4.35,6.29),(6.59,6.29)]):
         B.box(f'K.pool.leg{i}',(lx,lx+0.16),(ly,ly+0.16),(0,0.55),'DarkWood')
     B.box('K.cuerack',(0.43,0.47),(3.30,4.10),(1.05,1.95),'WoodFurn')          # cues on the N gable
     B.box('K.screen.frame',(4.00,7.00),(0.42,0.46),(0.32,2.36),'TVBlack')      # 3x2 m projection screen, mid-W wall
@@ -634,10 +634,10 @@ def build_lights(B):
     # kellari
     B.floor='kellari'; zk=Z_K+2.42
     L('Light_kellari_VAR1_1',3.00,4.00,zk)
-    L('Light_kellari_VAR1_2',6.85,5.75,Z_K+1.60,'pendb')      # 3 black pendants over the billiard
-    L('Light_kellari_VAR1_2.p2',6.00,5.75,Z_K+1.60,'pendb')
-    L('Light_kellari_VAR1_2.p3',7.70,5.75,Z_K+1.60,'pendb')
-    L('Light_kellari_WC',1.20,6.75,zk)
+    L('Light_kellari_VAR1_2',5.55,5.75,Z_K+1.60,'pendb')      # 3 black pendants over the billiard
+    L('Light_kellari_VAR1_2.p2',4.70,5.75,Z_K+1.60,'pendb')
+    L('Light_kellari_VAR1_2.p3',6.40,5.75,Z_K+1.60,'pendb')
+    L('Light_kellari_WC',1.20,1.25,zk)
     L('Light_kellari_VAR2_1',12.50,4.50,zk);L('Light_kellari_VAR2_2',15.50,5.50,zk)
     # autokatos + piha
     B.floor='katos'
