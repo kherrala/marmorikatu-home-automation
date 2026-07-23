@@ -249,22 +249,60 @@ def hk_export(base):
     return 'exported'
 
 def hk_export_usdz(base, forward='NEGATIVE_Z'):   # NEGATIVE_Z == glTF/cameras.json frame (verified with usd-core)
-    """USDZ for Apple/SceneKit (Kotlin/Native platform.SceneKit). Goal: a natively
-    Y-up stage, meters, world coords identical to the GLB / cameras.json frame."""
+    """USDZ for Apple/SceneKit: export usdc, post-process with Blender's bundled pxr
+    (restore translucent opacity that the exporter drops, set defaultPrim +
+    extentsHint), then package as an ARKit-compatible usdz."""
     usdz=base+'/marmorikatu-house.usdz'
+    tmp=base+'/_usdtmp'; os.makedirs(tmp,exist_ok=True)
+    usdc=tmp+'/marmorikatu-house.usdc'
     attempts=[
-        dict(filepath=usdz,convert_orientation=True,export_global_up_selection='Y',
+        dict(convert_orientation=True,export_global_up_selection='Y',
              export_global_forward_selection=forward,selected_objects_only=False,
              export_animation=False,export_lights=False,export_cameras=False),
-        dict(filepath=usdz,convert_orientation=True,export_global_up_selection='Y',
+        dict(convert_orientation=True,export_global_up_selection='Y',
              export_global_forward_selection=forward,selected_objects_only=False),
-        dict(filepath=usdz,selected_objects_only=False),
-        dict(filepath=usdz),
+        dict(selected_objects_only=False),
+        dict(),
     ]
+    used=None
     for kw in attempts:
         try:
-            bpy.ops.wm.usd_export(**kw)
-            return 'usdz: '+str(sorted(kw.keys()))
+            bpy.ops.wm.usd_export(filepath=usdc,**kw); used=kw; break
         except TypeError:
             continue
-    return 'usdz export failed'
+    if used is None: return 'usdz export failed'
+    note='packaged without post-process'
+    try:
+        from pxr import Usd, UsdShade, UsdGeom, UsdUtils, Sdf, Gf, Vt
+        stage=Usd.Stage.Open(usdc)
+        trans={m:a for m,(h,r,mt,a) in MATS.items() if a<1}
+        fixed=0
+        for p in stage.Traverse():
+            if p.GetTypeName()=='Material' and p.GetName() in trans:
+                for ch in p.GetChildren():
+                    sh=UsdShade.Shader(ch)
+                    if not sh: continue
+                    sh.CreateInput('opacity',Sdf.ValueTypeNames.Float).Set(float(trans[p.GetName()]))
+                    sh.CreateInput('opacityThreshold',Sdf.ValueTypeNames.Float).Set(0.0)
+                    fixed+=1
+        kids=stage.GetPseudoRoot().GetChildren()
+        root=stage.GetDefaultPrim() or (kids[0] if kids else None)
+        if root:
+            stage.SetDefaultPrim(root)
+            try:
+                bb=UsdGeom.BBoxCache(Usd.TimeCode.Default(),['default','render']).ComputeWorldBound(root)
+                rng=bb.ComputeAlignedRange()
+                UsdGeom.ModelAPI(root).SetExtentsHint(
+                    Vt.Vec3fArray([Gf.Vec3f(*rng.GetMin()),Gf.Vec3f(*rng.GetMax())]))
+            except Exception: pass
+        stage.GetRootLayer().Save()
+        del stage
+        UsdUtils.CreateNewARKitUsdzPackage(usdc, usdz)
+        note=f'opacity restored on {fixed} shaders, defaultPrim + extentsHint set'
+    except Exception as e:
+        try: bpy.ops.wm.usd_export(filepath=usdz,**used)
+        except Exception: pass
+        note='post-process failed, direct usdz: '+str(e)[:80]
+    import shutil as _sh
+    _sh.rmtree(tmp,ignore_errors=True)
+    return 'usdz: '+note

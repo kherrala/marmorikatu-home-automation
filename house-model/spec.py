@@ -418,15 +418,17 @@ def build_krs2(B):
         W('win',4.83,5.33,0.30,2.05),W('door',5.43,6.34,0,2.05),W('win',6.44,6.94,0.30,2.05),
         W('win',6.98,7.50,0.25,1.80)])                                       # MH stacked gable strip (photo)
     # interior
-    wall_y(B,'F2.mh_s',4.60,0.30,5.35,z,H_2,INT,ops=[W('door',4.35,5.25)])
-    wall_y(B,'F2.band',5.60,5.35,8.71,z,H_2,INT,ops=[W('door',5.60,6.30),W('door',6.80,7.55)])
-    wall_x(B,'F2.mh_vh',5.35,4.60,7.68,z,H_2,INT)
-    wall_x(B,'F2.vh_kph',6.60,5.60,7.68,z,H_2,INT)
-    wall_x(B,'F2.kph_st',8.71,5.60,7.68,z,H_2,INT)
-    wall_x(B,'F2.sw_e',3.65,0.30,3.98,z,H_2,INT)
-    wall_y(B,'F2.sw_n',3.98,0.30,3.65,z,H_2,INT,ops=[W('door',2.65,3.50)])
-    wall_x(B,'F2.se_w',7.39,0.30,3.98,z,H_2,INT)
-    wall_y(B,'F2.se_n',3.98,7.39,10.68,z,H_2,INT,ops=[W('door',7.60,8.45)])
+    # interior per 2krs_pohja50 vector extraction
+    wall_y(B,'F2.mh2_n',3.945,0.40,3.70,z,H_2,INT)                              # MH2 north (solid)
+    wall_x(B,'F2.mh2_e',3.655,0.37,3.90,z,H_2,INT,ops=[W('door',2.88,3.68)])    # MH2 east + door from AULA
+    wall_x(B,'F2.mh_se',3.655,3.99,5.60,z,H_2,INT,ops=[W('door',4.77,5.55)])    # master stub + corner door
+    wall_y(B,'F2.mh3_n',3.945,8.43,10.68,z,H_2,INT)                             # MH3 north (solid)
+    wall_y(B,'F2.mh3_dr',3.945,7.43,8.43,z,H_2,INT,ops=[W('door',7.50,8.36)])   # MH3 doorway
+    wall_x(B,'F2.se_w',7.385,0.37,3.90,z,H_2,INT)                               # MH3 west (solid)
+    wall_y(B,'F2.vh_s',5.60,4.76,8.71,z,H_2,INT,ops=[W('door',6.88,7.76)])      # VH+KPH south, KPH door
+    wall_x(B,'F2.mh_vh',4.775,5.65,7.68,z,H_2,INT,ops=[W('door',6.24,7.02)])    # MH -> walk-in VH door
+    wall_x(B,'F2.vh_kph',6.265,5.65,7.68,z,H_2,INT)                             # VH/KPH divider
+    wall_x(B,'F2.kph_st',8.71,5.55,7.68,z,H_2,INT)
     B.box('F2.strail1',(8.81,9.62),(5.54,5.60),(z,z+1.0),'Railing')     # guard at void S edge (W flight side)
     B.box('F2.strail2',(9.66,9.72),(5.60,7.66),(z,z+0.95),'Railing')    # divider top
     # upper half of the U-stair lives with 2krs so it shows in per-floor view
@@ -439,12 +441,12 @@ def build_krs2(B):
         y1=7.05-(i-11)*0.25
         B.box(f'F2.stB{i}',(8.81,9.64),(y1-0.25,y1),(0,i*riser),'StairWood')
     R=B.room
-    R('Room_2krs_MH',[(0.30,4.65),(5.30,4.65),(5.30,7.68),(0.30,7.68)],'Wood',z=Z_2)
-    R('Room_2krs_VH',[(5.40,5.65),(6.55,5.65),(6.55,7.68),(5.40,7.68)],'Wood',z=Z_2)
-    R('Room_2krs_KPH',[(6.65,5.65),(8.66,5.65),(8.66,7.68),(6.65,7.68)],'Tile',z=Z_2)
-    R('Room_2krs_AULA',[(3.70,0.30),(7.34,0.30),(7.34,3.93),(10.68,3.93),(10.68,5.45),(0.30,5.45),(0.30,4.03),(3.70,4.03)],'Wood',z=Z_2)
-    R('Room_2krs_MH2',[(0.30,0.30),(3.60,0.30),(3.60,3.93),(0.30,3.93)],'Wood',z=Z_2)
-    R('Room_2krs_MH3',[(7.44,0.30),(10.68,0.30),(10.68,3.93),(7.44,3.93)],'Wood',z=Z_2)
+    R('Room_2krs_MH',[(0.30,4.00),(3.60,4.00),(3.60,5.65),(4.72,5.65),(4.72,7.68),(0.30,7.68)],'Wood',z=Z_2)
+    R('Room_2krs_VH',[(4.83,5.65),(6.22,5.65),(6.22,7.68),(4.83,7.68)],'Wood',z=Z_2)
+    R('Room_2krs_KPH',[(6.31,5.65),(8.66,5.65),(8.66,7.68),(6.31,7.68)],'Tile',z=Z_2)
+    R('Room_2krs_AULA',[(3.70,0.30),(7.34,0.30),(7.34,3.90),(10.68,3.90),(10.68,5.50),(4.76,5.50),(4.76,4.80),(3.70,4.80)],'Wood',z=Z_2)
+    R('Room_2krs_MH2',[(0.30,0.30),(3.60,0.30),(3.60,3.90),(0.30,3.90)],'Wood',z=Z_2)
+    R('Room_2krs_MH3',[(7.44,0.30),(10.68,0.30),(10.68,3.90),(7.44,3.90)],'Wood',z=Z_2)
     # balcony: dark cantilevered box + white louver railing (photo)
     B.slab('F2.balc',[(-1.21,3.99),(0,3.99),(0,7.78),(-1.21,7.78)],Z_2-0.30,Z_2-0.02,'DarkWood')
     B.slab('F2.balcT',[(-1.19,4.01),(0,4.01),(0,7.76),(-1.19,7.76)],Z_2-0.02,Z_2+0.02,'Deck')
@@ -464,10 +466,10 @@ def build_krs2(B):
     B.box('F2.mh.dress',(0.36,0.91),(5.90,6.90),(0,0.90),'WoodFurn')
     rug(B,'F2.mh.rug',1.5,4.3,5.8,7.4)
     for i,y in enumerate([5.72,7.22]):
-        B.box(f'F2.vh.sh{i}',(5.48,6.50),(y,y+0.42),(0,2.0),'Cabinet')
-    B.box('F2.kph.vanity',(6.70,7.25),(6.00,7.30),(0,0.85),'Cabinet')
-    B.cyl('F2.kph.s1',6.98,6.35,0.85,0.95,0.16,'Ceramic'); B.cyl('F2.kph.s2',6.98,6.95,0.85,0.95,0.16,'Ceramic')
-    B.box('F2.kph.mirror',(6.67,6.70),(6.05,7.25),(1.1,1.9),'Glass')
+        B.box(f'F2.vh.sh{i}',(4.95,6.15),(y,y+0.42),(0,2.0),'Cabinet')
+    B.box('F2.kph.vanity',(6.36,6.91),(6.00,7.30),(0,0.85),'Cabinet')
+    B.cyl('F2.kph.s1',6.64,6.35,0.85,0.95,0.16,'Ceramic'); B.cyl('F2.kph.s2',6.64,6.95,0.85,0.95,0.16,'Ceramic')
+    B.box('F2.kph.mirror',(6.33,6.36),(6.05,7.25),(1.1,1.9),'Glass')
     B.box('F2.kph.tray',(7.86,8.61),(6.87,7.62),(0,0.06),'Ceramic')
     B.box('F2.kph.gl1',(7.86,7.90),(6.87,7.62),(0,1.95),'Glass')
     B.box('F2.kph.gl2',(7.86,8.61),(6.87,6.91),(0,1.95),'Glass')
