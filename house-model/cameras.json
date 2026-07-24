@@ -652,39 +652,25 @@
     -3.2
    ]
   },
-  "Light_1krs_KHH_1": {
+  "Light_1krs_IKKUNA": {
    "position": [
-    5.4,
-    2.426,
-    -7.25
+    12.39,
+    2.52,
+    -7.655
    ]
   },
-  "Light_1krs_KHH_2": {
+  "Light_1krs_KHH": {
    "position": [
-    6.4,
-    2.426,
-    -7.25
+    5.0,
+    2.501,
+    -6.25
    ]
   },
-  "Light_1krs_KT_1": {
+  "Light_1krs_KT": {
    "position": [
-    8.35,
-    2.481,
-    -2.0
-   ]
-  },
-  "Light_1krs_KT_2": {
-   "position": [
-    8.35,
-    2.481,
-    -3.3
-   ]
-  },
-  "Light_1krs_KT_3": {
-   "position": [
-    10.24,
-    2.075,
-    -3.78
+    9.15,
+    2.501,
+    -1.9
    ]
   },
   "Light_1krs_LH": {
@@ -701,39 +687,11 @@
     -2.0
    ]
   },
-  "Light_1krs_OH_1": {
+  "Light_1krs_OH": {
    "position": [
-    13.1,
-    2.521,
-    -6.0
-   ]
-  },
-  "Light_1krs_OH_2": {
-   "position": [
-    14.5,
-    2.521,
-    -6.0
-   ]
-  },
-  "Light_1krs_OH_3": {
-   "position": [
-    15.8,
-    2.521,
-    -6.0
-   ]
-  },
-  "Light_1krs_OH_4": {
-   "position": [
-    12.3,
-    2.521,
-    -5.2
-   ]
-  },
-  "Light_1krs_OH_5": {
-   "position": [
-    16.5,
-    2.521,
-    -5.1
+    13.0,
+    2.541,
+    -5.35
    ]
   },
   "Light_1krs_PH": {
@@ -755,6 +713,13 @@
     12.6,
     1.975,
     -2.0
+   ]
+  },
+  "Light_1krs_SAAREKE": {
+   "position": [
+    10.24,
+    2.075,
+    -3.78
    ]
   },
   "Light_1krs_TEKN": {
@@ -848,18 +813,11 @@
     -1.0
    ]
   },
-  "Light_2krs_KPH_1": {
+  "Light_2krs_KPH": {
    "position": [
-    7.1,
+    6.9,
     5.491,
-    -6.3
-   ]
-  },
-  "Light_2krs_KPH_2": {
-   "position": [
-    8.2,
-    5.491,
-    -7.1
+    -6.2
    ]
   },
   "Light_2krs_MH": {

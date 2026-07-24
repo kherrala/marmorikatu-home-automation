@@ -220,6 +220,14 @@ function setLight(m,on){
   m.userData.on=on;
   m.material.emissive=new THREE.Color(on?0xffe9b0:0x000000);
   m.material.emissiveIntensity=on?1.5:0;
+  // multi-head groups: extra heads are ".pN" sub-parts of the anchor
+  for(const p of lightParts){
+    if(p!==m&&anchorName(p.name)===m.name&&/\.p\d+$/.test(p.name)){
+      if(!p.userData.cloned){p.material=p.material.clone();p.userData.cloned=true;}
+      p.material.emissive=new THREE.Color(on?0xffe9b0:0x000000);
+      p.material.emissiveIntensity=on?1.5:0;
+    }
+  }
   if(!m.userData.glow){
     const s=new THREE.Sprite(new THREE.SpriteMaterial({map:glowTex,transparent:true,depthWrite:false,
       blending:THREE.AdditiveBlending}));

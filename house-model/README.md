@@ -65,8 +65,8 @@ Every room has a flat patch mesh named `Room_<kerros>_<huone>`, e.g. `Room_1krs_
 starts with `Room_` (they sit 4 mm above the floor so they always win the ray against the slab).
 The open-plan wing has **no walls** between kitchen, dining and living, but it is deliberately
 split into three zones — `Room_1krs_KT`, `Room_1krs_RUOKAILU`, `Room_1krs_OH` — so each area can
-be focused and its lights (`Light_1krs_KT_*`, `Light_1krs_RUOKAILU`, `Light_1krs_OH_*`) controlled
-independently.
+be focused and its lights (`Light_1krs_KT`/`Light_1krs_SAAREKE`, `Light_1krs_RUOKAILU`,
+`Light_1krs_OH`) controlled independently.
 Highlight recipe used in the viewer: clone material, set `emissive=#2563eb`,
 `emissiveIntensity≈0.35`. The `<kerros>` token (kellari/1krs/2krs/katos) matches the
 home-automation floor naming, so `set_lights_by_floor` / room states map 1:1.
@@ -76,16 +76,20 @@ home-automation floor naming, so `set_lights_by_floor` / room states map 1:1.
 Each fixture is an individually named mesh — the on/off **anchor**:
 
 ```
-Light_<kerros>_<huone>[_n]     interior     e.g. Light_1krs_KT_1, Light_2krs_AULA_2
+Light_<kerros>_<huone>[_n]     interior     e.g. Light_1krs_KT, Light_2krs_AULA_2
 Light_ulko_*                   outdoors     etuovi_1/2, tekn, terassi_1/2, parveke,
-                                            katos, piha_1..3 (bollards by the terrace)
+                                            katos, piha_1..3 (lanterns on the skirt)
 Light_katos_*                  carport      katos_1/2, katos_VAR
 ```
 
-49 anchors total; positions per the valaistus drawings (ceiling points, spots, island +
-dining pendants, wall sconces, yard bollards). Sub-parts (cords, poles) carry a `.` suffix —
-the anchor is always the dot-free name. `cameras.json → lights` lists every anchor's world
-position for placing tap targets or badges without traversing the scene.
+43 anchors total; positions per the valaistus drawings. **LED groups on one switch are
+one anchor with `.pN` sub-head meshes** that light together: `Light_1krs_OH` (3×2 grid),
+`Light_1krs_KT` (4 in series; the island pendant is its own `Light_1krs_SAAREKE`),
+`Light_1krs_KHH` (3×2), `Light_2krs_KPH` (2×2), `Light_1krs_IKKUNA` (decorative lights
+over the wing windows), `Light_kellari_VAR1_2` (3 pendants over the billiard).
+Other sub-parts (cords, poles) also carry a `.` suffix — the anchor is always the
+dot-free name. `cameras.json → lights` lists every anchor's world position for placing
+tap targets or badges without traversing the scene.
 
 **Fixture visibility.** Every fixture mesh lives in its floor's `<G>_valot` group
 (`Kellari_valot`, `Krs1_valot` (incl. facade sconces), `Krs2_valot`, `Terassi_valot`,

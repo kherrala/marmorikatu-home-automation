@@ -610,25 +610,39 @@ def build_lights(B):
     # 1. krs (from '1 krs valaistus' drawing)
     B.floor='1krs'; L=lambda nm,x,y,z,k='ceil': light(B,nm,x,y,z,k)
     L('Light_1krs_LH',1.40,6.60,2.30);      L('Light_1krs_PH',3.20,6.60,2.42)
-    L('Light_1krs_KHH_1',5.40,7.25,2.44);   L('Light_1krs_KHH_2',6.40,7.25,2.44)
+    # kodinhoitohuone: 3x2 LED grid, one switch
+    L('Light_1krs_KHH',5.00,6.25,2.52,'spot')
+    for i,(px,py) in enumerate([(6.20,6.25),(7.40,6.25),(5.00,7.05),(6.20,7.05),(7.40,7.05)],start=2):
+        L(f'Light_1krs_KHH.p{i}',px,py,2.52,'spot')
     L('Light_1krs_VH',8.70,6.60,2.44);      L('Light_1krs_PORRAS',9.80,6.60,2.48)
     L('Light_1krs_WC',3.30,4.60,2.44);      L('Light_1krs_TEKN',1.20,4.50,2.44)
     L('Light_1krs_ET',5.60,3.20,2.48)
     L('Light_1krs_MH',2.10,2.00,2.48);      L('Light_1krs_TK',5.50,0.90,2.48)
     L('Light_1krs_VH2',6.70,0.95,2.44)
-    L('Light_1krs_KT_1',8.35,2.00,2.50,'spot'); L('Light_1krs_KT_2',8.35,3.30,2.50,'spot')
-    L('Light_1krs_KT_3',10.24,3.78,2.05,'pend')   # pendant over the island (hood covers the hob)
+    # keittiö: 4 LED spots in series (one switch) along the worktop aisle + island pendant
+    L('Light_1krs_KT',9.15,1.90,2.52,'spot')
+    for i,py in enumerate((2.90,3.90,4.90),start=2): L(f'Light_1krs_KT.p{i}',9.15,py,2.52,'spot')
+    L('Light_1krs_SAAREKE',10.24,3.78,2.05,'pend')   # pendant over the island (hood covers the hob)
     L('Light_1krs_RUOKAILU',12.60,2.00,1.95,'pend')
-    L('Light_1krs_OH_1',13.10,6.00,2.54,'spot'); L('Light_1krs_OH_2',14.50,6.00,2.54,'spot')
-    L('Light_1krs_OH_3',15.80,6.00,2.54,'spot'); L('Light_1krs_OH_4',12.30,5.20,2.54,'spot')
-    L('Light_1krs_OH_5',16.50,5.10,2.54,'spot')
+    # olohuone: 3x2 LED grid, one switch
+    L('Light_1krs_OH',13.00,5.35,2.56,'spot')
+    for i,(px,py) in enumerate([(14.55,5.35),(16.10,5.35),(13.00,6.65),(14.55,6.65),(16.10,6.65)],start=2):
+        L(f'Light_1krs_OH.p{i}',px,py,2.56,'spot')
+    # decorative window lights over the wing glazing (ikkunavalot, one group)
+    L('Light_1krs_IKKUNA',12.39,7.68,2.52,'wall_s')
+    L('Light_1krs_IKKUNA.p2',15.09,7.68,2.52,'wall_s')
+    for i,py in enumerate((4.65,5.85,7.05),start=3): L(f'Light_1krs_IKKUNA.p{i}',16.68,py,2.30,'wall_w')
+    L('Light_1krs_IKKUNA.p6',12.60,0.30,2.35,'wall_ny')
     L('Light_ulko_etuovi_1',4.55,-0.02,2.15,'wall_s'); L('Light_ulko_etuovi_2',6.85,-0.02,2.15,'wall_s')
     L('Light_ulko_tekn',-0.02,3.85,2.15,'wall_w')
     L('Light_ulko_terassi_1',12.20,-0.02,2.30,'wall_s'); L('Light_ulko_terassi_2',13.80,-0.02,2.30,'wall_s')
     # 2. krs
     B.floor='2krs'; z2=Z_2+2.50
     L('Light_2krs_MH',2.60,6.20,z2);        L('Light_2krs_VH',5.95,6.60,z2)
-    L('Light_2krs_KPH_1',7.10,6.30,z2,'spot'); L('Light_2krs_KPH_2',8.20,7.10,z2,'spot')
+    # kylpyhuone: 2x2 LED grid, one switch
+    L('Light_2krs_KPH',6.90,6.20,z2,'spot')
+    for i,(px,py) in enumerate([(8.00,6.20),(6.90,7.10),(8.00,7.10)],start=2):
+        L(f'Light_2krs_KPH.p{i}',px,py,z2,'spot')
     L('Light_2krs_AULA_1',5.30,3.30,z2);    L('Light_2krs_AULA_2',7.30,4.70,z2)
     L('Light_2krs_AULA_3',4.50,1.00,z2);    L('Light_2krs_PORRAS',9.80,6.50,z2)
     L('Light_2krs_MH2',2.00,2.00,z2);       L('Light_2krs_MH3',9.00,2.00,z2)
