@@ -22,3 +22,6 @@ backups/
 .pruner/
 kiosk/node_modules/
 kiosk/dist/
+
+# Local off-box copies of InfluxDB backups (never commit — large binaries)
+influxdb-backups/
