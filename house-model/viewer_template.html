@@ -37,6 +37,7 @@
   <label><input type="checkbox" id="doorcb" checked> Ovet</label>
   <label><input type="checkbox" id="lightcb"> Valot</label>
   <label><input type="checkbox" id="fixcb"> Valaisimet</label>
+  <label><input type="checkbox" id="heatcb"> Lämmitys</label>
   <label>Kerrosväli <input type="range" id="explode" min="0" max="3" step="0.05" value="0"></label>
   <label><input type="checkbox" id="spincb"> Pyöritä</label>
   <button id="fitbtn" style="border:0;background:#eef2f7;border-radius:8px;padding:6px 10px;font-weight:700;cursor:pointer">⛶ Sovita</button>
@@ -61,6 +62,11 @@ const ROOMS = {
   KPH:'Kylpyhuone 4,6 m²',MH2:'Makuuhuone 11,3 m²',MH3:'Makuuhuone 11,3 m²',
   VAR:'Varasto 10,1 m²',AUTOKATOS:'Autokatos'};
 const FLOORLBL = {kellari:'Kellari','1krs':'1. kerros','2krs':'2. kerros',katos:'Piharakennus'};
+// floor-heating circuits (LVI Lattialämmitys sheets): nn -> [rooms, loop m]
+const HEATINFO = {'11':['VAR2 eteläosa',61],'12':['VAR2 pohjoisosa',69],'21':['VAR1 länsikaista',56],
+ '22':['VAR1',62],'23':['VAR1',67],'24':['VAR1 itäkaista',74],'31':['LH+PH',35],'32':['KHH+VH',56],
+ '33':['ET+TK+VH2+WC+TEKN',70],'34':['MH',57],'41':['KT',42],'42':['RUOKAILU',55],'43':['OH länsiosa',56],
+ '44':['OH itäosa',48],'51':['MH+VH',64],'52':['MH2',52],'53':['AULA',61],'54':['MH3',70],'55':['KPH',22]};
 
 // ------------------------------------------------------------- glb parser
 async function parseGLB(buf){
@@ -100,6 +106,7 @@ async function parseGLB(buf){
       if(bitmaps[src]){
         const t=new THREE.CanvasTexture(bitmaps[src]);
         t.flipY=false; t.wrapS=t.wrapT=THREE.RepeatWrapping; t.encoding=THREE.sRGBEncoding;
+        t.anisotropy=renderer.capabilities.getMaxAnisotropy();   // keep floors crisp at grazing angles
         mat.map=t; mat.color.set(0xffffff);
       }
     }
@@ -108,13 +115,14 @@ async function parseGLB(buf){
       if(bitmaps[src]){
         const t=new THREE.CanvasTexture(bitmaps[src]);
         t.flipY=false; t.wrapS=t.wrapT=THREE.RepeatWrapping;
+        t.anisotropy=renderer.capabilities.getMaxAnisotropy();
         mat.normalMap=t;
         const ns=m.normalTexture.scale!==undefined?m.normalTexture.scale:1;
         mat.normalScale.set(ns,ns);
       }
     }
     mat.name=m.name||'';
-    mat.envMapIntensity=(m.name==='Glass'||m.name==='Railing'||m.name==='Canopy')?1.1:0.6;
+    mat.envMapIntensity=(m.name==='Glass'||m.name==='Railing'||m.name==='Canopy')?1.1:(m.name==='Wood'?0.25:0.6);
     return mat;
   });
   const fallback=new THREE.MeshStandardMaterial({color:0xcccccc,roughness:.8});
@@ -238,7 +246,7 @@ function pan(dx,dy){
 }
 
 // ----------------------------------------------------------- model + ui
-let talo=null, groups={}, baseY={}, groupBox={}, lightMeshes=[], lightParts=[], ROOMCAMS={};
+let talo=null, groups={}, baseY={}, groupBox={}, lightMeshes=[], lightParts=[], heatMeshes=[], ROOMCAMS={};
 // fixture meshes are auto-hidden unless lit (or forced visible via Valaisimet / ?fixtures=1)
 let fixturesOn=false;
 function anchorName(n){const i=n.indexOf('.');return i<0?n:n.slice(0,i);}
@@ -274,6 +282,18 @@ function setLight(m,on){
   m.userData.glow.visible=on;
   applyFixtureVis();
 }
+// floor-heating overlay: per-circuit hot (red) / cold (blue), v may be 0..1
+const HEAT_COLD=new THREE.Color(0x3b82f6).convertSRGBToLinear(),
+      HEAT_HOT =new THREE.Color(0xef4444).convertSRGBToLinear();
+function setHeat(m,v){
+  v=typeof v==='number'?Math.max(0,Math.min(1,v)):(v?1:0);
+  m.userData.heat=v;
+  const c=HEAT_COLD.clone().lerp(HEAT_HOT,v);
+  m.material.color.set(0x000000);              // flat emissive overlay: stays saturated
+  m.material.emissive.copy(c); m.material.emissiveIntensity=1.0;
+  m.material.envMapIntensity=0;
+  saveHash();
+}
 const B64=GLB_B64;
 async function getModel(){
   if(!B64.startsWith('__')){
@@ -297,6 +317,9 @@ getModel().then(async buf=>{
         o.userData.lightAnchor=true; o.material=o.material.clone(); lightMeshes.push(o);
       }
     }
+    if(o.isMesh&&o.name.startsWith('Heat_')){
+      o.material=o.material.clone(); o.castShadow=false; heatMeshes.push(o);
+    }
     if(o.isMesh&&o.name.startsWith('Room_')){
       const bb=new THREE.Box3().setFromObject(o),c=bb.getCenter(new THREE.Vector3()),s=bb.getSize(new THREE.Vector3());
       ROOMCAMS[o.name]={tgt:[c.x,c.y+1.1,c.z],r:Math.max(3.5,Math.max(s.x,s.z)*2.1),ph:0.55,
@@ -309,6 +332,8 @@ getModel().then(async buf=>{
   });
   document.getElementById('load').style.display='none';
   applyFixtureVis();
+  const hot=(Q.get('hot')||'').split(',').filter(Boolean);
+  for(const m of heatMeshes) setHeat(m, hot.includes(m.name.split('_').pop())?1:0);
   setMode(mode); applyCam();
 });
 const EXPL={Kellari:0,Krs1:1,Terassi:1,Katos:1,Krs2:2,Katto:3};
@@ -324,6 +349,7 @@ function refresh(){
   const iwallsOn=document.getElementById('iwallcb').checked;
   const furnOn=document.getElementById('furncb').checked;
   const doorsOn=document.getElementById('doorcb').checked;
+  const heatOn=document.getElementById('heatcb').checked;
   const ex=parseFloat(document.getElementById('explode').value);
   const vis=visFloors();
   for(const [nm,g] of Object.entries(groups)){
@@ -337,6 +363,7 @@ function refresh(){
       if(/_seinat_sisa$/.test(o.name)) o.visible=iwallsOn;
       if(/_kalusteet$/.test(o.name)) o.visible=furnOn;
       if(/_ovet$/.test(o.name)) o.visible=doorsOn;
+      if(/_lammitys$/.test(o.name)) o.visible=heatOn;
     });
   }
 }
@@ -369,7 +396,7 @@ function setMode(m){
   refresh(); retarget();
 }
 document.querySelectorAll('#bar button').forEach(b=>b.onclick=()=>setMode(b.dataset.mode));
-['roofcb','wallcb','iwallcb','furncb','doorcb','explode','spincb'].forEach(id=>document.getElementById(id).addEventListener('input',()=>{refresh();saveHash();}));
+['roofcb','wallcb','iwallcb','furncb','doorcb','explode','spincb','heatcb'].forEach(id=>document.getElementById(id).addEventListener('input',()=>{refresh();saveHash();}));
 document.getElementById('fixcb').addEventListener('input',saveHash);
 document.getElementById('lightcb').addEventListener('input',saveHash);
 document.getElementById('lightcb').addEventListener('input',e=>lightMeshes.forEach(m=>setLight(m,e.target.checked)));
@@ -401,6 +428,18 @@ function hover(e){
   if(!talo)return;
   ndc(e);
   ray.setFromCamera(mouse,camera);
+  if(document.getElementById('heatcb').checked){          // heat layer on: circuit tip wins
+    const hm=heatMeshes.filter(m=>{let p=m,ok=true;while(p){if(p.visible===false){ok=false;break}p=p.parent}return ok});
+    const hh=ray.intersectObjects(hm,false)[0];
+    if(hh){
+      if(hovered){hovered.material.emissive.setHex(0);hovered=null;}
+      const nn=hh.object.name.split('_').pop(), inf=HEATINFO[nn]||['?','?'], parts=hh.object.name.split('_');
+      tip.innerHTML='Piiri '+nn+' · '+inf[1]+' m<small>'+inf[0]+' · '+(FLOORLBL[parts[1]]||parts[1])+' — '
+        +(hh.object.userData.heat>=0.5?'kuuma':'kylmä')+'</small>';
+      tip.style.display='block'; tip.style.left=e.clientX+'px'; tip.style.top=e.clientY+'px';
+      return;
+    }
+  }
   const rooms=[]; talo.traverse(o=>{if(o.userData.room&&o.parent.visible!==false){
     let p=o,vis=true; while(p){if(p.visible===false){vis=false;break}p=p.parent;} if(vis)rooms.push(o);}});
   const hit=ray.intersectObjects(rooms,false)[0];
@@ -418,6 +457,11 @@ canvas.addEventListener('pointerdown',e=>{
   if(!talo)return;
   ndc(e);
   ray.setFromCamera(mouse,camera);
+  if(document.getElementById('heatcb').checked){          // tap a circuit: hot <-> cold
+    const hm=heatMeshes.filter(m=>{let p=m,ok=true;while(p){if(p.visible===false){ok=false;break}p=p.parent}return ok});
+    const hh=ray.intersectObjects(hm,false)[0];
+    if(hh){setHeat(hh.object,hh.object.userData.heat>=0.5?0:1);hover(e);return;}
+  }
   const vis=lightMeshes.filter(m=>{let p=m,ok=true;while(p){if(p.visible===false){ok=false;break}p=p.parent}return ok});
   const hit=ray.intersectObjects(vis,false)[0];
   if(hit) setLight(hit.object,!hit.object.userData.on);   // tap a fixture to toggle it
@@ -434,8 +478,10 @@ function saveHash(){
   hashT=setTimeout(()=>{
     const o=orbit,f=v=>Math.round(v*100)/100;
     const parts=[`cam=${f(o.th)},${f(o.ph)},${f(o.r)},${f(o.tgt.x)},${f(o.tgt.y)},${f(o.tgt.z)}`,`mode=${mode}`];
-    for(const [id,key] of [['roofcb','roof'],['wallcb','walls'],['iwallcb','iwalls'],['furncb','furn'],['doorcb','doors'],['lightcb','lights'],['fixcb','fixtures']])
+    for(const [id,key] of [['roofcb','roof'],['wallcb','walls'],['iwallcb','iwalls'],['furncb','furn'],['doorcb','doors'],['lightcb','lights'],['fixcb','fixtures'],['heatcb','heat']])
       parts.push(`${key}=${document.getElementById(id).checked?1:0}`);
+    const hot=heatMeshes.filter(m=>m.userData.heat>=0.5).map(m=>m.name.split('_').pop());
+    if(hot.length)parts.push('hot='+hot.join(','));
     const ex=document.getElementById('explode').value; if(+ex>0)parts.push(`explode=${ex}`);
     try{history.replaceState(null,'','#'+parts.join('&'));}catch(e){}
   },350);
@@ -445,6 +491,7 @@ if(Q.has('iwalls'))document.getElementById('iwallcb').checked=Q.get('iwalls')!==
 if(Q.has('roof'))document.getElementById('roofcb').checked=Q.get('roof')!=='0';
 if(Q.has('furn'))document.getElementById('furncb').checked=Q.get('furn')!=='0';
 if(Q.has('doors'))document.getElementById('doorcb').checked=Q.get('doors')!=='0';
+if(Q.has('heat'))document.getElementById('heatcb').checked=Q.get('heat')!=='0';
 if(Q.has('explode'))document.getElementById('explode').value=Q.get('explode');
 if(Q.has('mode'))mode=Q.get('mode');
 if(Q.has('cam')){const p=Q.get('cam').split(',').map(Number);
@@ -482,6 +529,8 @@ window.focusRoom=focusRoom;
 window.setLightByName=(name,on)=>{const m=lightMeshes.find(l=>l.name===name);if(m)setLight(m,on);};
 window.setFloorMode=setMode;
 window.setFixturesVisible=v=>{fixturesOn=!!v;document.getElementById('fixcb').checked=!!v;applyFixtureVis();};
+window.setHeatByName=(name,v)=>{const m=heatMeshes.find(h=>h.name===name||h.name.endsWith('_'+name));if(m)setHeat(m,v);return !!m;};
+window.setHeatingVisible=v=>{document.getElementById('heatcb').checked=!!v;refresh();saveHash();};
 if(Q.has('room')) setTimeout(()=>focusRoom(Q.get('room')),400);
 if(Q.get('fixtures')==='1') setTimeout(()=>window.setFixturesVisible(true),450);
 if(Q.has('lights')&&Q.get('lights')!=='0') setTimeout(()=>{document.getElementById('lightcb').checked=true;lightMeshes.forEach(m=>setLight(m,true));},500);

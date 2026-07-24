@@ -699,5 +699,39 @@ def build_lights(B):
     L('Light_ulko_piha_1',12.00,-3.41,-1.30,'wall_s'); L('Light_ulko_piha_2',14.20,-3.41,-1.30,'wall_s')
     L('Light_ulko_piha_3',16.40,-3.41,-1.30,'wall_s')
 
+# ============================================================ LATTIALÄMMITYS
+# Floor-heating circuits from the LVI 'Lattialämmitys' sheets (JT = jakotukki/manifold).
+# One thermostat-regulated loop each; nn = circuit number on the drawing (first digit
+# = manifold: 1x/2x kellari JT1+JT2, 3x/4x 1krs JT4 by the kitchen, 5x 2krs JT3).
+# Patches are thin overlay prisms above the room floor finish (hidden by default).
+# nn -> (kerros, rooms served, loop length m, polygon, floor z)
+HEAT = {
+ '11': ('kellari','VAR2 eteläosa',      61,[(13.70,3.58),(16.57,3.58),(16.57,7.57),(13.70,7.57)],Z_K),
+ '12': ('kellari','VAR2 pohjoisosa',    69,[(10.94,0.41),(13.62,0.41),(13.62,7.57),(10.94,7.57)],Z_K),
+ '21': ('kellari','VAR1 länsikaista',   56,[(0.41,0.41),(10.67,0.41),(10.67,2.18),(0.41,2.18)],Z_K),
+ '22': ('kellari','VAR1',               62,[(0.41,2.22),(10.67,2.22),(10.67,3.97),(0.41,3.97)],Z_K),
+ '23': ('kellari','VAR1',               67,[(0.41,4.01),(10.67,4.01),(10.67,5.76),(0.41,5.76)],Z_K),
+ '24': ('kellari','VAR1 itäkaista',     74,[(0.41,5.80),(10.67,5.80),(10.67,7.57),(0.41,7.57)],Z_K),
+ '31': ('1krs','LH+PH',                 35,[(0.30,5.50),(4.39,5.50),(4.39,7.68),(0.30,7.68)],0.0),
+ '32': ('1krs','KHH+VH',                56,[(4.49,5.65),(9.59,5.65),(9.59,7.68),(4.49,7.68)],0.0),
+ '33': ('1krs','ET+TK+VH2+WC+TEKN',     70,[(0.30,3.95),(3.80,3.95),(3.80,0.30),(7.87,0.30),(7.87,5.40),(0.30,5.40)],0.0),
+ '34': ('1krs','MH',                    57,[(0.30,0.30),(3.70,0.30),(3.70,3.85),(0.30,3.85)],0.0),
+ '41': ('1krs','KT',                    42,[(7.97,0.30),(10.92,0.30),(10.92,5.52),(7.97,5.52)],0.0),
+ '42': ('1krs','RUOKAILU',              55,[(10.96,0.30),(14.06,0.30),(14.06,3.43),(10.96,3.43)],0.0),
+ '43': ('1krs','OH länsiosa',           56,[(10.96,3.47),(16.68,3.47),(16.68,5.48),(10.96,5.48)],0.0),
+ '44': ('1krs','OH itäosa',             48,[(10.96,5.52),(16.68,5.52),(16.68,7.68),(10.96,7.68)],0.0),
+ '51': ('2krs','MH+VH',                 64,[(0.30,4.00),(3.60,4.00),(3.60,4.75),(4.72,5.58),(4.72,5.65),(6.22,5.65),(6.22,7.68),(0.30,7.68)],Z_2),
+ '52': ('2krs','MH2',                   52,[(0.30,0.30),(3.60,0.30),(3.60,3.90),(0.30,3.90)],Z_2),
+ '53': ('2krs','AULA',                  61,[(3.70,0.30),(7.34,0.30),(7.34,3.90),(10.68,3.90),(10.68,5.50),(4.80,5.50),(3.70,4.68)],Z_2),
+ '54': ('2krs','MH3',                   70,[(7.44,0.30),(10.68,0.30),(10.68,3.90),(7.44,3.90)],Z_2),
+ '55': ('2krs','KPH',                   22,[(6.31,5.65),(8.66,5.65),(8.66,7.68),(6.31,7.68)],Z_2),
+}
+
+def build_heat(B):
+    # overlay sits above the Room_ finish patches (top 0.020) and the rugs (top 0.038)
+    for nn,(kerros,rooms,m,poly,z) in HEAT.items():
+        B.floor=kerros
+        B.slab(f'Heat_{kerros}_{nn}',poly,z+0.042,z+0.046,'HeatOff')
+
 def build_all(B):
-    build_kellari(B); build_krs1(B); build_krs2(B); build_roof(B); build_katos(B); build_lights(B)
+    build_kellari(B); build_krs1(B); build_krs2(B); build_roof(B); build_katos(B); build_lights(B); build_heat(B)

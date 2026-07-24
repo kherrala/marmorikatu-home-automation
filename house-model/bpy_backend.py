@@ -21,6 +21,7 @@ MATS = {  # name: (hex, rough, metallic, alpha)
  'PoolBlue':('4B9FD4',0.90,0,1),'Curtain':('303236',0.95,0,1),'ConcreteDark':('4A4744',0.40,0,1),
  'Slat':('6B5136',0.70,0,1),'SlatGray':('E3E4E0',0.65,0,1),'Rattan':('4A4B4D',0.85,0,1),
  'LightOff':('F1EFE8',0.35,0,1),'Paver':('9C9C9A',0.85,0,1),
+ 'HeatOff':('8E9AA8',0.90,0,1),   # floor-heating circuit patch, neutral until app colors it
  'Block':('7E7F80',0.90,0,1),'Soil':('6E5B48',0.95,0,1),
  'White':('F2F2EF',0.60,0,1),'Canopy':('EDF2F4',0.25,0,0.35),
 }
@@ -30,13 +31,13 @@ def srgb2lin(c):
     return tuple((v/12.92 if v<=0.04045 else ((v+0.055)/1.055)**2.4) for v in c)
 
 FLOORCOL = {'kellari':'Kellari','1krs':'Krs1','terassi':'Terassi','2krs':'Krs2','katto':'Katto','katos':'Katos'}
-CATS = ['seinat_ulko','seinat_sisa','lasit','ovet','lattia','huoneet','portaat','kalusteet','valot']
+CATS = ['seinat_ulko','seinat_sisa','lasit','ovet','lattia','huoneet','portaat','kalusteet','valot','lammitys']
 # PBR texture sets (house-model/tex/, Poly Haven CC0, palette-matched):
 # mat -> (diffuse, normal, uv kind: 'wall' u=(x+y) v=z | 'plan' u=x v=y, uv scale)
 TEXSETS = {
  'WallExt' :('siding_diff.jpg' ,'siding_nor.jpg' ,'wall',0.75),
  'WallExt2':('siding2_diff.jpg','siding2_nor.jpg','wall',0.75),
- 'Wood'    :('floor_diff.jpg'  ,'floor_nor.jpg'  ,'plan',0.75),
+ 'Wood'    :('floor_diff.jpg'  ,'floor_nor.jpg'  ,'plan',0.5),   # 0.5 -> ~15 cm planks, readable at room scale
  'Paver'   :('paver_diff.jpg'  ,'paver_nor.jpg'  ,'plan',0.5),
  'ConcreteW':('concrete_diff.jpg','concrete_nor.jpg','wall',0.5),
  'ConcreteF':('concrete_diff.jpg','concrete_nor.jpg','plan',0.5),
@@ -90,6 +91,7 @@ class BlenderB:
     def _cat(self,name,mat):
         n=name.lower()
         if name.startswith('Light_'): return 'valot'
+        if name.startswith('Heat_'): return 'lammitys'
         if self.floor=='katto': return None
         if mat=='Frame': return 'seinat_ulko' if '.xfr' in n else 'seinat_sisa'
         if '.hnd' in n: return 'ovet'

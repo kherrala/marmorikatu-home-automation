@@ -849,5 +849,311 @@
    ]
   }
  },
+ "heating": {
+  "Heat_kellari_11": {
+   "circuit": "11",
+   "floor": "kellari",
+   "center": [
+    15.135,
+    -2.996,
+    -5.575
+   ],
+   "size": [
+    2.87,
+    0.004,
+    3.99
+   ],
+   "rooms": "VAR2 eteläosa",
+   "loop_m": 61
+  },
+  "Heat_kellari_12": {
+   "circuit": "12",
+   "floor": "kellari",
+   "center": [
+    12.28,
+    -2.996,
+    -3.99
+   ],
+   "size": [
+    2.68,
+    0.004,
+    7.16
+   ],
+   "rooms": "VAR2 pohjoisosa",
+   "loop_m": 69
+  },
+  "Heat_kellari_21": {
+   "circuit": "21",
+   "floor": "kellari",
+   "center": [
+    5.54,
+    -2.996,
+    -1.295
+   ],
+   "size": [
+    10.26,
+    0.004,
+    1.77
+   ],
+   "rooms": "VAR1 länsikaista",
+   "loop_m": 56
+  },
+  "Heat_kellari_22": {
+   "circuit": "22",
+   "floor": "kellari",
+   "center": [
+    5.54,
+    -2.996,
+    -3.095
+   ],
+   "size": [
+    10.26,
+    0.004,
+    1.75
+   ],
+   "rooms": "VAR1",
+   "loop_m": 62
+  },
+  "Heat_kellari_23": {
+   "circuit": "23",
+   "floor": "kellari",
+   "center": [
+    5.54,
+    -2.996,
+    -4.885
+   ],
+   "size": [
+    10.26,
+    0.004,
+    1.75
+   ],
+   "rooms": "VAR1",
+   "loop_m": 67
+  },
+  "Heat_kellari_24": {
+   "circuit": "24",
+   "floor": "kellari",
+   "center": [
+    5.54,
+    -2.996,
+    -6.685
+   ],
+   "size": [
+    10.26,
+    0.004,
+    1.77
+   ],
+   "rooms": "VAR1 itäkaista",
+   "loop_m": 74
+  },
+  "Heat_1krs_31": {
+   "circuit": "31",
+   "floor": "1krs",
+   "center": [
+    2.345,
+    0.044,
+    -6.59
+   ],
+   "size": [
+    4.09,
+    0.004,
+    2.18
+   ],
+   "rooms": "LH+PH",
+   "loop_m": 35
+  },
+  "Heat_1krs_32": {
+   "circuit": "32",
+   "floor": "1krs",
+   "center": [
+    7.04,
+    0.044,
+    -6.665
+   ],
+   "size": [
+    5.1,
+    0.004,
+    2.03
+   ],
+   "rooms": "KHH+VH",
+   "loop_m": 56
+  },
+  "Heat_1krs_33": {
+   "circuit": "33",
+   "floor": "1krs",
+   "center": [
+    4.085,
+    0.044,
+    -2.85
+   ],
+   "size": [
+    7.57,
+    0.004,
+    5.1
+   ],
+   "rooms": "ET+TK+VH2+WC+TEKN",
+   "loop_m": 70
+  },
+  "Heat_1krs_34": {
+   "circuit": "34",
+   "floor": "1krs",
+   "center": [
+    2.0,
+    0.044,
+    -2.075
+   ],
+   "size": [
+    3.4,
+    0.004,
+    3.55
+   ],
+   "rooms": "MH",
+   "loop_m": 57
+  },
+  "Heat_1krs_41": {
+   "circuit": "41",
+   "floor": "1krs",
+   "center": [
+    9.445,
+    0.044,
+    -2.91
+   ],
+   "size": [
+    2.95,
+    0.004,
+    5.22
+   ],
+   "rooms": "KT",
+   "loop_m": 42
+  },
+  "Heat_1krs_42": {
+   "circuit": "42",
+   "floor": "1krs",
+   "center": [
+    12.51,
+    0.044,
+    -1.865
+   ],
+   "size": [
+    3.1,
+    0.004,
+    3.13
+   ],
+   "rooms": "RUOKAILU",
+   "loop_m": 55
+  },
+  "Heat_1krs_43": {
+   "circuit": "43",
+   "floor": "1krs",
+   "center": [
+    13.82,
+    0.044,
+    -4.475
+   ],
+   "size": [
+    5.72,
+    0.004,
+    2.01
+   ],
+   "rooms": "OH länsiosa",
+   "loop_m": 56
+  },
+  "Heat_1krs_44": {
+   "circuit": "44",
+   "floor": "1krs",
+   "center": [
+    13.82,
+    0.044,
+    -6.6
+   ],
+   "size": [
+    5.72,
+    0.004,
+    2.16
+   ],
+   "rooms": "OH itäosa",
+   "loop_m": 48
+  },
+  "Heat_2krs_51": {
+   "circuit": "51",
+   "floor": "2krs",
+   "center": [
+    3.26,
+    3.054,
+    -5.84
+   ],
+   "size": [
+    5.92,
+    0.004,
+    3.68
+   ],
+   "rooms": "MH+VH",
+   "loop_m": 64
+  },
+  "Heat_2krs_52": {
+   "circuit": "52",
+   "floor": "2krs",
+   "center": [
+    1.95,
+    3.054,
+    -2.1
+   ],
+   "size": [
+    3.3,
+    0.004,
+    3.6
+   ],
+   "rooms": "MH2",
+   "loop_m": 52
+  },
+  "Heat_2krs_53": {
+   "circuit": "53",
+   "floor": "2krs",
+   "center": [
+    7.19,
+    3.054,
+    -2.9
+   ],
+   "size": [
+    6.98,
+    0.004,
+    5.2
+   ],
+   "rooms": "AULA",
+   "loop_m": 61
+  },
+  "Heat_2krs_54": {
+   "circuit": "54",
+   "floor": "2krs",
+   "center": [
+    9.06,
+    3.054,
+    -2.1
+   ],
+   "size": [
+    3.24,
+    0.004,
+    3.6
+   ],
+   "rooms": "MH3",
+   "loop_m": 70
+  },
+  "Heat_2krs_55": {
+   "circuit": "55",
+   "floor": "2krs",
+   "center": [
+    7.485,
+    3.054,
+    -6.665
+   ],
+   "size": [
+    2.35,
+    0.004,
+    2.03
+   ],
+   "rooms": "KPH",
+   "loop_m": 22
+  }
+ },
  "tween": "easeInOutQuad over 700-900 ms on {target,radius,phi,theta} — see viewer source"
 }
