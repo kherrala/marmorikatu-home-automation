@@ -215,7 +215,7 @@ function applyCam(){
   camera.lookAt(o.tgt);
 }
 let ptrs=new Map(), lastPinch=0;
-canvas.addEventListener('pointerdown',e=>{ptrs.set(e.pointerId,[e.clientX,e.clientY]);canvas.setPointerCapture(e.pointerId);userMoved=true;});
+canvas.addEventListener('pointerdown',e=>{ptrs.set(e.pointerId,[e.clientX,e.clientY]);try{canvas.setPointerCapture(e.pointerId);}catch(_){}userMoved=true;});
 canvas.addEventListener('pointerup',e=>ptrs.delete(e.pointerId));
 canvas.addEventListener('pointercancel',e=>ptrs.delete(e.pointerId));
 canvas.addEventListener('pointermove',e=>{
@@ -248,7 +248,7 @@ function pan(dx,dy){
   const right=new THREE.Vector3().crossVectors(v,camera.up).normalize();
   const up=new THREE.Vector3().crossVectors(right,v).normalize();
   const k=orbit.r*0.0016;
-  orbit.tgt.addScaledVector(right,-dx*k).addScaledVector(up,-dy*k);
+  orbit.tgt.addScaledVector(right,-dx*k).addScaledVector(up,dy*k);   // grab-style on both axes
 }
 
 // ----------------------------------------------------------- model + ui
