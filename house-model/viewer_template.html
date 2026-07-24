@@ -195,6 +195,7 @@ grid.position.y=-3.55; scene.add(grid);
 // orbit ------------------------------------------------------------------
 const orbit={th:0.72,ph:1.02,r:26,tgt:new THREE.Vector3(8.5,1.2,0)};
 function applyCam(){
+  saveHash();
   const s=Math.sin, c=Math.cos, o=orbit;
   camera.position.set(o.tgt.x+o.r*s(o.ph)*c(o.th), o.tgt.y+o.r*c(o.ph), o.tgt.z+o.r*s(o.ph)*s(o.th));
   camera.lookAt(o.tgt);
@@ -339,8 +340,9 @@ function refresh(){
     });
   }
 }
-let userMoved=false;
+let userMoved=false, camLock=false;
 function retarget(){
+  if(camLock)return;
   // target: weighted toward the house core; radius: fits the whole visible ensemble
   const vis=visFloors().filter(n=>n!=='Katto'&&groupBox[n]);
   const core=vis.filter(n=>['Kellari','Krs1','Krs2'].includes(n));
@@ -362,15 +364,17 @@ function retarget(){
 }
 addEventListener('resize',()=>{if(!userMoved)retarget();});
 function setMode(m){
-  mode=m;
+  mode=m; saveHash();
   document.querySelectorAll('#bar button').forEach(b=>b.classList.toggle('on',b.dataset.mode===m));
   refresh(); retarget();
 }
 document.querySelectorAll('#bar button').forEach(b=>b.onclick=()=>setMode(b.dataset.mode));
-['roofcb','wallcb','iwallcb','furncb','doorcb','explode','spincb'].forEach(id=>document.getElementById(id).addEventListener('input',refresh));
+['roofcb','wallcb','iwallcb','furncb','doorcb','explode','spincb'].forEach(id=>document.getElementById(id).addEventListener('input',()=>{refresh();saveHash();}));
+document.getElementById('fixcb').addEventListener('input',saveHash);
+document.getElementById('lightcb').addEventListener('input',saveHash);
 document.getElementById('lightcb').addEventListener('input',e=>lightMeshes.forEach(m=>setLight(m,e.target.checked)));
 document.getElementById('fixcb').addEventListener('input',e=>{fixturesOn=e.target.checked;applyFixtureVis();});
-document.getElementById('fitbtn').addEventListener('click',()=>{userMoved=false;resize();retarget();});
+document.getElementById('fitbtn').addEventListener('click',()=>{camLock=false;userMoved=false;resize();retarget();});
 // smooth orbit tween (the same easing recipe suggested for the mobile app)
 let tween=null;
 function tweenOrbit(to,ms=750){
@@ -420,7 +424,22 @@ canvas.addEventListener('pointerdown',e=>{
 });
 
 // URL params: ?mode=krs1&walls=0&roof=0&furn=0&explode=1.5 (handy for app embedding)
-const Q=new URLSearchParams(location.search);
+const Q=(()=>{const q=new URLSearchParams(location.search);
+  const h=new URLSearchParams(location.hash.replace(/^#/,''));
+  h.forEach((v,k)=>q.set(k,v)); return q;})();
+// persist settings + camera in the URL fragment so refresh keeps the view
+let hashT=null;
+function saveHash(){
+  clearTimeout(hashT);
+  hashT=setTimeout(()=>{
+    const o=orbit,f=v=>Math.round(v*100)/100;
+    const parts=[`cam=${f(o.th)},${f(o.ph)},${f(o.r)},${f(o.tgt.x)},${f(o.tgt.y)},${f(o.tgt.z)}`,`mode=${mode}`];
+    for(const [id,key] of [['roofcb','roof'],['wallcb','walls'],['iwallcb','iwalls'],['furncb','furn'],['doorcb','doors'],['lightcb','lights'],['fixcb','fixtures']])
+      parts.push(`${key}=${document.getElementById(id).checked?1:0}`);
+    const ex=document.getElementById('explode').value; if(+ex>0)parts.push(`explode=${ex}`);
+    try{history.replaceState(null,'','#'+parts.join('&'));}catch(e){}
+  },350);
+}
 if(Q.has('walls'))document.getElementById('wallcb').checked=Q.get('walls')!=='0';
 if(Q.has('iwalls'))document.getElementById('iwallcb').checked=Q.get('iwalls')!=='0';
 if(Q.has('roof'))document.getElementById('roofcb').checked=Q.get('roof')!=='0';
@@ -428,7 +447,9 @@ if(Q.has('furn'))document.getElementById('furncb').checked=Q.get('furn')!=='0';
 if(Q.has('doors'))document.getElementById('doorcb').checked=Q.get('doors')!=='0';
 if(Q.has('explode'))document.getElementById('explode').value=Q.get('explode');
 if(Q.has('mode'))mode=Q.get('mode');
-if(Q.has('cam')){const p=Q.get('cam').split(',').map(Number);if(p.length===3){orbit.th=p[0];orbit.ph=p[1];orbit.r=p[2];}}
+if(Q.has('cam')){const p=Q.get('cam').split(',').map(Number);
+  if(p.length>=3){orbit.th=p[0];orbit.ph=p[1];orbit.r=p[2];}
+  if(p.length===6){orbit.tgt.set(p[3],p[4],p[5]);userMoved=true;camLock=true;}}
 
 // loop ---------------------------------------------------------------------
 function resize(){

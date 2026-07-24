@@ -84,7 +84,7 @@ Light_katos_*                  carport      katos_1/2, katos_VAR
 
 41 anchors total; positions per the valaistus drawings. **LED groups on one switch are
 one anchor with `.pN` sub-head meshes** that light together: `Light_1krs_OH` (3×2 grid),
-`Light_1krs_KT` (4 in series; the island pendant is its own `Light_1krs_SAAREKE`),
+`Light_1krs_KT` (4 in series; the two island pendants are their own `Light_1krs_SAAREKE`),
 `Light_1krs_KHH` (3×2), `Light_1krs_PH` (2×2), `Light_2krs_AULA` (4 in series, plus a
 separate `Light_2krs_AULA_KATTO` ceiling lamp), `Light_1krs_IKKUNA` (decorative lights
 over the wing windows), `Light_kellari_VAR1_2` (3 pendants over the billiard),
