@@ -727,11 +727,85 @@ HEAT = {
  '55': ('2krs','KPH',                   22,[(6.31,5.65),(8.66,5.65),(8.66,7.68),(6.31,7.68)],Z_2),
 }
 
+def _area(poly):
+    s=0.0
+    for i in range(len(poly)):
+        x1,y1=poly[i]; x2,y2=poly[(i+1)%len(poly)]
+        s+=x1*y2-x2*y1
+    return abs(s)/2
+
+def _interval(poly,axis,c):
+    """Extent of the zone at scanline c (runs along `axis`)."""
+    xs=[]; n=len(poly)
+    for i in range(n):
+        (x1,y1),(x2,y2)=poly[i],poly[(i+1)%n]
+        a1,b1,a2,b2=((y1,x1,y2,x2) if axis=='x' else (x1,y1,x2,y2))
+        if (a1<=c<a2) or (a2<=c<a1):
+            t=(c-a1)/(a2-a1); xs.append(b1+t*(b2-b1))
+    if len(xs)<2: return None
+    return min(xs),max(xs)
+
+def _L(p,q):
+    out=[]
+    if abs(p[0]-q[0])>1e-4: out.append((min(p[0],q[0]),max(p[0],q[0]),p[1],p[1]))
+    if abs(p[1]-q[1])>1e-4: out.append((q[0],q[0],min(p[1],q[1]),max(p[1],q[1])))
+    return out
+
+def _serp(fields,cc,margin=0.14):
+    """Serpentine path through fields -> axis-aligned segments [(x0,x1,y0,y1)]."""
+    segs=[]; end=None
+    for poly,axis in fields:
+        cs=[p[1] for p in poly] if axis=='x' else [p[0] for p in poly]
+        lo,hi=min(cs)+margin,max(cs)-margin
+        n=max(2,int(round((hi-lo)/cc))+1); step=(hi-lo)/(n-1)
+        flip=False
+        for k in range(n):
+            c=lo+k*step
+            iv=_interval(poly,axis,c)
+            if not iv: continue
+            a0,a1=iv[0]+margin,iv[1]-margin
+            if a1-a0<0.05: continue
+            s,e=(a0,a1) if not flip else (a1,a0)
+            start=(s,c) if axis=='x' else (c,s)
+            if end is not None: segs+=_L(end,start)
+            if axis=='x': segs.append((a0,a1,c,c))
+            else:         segs.append((c,c,a0,a1))
+            end=(e,c) if axis=='x' else (c,e); flip=not flip
+    return segs,end
+
+# run orientation per the LL sheets (default 'x' = along the house)
+HEATAXIS={'11':'y','12':'y','41':'y','42':'y'}
+# loops serving two rooms: separate serpentine per room, connected in series
+HEATFIELDS={
+ '31':[([(0.30,5.50),(2.39,5.50),(2.39,7.68),(0.30,7.68)],'y'),   # LH runs poikittain
+      ([(2.49,5.50),(4.39,5.50),(4.39,7.68),(2.49,7.68)],'x')],   # PH runs pitkittain
+ '32':[([(4.49,5.65),(7.87,5.65),(7.87,7.68),(4.49,7.68)],'x'),
+      ([(7.97,5.65),(9.59,5.65),(9.59,7.68),(7.97,7.68)],'x')],
+ '33':[([(0.30,3.95),(3.80,3.95),(3.80,5.40),(0.30,5.40)],'x'),   # TEKN+WC
+      ([(3.80,0.30),(7.87,0.30),(7.87,5.40),(3.80,5.40)],'x')],   # ET+TK+VH2
+}
+# jakotukit: first digit of the circuit -> (kerros, x, y, mount axis)
+HEATJT={'1':('kellari',10.98,0.80,'y'),'2':('kellari',10.635,0.80,'y'),
+        '3':('1krs',1.10,5.34,'x'),'4':('1krs',9.35,5.72,'x'),'5':('2krs',8.15,5.68,'x')}
+
 def build_heat(B):
-    # overlay sits above the Room_ finish patches (top 0.020) and the rugs (top 0.038)
+    # zone patch above the Room_ finish (top 0.020) and rugs (top 0.038); the pipe
+    # ribbon rides on the patch. The sheet's drawn serpentine line represents the
+    # supply+return pair, so the visual c/c that matches the drawings is 2*area/lenkki.
     for nn,(kerros,rooms,m,poly,z) in HEAT.items():
         B.floor=kerros
         B.slab(f'Heat_{kerros}_{nn}',poly,z+0.042,z+0.046,'HeatOff')
+        fields=HEATFIELDS.get(nn) or [(poly,HEATAXIS.get(nn,'x'))]
+        cc=max(0.20,min(0.50,2*_area(poly)/max(1,m)))
+        segs,end=_serp(fields,cc)
+        jt=HEATJT[nn[0]]
+        if end is not None: segs+=_L(end,(jt[1],jt[2]))
+        B.polyseg(f'Heat_{kerros}_{nn}.pipe',segs,0.032,z+0.048,z+0.054,'HeatPipe')
+    for j,(kerros,jx,jy,o) in HEATJT.items():
+        B.floor=kerros
+        zj={'kellari':Z_K,'1krs':0.0,'2krs':Z_2}[kerros]
+        if o=='x': B.box(f'Heat_{kerros}_JT{j}',(jx-0.22,jx+0.22),(jy-0.035,jy+0.035),(zj+0.25,zj+0.75),'Metal')
+        else:      B.box(f'Heat_{kerros}_JT{j}',(jx-0.035,jx+0.035),(jy-0.22,jy+0.22),(zj+0.25,zj+0.75),'Metal')
 
 def build_all(B):
     build_kellari(B); build_krs1(B); build_krs2(B); build_roof(B); build_katos(B); build_lights(B); build_heat(B)

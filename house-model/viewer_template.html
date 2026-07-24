@@ -20,6 +20,7 @@
   #opts label{display:flex;gap:5px;align-items:center;cursor:pointer;user-select:none}
   #opts input[type=range]{width:90px;accent-color:var(--acc)}
   #opts input[type=checkbox]{accent-color:var(--acc)}
+  #opts select{border:0;background:#eef2f7;border-radius:8px;padding:4px 6px;font-size:12px;color:var(--txt)}
   #tip{position:fixed;pointer-events:none;background:#111827ee;color:#fff;font-size:13px;font-weight:600;
        padding:6px 10px;border-radius:8px;z-index:20;display:none;transform:translate(-50%,-140%)}
   #tip small{display:block;font-weight:400;opacity:.75}
@@ -38,6 +39,11 @@
   <label><input type="checkbox" id="lightcb"> Valot</label>
   <label><input type="checkbox" id="fixcb"> Valaisimet</label>
   <label><input type="checkbox" id="heatcb"> Lämmitys</label>
+  <select id="heatview" title="Lämmityksen näkymä">
+    <option value="b">Alueet + piirit</option>
+    <option value="a">Alueet</option>
+    <option value="p">Piirit</option>
+  </select>
   <label>Kerrosväli <input type="range" id="explode" min="0" max="3" step="0.05" value="0"></label>
   <label><input type="checkbox" id="spincb"> Pyöritä</label>
   <button id="fitbtn" style="border:0;background:#eef2f7;border-radius:8px;padding:6px 10px;font-weight:700;cursor:pointer">⛶ Sovita</button>
@@ -246,7 +252,7 @@ function pan(dx,dy){
 }
 
 // ----------------------------------------------------------- model + ui
-let talo=null, groups={}, baseY={}, groupBox={}, lightMeshes=[], lightParts=[], heatMeshes=[], ROOMCAMS={};
+let talo=null, groups={}, baseY={}, groupBox={}, lightMeshes=[], lightParts=[], heatMeshes=[], heatParts=[], ROOMCAMS={};
 // fixture meshes are auto-hidden unless lit (or forced visible via Valaisimet / ?fixtures=1)
 let fixturesOn=false;
 function anchorName(n){const i=n.indexOf('.');return i<0?n:n.slice(0,i);}
@@ -292,7 +298,24 @@ function setHeat(m,v){
   m.material.color.set(0x000000);              // flat emissive overlay: stays saturated
   m.material.emissive.copy(c); m.material.emissiveIntensity=1.0;
   m.material.envMapIntensity=0;
+  for(const p of heatParts){                   // the circuit's pipe ribbon follows
+    if(anchorName(p.name)===m.name){
+      p.material.color.set(0x000000);
+      p.material.emissive.copy(c); p.material.emissiveIntensity=1.0; p.material.envMapIntensity=0;
+    }
+  }
   saveHash();
+}
+// heat view: a = zones only, p = pipes (zone stays a faint tap target), b = both
+function applyHeatView(){
+  const hv=document.getElementById('heatview').value;
+  for(const m of heatMeshes){
+    m.material.transparent=hv!=='a';
+    m.material.opacity=hv==='a'?1:(hv==='b'?0.30:0.10);
+    m.material.depthWrite=hv==='a';
+    m.material.needsUpdate=true;
+  }
+  for(const p of heatParts) p.visible=hv!=='a';
 }
 const B64=GLB_B64;
 async function getModel(){
@@ -318,7 +341,9 @@ getModel().then(async buf=>{
       }
     }
     if(o.isMesh&&o.name.startsWith('Heat_')){
-      o.material=o.material.clone(); o.castShadow=false; heatMeshes.push(o);
+      o.material=o.material.clone(); o.castShadow=false;
+      if(o.name.includes('.')||/_JT\d+$/.test(o.name)) heatParts.push(o);   // pipes + jakotukit
+      else heatMeshes.push(o);                                             // zone patches (anchors)
     }
     if(o.isMesh&&o.name.startsWith('Room_')){
       const bb=new THREE.Box3().setFromObject(o),c=bb.getCenter(new THREE.Vector3()),s=bb.getSize(new THREE.Vector3());
@@ -334,6 +359,7 @@ getModel().then(async buf=>{
   applyFixtureVis();
   const hot=(Q.get('hot')||'').split(',').filter(Boolean);
   for(const m of heatMeshes) setHeat(m, hot.includes(m.name.split('_').pop())?1:0);
+  applyHeatView();
   setMode(mode); applyCam();
 });
 const EXPL={Kellari:0,Krs1:1,Terassi:1,Katos:1,Krs2:2,Katto:3};
@@ -401,6 +427,7 @@ document.getElementById('fixcb').addEventListener('input',saveHash);
 document.getElementById('lightcb').addEventListener('input',saveHash);
 document.getElementById('lightcb').addEventListener('input',e=>lightMeshes.forEach(m=>setLight(m,e.target.checked)));
 document.getElementById('fixcb').addEventListener('input',e=>{fixturesOn=e.target.checked;applyFixtureVis();});
+document.getElementById('heatview').addEventListener('input',()=>{applyHeatView();saveHash();});
 document.getElementById('fitbtn').addEventListener('click',()=>{camLock=false;userMoved=false;resize();retarget();});
 // smooth orbit tween (the same easing recipe suggested for the mobile app)
 let tween=null;
@@ -482,6 +509,7 @@ function saveHash(){
       parts.push(`${key}=${document.getElementById(id).checked?1:0}`);
     const hot=heatMeshes.filter(m=>m.userData.heat>=0.5).map(m=>m.name.split('_').pop());
     if(hot.length)parts.push('hot='+hot.join(','));
+    const hv=document.getElementById('heatview').value; if(hv!=='b')parts.push('hv='+hv);
     const ex=document.getElementById('explode').value; if(+ex>0)parts.push(`explode=${ex}`);
     try{history.replaceState(null,'','#'+parts.join('&'));}catch(e){}
   },350);
@@ -492,6 +520,7 @@ if(Q.has('roof'))document.getElementById('roofcb').checked=Q.get('roof')!=='0';
 if(Q.has('furn'))document.getElementById('furncb').checked=Q.get('furn')!=='0';
 if(Q.has('doors'))document.getElementById('doorcb').checked=Q.get('doors')!=='0';
 if(Q.has('heat'))document.getElementById('heatcb').checked=Q.get('heat')!=='0';
+if(Q.has('hv'))document.getElementById('heatview').value=({a:'a',p:'p',b:'b'})[Q.get('hv')]||'b';
 if(Q.has('explode'))document.getElementById('explode').value=Q.get('explode');
 if(Q.has('mode'))mode=Q.get('mode');
 if(Q.has('cam')){const p=Q.get('cam').split(',').map(Number);
@@ -531,6 +560,8 @@ window.setFloorMode=setMode;
 window.setFixturesVisible=v=>{fixturesOn=!!v;document.getElementById('fixcb').checked=!!v;applyFixtureVis();};
 window.setHeatByName=(name,v)=>{const m=heatMeshes.find(h=>h.name===name||h.name.endsWith('_'+name));if(m)setHeat(m,v);return !!m;};
 window.setHeatingVisible=v=>{document.getElementById('heatcb').checked=!!v;refresh();saveHash();};
+window.setHeatView=v=>{const map={areas:'a',pipes:'p',both:'b',a:'a',p:'p',b:'b'};
+  document.getElementById('heatview').value=map[v]||'b';applyHeatView();saveHash();};
 if(Q.has('room')) setTimeout(()=>focusRoom(Q.get('room')),400);
 if(Q.get('fixtures')==='1') setTimeout(()=>window.setFixturesVisible(true),450);
 if(Q.has('lights')&&Q.get('lights')!=='0') setTimeout(()=>{document.getElementById('lightcb').checked=true;lightMeshes.forEach(m=>setLight(m,true));},500);

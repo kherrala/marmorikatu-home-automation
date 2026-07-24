@@ -65,14 +65,18 @@ try:
     from spec import HEAT as HEATSPEC
 except Exception:
     HEATSPEC={}
-heating={}
+heating={}; manifolds={}
 for n in gltf['nodes']:
     nm=n.get('name','')
-    if not nm.startswith('Heat_'): continue
+    if not nm.startswith('Heat_') or '.' in nm: continue     # anchors only ('.pipe' is a sub-part)
     bb=node_mesh_bbox(gltf,n)
     if not bb: continue
     lo,hi=bb; c=[(a+b)/2 for a,b in zip(lo,hi)]; s=[b-a for a,b in zip(lo,hi)]
-    nn=nm.split('_')[-1]; info=HEATSPEC.get(nn)
+    nn=nm.split('_')[-1]
+    if not nn.isdigit():
+        manifolds[nm]={'center':[round(v,3) for v in c]}     # Heat_<kerros>_JTn
+        continue
+    info=HEATSPEC.get(nn)
     heating[nm]={'circuit':nn,'floor':nm.split('_')[1],
                  'center':[round(v,3) for v in c],'size':[round(v,3) for v in s],
                  'rooms':info[1] if info else '','loop_m':info[2] if info else None}
@@ -82,7 +86,7 @@ floors={'kellari':{'groups':['Kellari'],'mode':'kellari'},
         'krs2':{'groups':['Krs2'],'mode':'krs2'},
         'all':{'groups':['Kellari','Krs1','Krs2','Terassi','Katto','Katos'],'mode':'all'}}
 cams={'coordinate_system':'three.js / glTF: x=plan-x (pohjoinen->etela), y=up (0 = 1krs floor), z=-plan-y (lansi->ita negative)',
-      'floors':floors,'rooms':rooms,'lights':lights,'heating':heating,
+      'floors':floors,'rooms':rooms,'lights':lights,'heating':heating,'manifolds':manifolds,
       'tween':'easeInOutQuad over 700-900 ms on {target,radius,phi,theta} — see viewer source'}
 json.dump(cams, open(f'{OUT}/cameras.json','w'), indent=1, ensure_ascii=False)
 print(f'cameras.json: {len(rooms)} rooms, {len(lights)} lights, {len(heating)} heating circuits')

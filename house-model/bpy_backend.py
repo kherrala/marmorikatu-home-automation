@@ -22,6 +22,7 @@ MATS = {  # name: (hex, rough, metallic, alpha)
  'Slat':('6B5136',0.70,0,1),'SlatGray':('E3E4E0',0.65,0,1),'Rattan':('4A4B4D',0.85,0,1),
  'LightOff':('F1EFE8',0.35,0,1),'Paver':('9C9C9A',0.85,0,1),
  'HeatOff':('8E9AA8',0.90,0,1),   # floor-heating circuit patch, neutral until app colors it
+ 'HeatPipe':('8A94A0',0.45,0,1),  # floor-heating pipe ribbon
  'Block':('7E7F80',0.90,0,1),'Soil':('6E5B48',0.95,0,1),
  'White':('F2F2EF',0.60,0,1),'Canopy':('EDF2F4',0.25,0,0.35),
 }
@@ -131,6 +132,20 @@ class BlenderB:
             except Exception: pass
         self.count+=1
         return obj
+    def polyseg(self,name,segs,w,z0,z1,mat):
+        """One mesh from many axis-aligned thin segments [(x0,x1,y0,y1)] (pipe ribbons)."""
+        z0+=self.zoff; z1+=self.zoff
+        v=[]; f=[]
+        for (x0,x1,y0,y1) in segs:
+            x0,x1=min(x0,x1)-w/2,max(x0,x1)+w/2
+            y0,y1=min(y0,y1)-w/2,max(y0,y1)+w/2
+            b=len(v)
+            v+=[(x0,y0,z0),(x1,y0,z0),(x1,y1,z0),(x0,y1,z0),(x0,y0,z1),(x1,y0,z1),(x1,y1,z1),(x0,y1,z1)]
+            f+=[(b,b+1,b+2,b+3),(b+7,b+6,b+5,b+4),(b,b+4,b+5,b+1),(b+1,b+5,b+6,b+2),(b+2,b+6,b+7,b+3),(b+3,b+7,b+4,b)]
+        if not v: return
+        me=bpy.data.meshes.new(name)
+        me.from_pydata(v,[],f); me.validate(); me.update()
+        self._add(name,me,mat)
     def box(self,name,xs,ys,zs,mat):
         z0,z1=zs[0]+self.zoff,zs[1]+self.zoff
         x0,x1=min(xs),max(xs); y0,y1=min(ys),max(ys)

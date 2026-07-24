@@ -1155,5 +1155,42 @@
    "loop_m": 22
   }
  },
+ "manifolds": {
+  "Heat_kellari_JT1": {
+   "center": [
+    10.98,
+    -2.54,
+    -0.8
+   ]
+  },
+  "Heat_kellari_JT2": {
+   "center": [
+    10.635,
+    -2.54,
+    -0.8
+   ]
+  },
+  "Heat_1krs_JT3": {
+   "center": [
+    1.1,
+    0.5,
+    -5.34
+   ]
+  },
+  "Heat_1krs_JT4": {
+   "center": [
+    9.35,
+    0.5,
+    -5.72
+   ]
+  },
+  "Heat_2krs_JT5": {
+   "center": [
+    8.15,
+    3.51,
+    -5.68
+   ]
+  }
+ },
  "tween": "easeInOutQuad over 700-900 ms on {target,radius,phi,theta} — see viewer source"
 }
