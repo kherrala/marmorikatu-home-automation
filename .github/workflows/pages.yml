@@ -5,9 +5,6 @@ on:
     branches: [master]
     paths:
       - 'house-model/marmorikatu-3d.html'
-      - 'house-model/viewer.html'
-      - 'house-model/marmorikatu-house.glb'
-      - 'house-model/cameras.json'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
 
@@ -32,7 +29,6 @@ jobs:
         run: |
           mkdir -p _site
           cp house-model/marmorikatu-3d.html _site/index.html
-          cp house-model/viewer.html house-model/marmorikatu-house.glb house-model/cameras.json _site/
       - uses: actions/upload-pages-artifact@v3
         with:
           path: _site

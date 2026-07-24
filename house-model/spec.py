@@ -160,7 +160,7 @@ def build_krs1(B):
     wall_y(B,'F1.wS.blk',0+e,0,10.98,0,H_1E,EXT,mat='WallExt',ops=[
         W('win',1.64,2.74,1.15,2.05),                       # MH
         W('door',4.88,5.78),W('glassdoor',5.78,6.20),        # front door + sidelight
-        W('win',8.34,9.44,1.15,2.05)])                       # kitchen
+        W('win',8.34,9.44,1.05,1.80)])                       # kitchen: short, above the counter
     wall_y(B,'F1.wS.liv',0+e,10.98,14.28,0,H_L,EXT,mat='WallExt',
         ops=[W('win',11.29,13.89,0.45,2.10)])                # dining glazing
     wall_x(B,'F1.wE.din',14.28-e,0,3.30,0,H_L,EXT,mat='WallExt',ops=[
@@ -190,10 +190,11 @@ def build_krs1(B):
     # interior walls
     wall_y(B,'F1.nb.w',5.45,0.30,4.41,0,H_1,INT,ops=[W('door',3.55,4.30)])   # PH door to hall
     wall_y(B,'F1.nb.e',5.60,4.41,9.64,0,H_1,INT,
-        ops=[W('door',6.85,7.60),W('door',8.65,9.40)])       # KHH + VH doors
+        ops=[W('door',6.85,7.60)])                           # KHH door
+
     wall_x(B,'F1.lh_ph',2.44,5.45,7.68,0,H_1,INT,ops=[W('door',5.75,6.45)])
     wall_x(B,'F1.ph_khh',4.44,5.45,7.68,0,H_1,INT,ops=[W('door',6.55,7.30)])
-    wall_x(B,'F1.khh_vh',7.92,5.60,7.68,0,H_1,INT)
+    wall_x(B,'F1.khh_vh',7.92,5.60,7.68,0,H_1,INT,ops=[W('door',6.35,7.10)])  # VH entered from KHH
     wall_x(B,'F1.vh_st',9.64,5.55,7.68,0,H_1,INT)
     wall_x(B,'F1.st_liv',10.84,5.52,7.68,0,2.56,INT)
     wall_x(B,'F1.tekn_wc',2.49,3.90,5.45,0,H_1,INT)
@@ -203,7 +204,6 @@ def build_krs1(B):
     wall_y(B,'F1.tk_n',2.47,3.75,6.34,0,H_1,INT,ops=[W('door',5.00,5.90)])
     wall_y(B,'F1.vh2_n',2.52,6.34,7.92,0,H_1,INT,ops=[W('door',6.60,7.35)])
     wall_x(B,'F1.tk_vh2',6.34,0.30,2.47,0,H_1,INT)
-    wall_x(B,'F1.tk_w',4.75,0.30,2.47,0,H_1,INT)
     wall_x(B,'F1.kit_et',7.92,0.77,4.07,0,H_1,INT)           # kitchen wall, passage N of it
     # rooms
     R=B.room
@@ -254,7 +254,7 @@ def build_krs1(B):
     B.cyl('F1.mh.side',1.80,1.05,0,0.50,0.25,'WoodFurn')
     wardrobe(B,'F1.mh.ward',2.73,3.12,0.90,2.60,2.10)                   # per plan, e-wall closet
     plant(B,'F1.mh.plant',3.30,3.40,0.8)
-    B.box('F1.tk.bench',(4.85,5.75),(0.40,0.75),(0.15,0.45),'WoodFurn')
+    B.box('F1.tk.bench',(4.58,4.92),(0.40,2.30),(0.15,0.48),'WoodFurn')   # bench, not a wall (owner)
     B.box('F1.tk.rack',(4.83,5.77),(0.34,0.39),(1.65,1.95),'WoodFurn')
     for i,y in enumerate([0.45,1.90]):
         B.box(f'F1.vh2.sh{i}',(6.44,7.82),(y,y+0.42),(0,2.0),'Cabinet')
@@ -268,7 +268,9 @@ def build_krs1(B):
     B.box('F1.kit.up',(7.97,8.32),(0.95,4.05),(1.55,2.25),'Cabinet')
     for i,(y0,y1) in enumerate([(9.56,10.16),(10.18,10.76)]):
         B.box(f'F1.kit.tall{i}',(y0+0.01,y1-0.01),(0.77,1.37),(0,2.20),'Appliance')
-    B.box('F1.kit.rad',(8.39,9.39),(0.53,0.68),(0.12,0.55),'White')          # radiator under window
+    B.box('F1.kit.base2',(8.57,9.50),(0.42,1.02),(0,0.88),'Cabinet')         # corner + under-window run
+    B.box('F1.kit.top2',(8.55,9.56),(0.40,1.06),(0.88,0.92),'Counter')
+    B.box('F1.kit.up2',(7.99,8.32),(0.42,0.76),(1.55,2.25),'Cabinet')         # corner upper
     B.box('F1.isl.body',(9.74,10.74),(2.38,4.08),(0,0.88),'Cabinet')
     B.box('F1.isl.top',(9.70,10.78),(2.34,4.12),(0.88,0.93),'Counter')
     B.box('F1.hood',(9.86,10.26),(2.97,3.47),(1.75,2.05),'Metal')
@@ -291,9 +293,10 @@ def build_krs1(B):
     B.box('F1.tv',(12.25,13.35),(7.63,7.67),(0.75,1.45),'TVBlack')
     plant(B,'F1.pl1',11.25,7.30,1.1); plant(B,'F1.pl2',11.15,0.70,0.9)
     # vertical slat cladding bands at the window columns — split around the openings (LANSI)
-    for nm,(x0,x1) in {'a':(1.71,2.79),'b':(8.44,9.52)}.items():
-        B.box(f'F1.slat.{nm}lo',(x0,x1),(-0.08,-0.02),(0.08,1.13),'Slat')   # below 1krs window
-        B.box(f'F1.slat.{nm}hi',(x0,x1),(-0.08,-0.02),(2.07,3.42),'Slat')   # between 1krs and 2krs windows
+    B.box('F1.slat.alo',(1.71,2.79),(-0.08,-0.02),(0.08,1.13),'Slat')
+    B.box('F1.slat.ahi',(1.71,2.79),(-0.08,-0.02),(2.07,3.42),'Slat')
+    B.box('F1.slat.blo',(8.44,9.52),(-0.08,-0.02),(0.08,0.95),'Slat')
+    B.box('F1.slat.bhi',(8.44,9.52),(-0.08,-0.02),(1.90,3.42),'Slat')
     B.roofquad('F1.canopy',[(4.20,0.05,2.55),(6.90,0.05,2.55),(6.90,-1.30,2.25),(4.20,-1.30,2.25)],0.08,'Roof')
     B.box('F1.cpost1',(4.32,4.44),(-1.28,-1.16),(-0.03,2.20),'White')
     B.box('F1.cpost2',(6.66,6.78),(-1.28,-1.16),(-0.03,2.20),'White')
@@ -415,13 +418,25 @@ def build_krs2(B):
     B.box('F2.slat.c',(7.04,7.54),(7.99,8.05),(3.01,4.04),'Slat')  # LP slat between the stacked windows
     wall_x(B,'F2.wW',0+e,0,7.98,z,H_2,EXT,mat='WallExt2',ops=[
         W('win',1.64,2.74,0.80,2.00),                                        # MH2 (plan vector)
-        W('win',4.83,5.33,0.30,2.05),W('door',5.43,6.34,0,2.05),W('win',6.44,6.94,0.30,2.05),
-        W('win',6.98,7.50,0.25,1.80)])                                       # MH stacked gable strip (photo)
+        W('win',4.83,5.33,0.30,2.05),W('door',5.43,6.34,0,2.05),W('win',6.44,6.94,0.30,2.05)])
     # interior
     # interior per 2krs_pohja50 vector extraction
     wall_y(B,'F2.mh2_n',3.945,0.40,3.70,z,H_2,INT)                              # MH2 north (solid)
     wall_x(B,'F2.mh2_e',3.655,0.37,3.90,z,H_2,INT,ops=[W('door',2.88,3.68)])    # MH2 east + door from AULA
-    wall_x(B,'F2.mh_se',3.655,3.99,5.60,z,H_2,INT,ops=[W('door',4.77,5.55)])    # master stub + corner door
+    wall_x(B,'F2.mh_se',3.655,3.99,4.77,z,H_2,INT)                              # master stub
+    # master door sits in a 45-degree wall across the corner (O13 in the drawing)
+    _p0=(3.70,4.77); _p1=(4.76,5.55)
+    _dx,_dy=_p1[0]-_p0[0],_p1[1]-_p0[1]; _L=(_dx*_dx+_dy*_dy)**0.5
+    _ux,_uy=_dx/_L,_dy/_L
+    def _dseg(nm,a,b,zb,zt,t,mat2):
+        nx,ny=-_uy*t/2,_ux*t/2
+        q=[(_p0[0]+_ux*a+nx,_p0[1]+_uy*a+ny),(_p0[0]+_ux*b+nx,_p0[1]+_uy*b+ny),
+           (_p0[0]+_ux*b-nx,_p0[1]+_uy*b-ny),(_p0[0]+_ux*a-nx,_p0[1]+_uy*a-ny)]
+        B.slab(nm,q,Z_2+zb,Z_2+zt,mat2)
+    _dseg('F2.mh_diag.a',0.0,0.18,0,H_2,INT,'WallInt')
+    _dseg('F2.mh_diag.b',_L-0.18,_L,0,H_2,INT,'WallInt')
+    _dseg('F2.mh_diag.lint',0.18,_L-0.18,2.10,H_2,INT,'WallInt')
+    _dseg('F2.mh_diag.leaf',0.20,_L-0.20,0,2.08,0.04,'Door')
     wall_y(B,'F2.mh3_n',3.945,8.43,10.68,z,H_2,INT)                             # MH3 north (solid)
     wall_y(B,'F2.mh3_dr',3.945,7.43,8.43,z,H_2,INT,ops=[W('door',7.50,8.36)])   # MH3 doorway
     wall_x(B,'F2.se_w',7.385,0.37,3.90,z,H_2,INT)                               # MH3 west (solid)
@@ -441,10 +456,10 @@ def build_krs2(B):
         y1=7.05-(i-11)*0.25
         B.box(f'F2.stB{i}',(8.81,9.64),(y1-0.25,y1),(0,i*riser),'StairWood')
     R=B.room
-    R('Room_2krs_MH',[(0.30,4.00),(3.60,4.00),(3.60,5.65),(4.72,5.65),(4.72,7.68),(0.30,7.68)],'Wood',z=Z_2)
+    R('Room_2krs_MH',[(0.30,4.00),(3.60,4.00),(3.60,4.75),(4.72,5.58),(4.72,7.68),(0.30,7.68)],'Wood',z=Z_2)
     R('Room_2krs_VH',[(4.83,5.65),(6.22,5.65),(6.22,7.68),(4.83,7.68)],'Wood',z=Z_2)
     R('Room_2krs_KPH',[(6.31,5.65),(8.66,5.65),(8.66,7.68),(6.31,7.68)],'Tile',z=Z_2)
-    R('Room_2krs_AULA',[(3.70,0.30),(7.34,0.30),(7.34,3.90),(10.68,3.90),(10.68,5.50),(4.76,5.50),(4.76,4.80),(3.70,4.80)],'Wood',z=Z_2)
+    R('Room_2krs_AULA',[(3.70,0.30),(7.34,0.30),(7.34,3.90),(10.68,3.90),(10.68,5.50),(4.80,5.50),(3.70,4.68)],'Wood',z=Z_2)
     R('Room_2krs_MH2',[(0.30,0.30),(3.60,0.30),(3.60,3.90),(0.30,3.90)],'Wood',z=Z_2)
     R('Room_2krs_MH3',[(7.44,0.30),(10.68,0.30),(10.68,3.90),(7.44,3.90)],'Wood',z=Z_2)
     # balcony: dark cantilevered box + white louver railing (photo)
@@ -462,7 +477,7 @@ def build_krs2(B):
     bed(B,'F2.mh.bed',1.90,5.65,1.60,2.00,'y')
     B.box('F2.mh.ns1',(1.45,1.85),(7.24,7.64),(0,0.45),'WoodFurn')
     B.box('F2.mh.ns2',(3.55,3.95),(7.24,7.64),(0,0.45),'WoodFurn')
-    wardrobe(B,'F2.mh.ward',0.45,3.45,4.70,5.18,2.15)
+    wardrobe(B,'F2.mh.ward',0.45,3.55,4.05,4.65,2.15)   # closet row on the aula wall (valaistus plan)
     B.box('F2.mh.dress',(0.36,0.91),(5.90,6.90),(0,0.90),'WoodFurn')
     rug(B,'F2.mh.rug',1.5,4.3,5.8,7.4)
     for i,y in enumerate([5.72,7.22]):
@@ -479,12 +494,12 @@ def build_krs2(B):
     B.box('F2.aula.mirror',(5.10,5.90),(0.32,0.35),(0.9,1.8),'Glass')
     B.box('F2.aula.daybed',(6.45,7.25),(1.30,3.10),(0.15,0.45),'SofaWhite')
     plant(B,'F2.aula.pl1',4.05,0.65,0.9); plant(B,'F2.aula.pl2',8.10,4.60,1.0)
-    bed(B,'F2.sw.bed',0.45,0.40,1.00,2.00,'x')
-    table(B,'F2.sw.desk',2.70,3.45,1.60,2.80,0.74); chair(B,'F2.sw.ch',2.30,2.20,270)
-    wardrobe(B,'F2.sw.ward',0.42,1.37,3.02,3.87,2.10)   # west corner, clear of the door
-    rug(B,'F2.sw.rug',0.6,3.4,0.5,3.5)
-    bed(B,'F2.se.bed',9.60,0.45,1.00,2.00,'y')
-    wardrobe(B,'F2.se.ward',9.70,10.60,3.02,3.87,2.10)  # east corner, clear of the door
+    bed(B,'F2.sw.bed',0.70,0.35,1.15,2.00,'x')          # along the south wall (plan)
+    table(B,'F2.sw.desk',2.85,3.60,0.90,2.40,0.74); chair(B,'F2.sw.ch',2.45,1.85,270)
+    wardrobe(B,'F2.sw.ward',0.44,1.92,3.30,3.90,2.10)   # closet row on the north wall (plan)
+    rug(B,'F2.sw.rug',0.6,3.4,0.5,3.2)
+    bed(B,'F2.se.bed',9.55,0.65,1.10,2.10,'y')          # against the east gable (plan)
+    wardrobe(B,'F2.se.ward',8.50,10.20,3.32,3.88,2.10)  # closet row east of the door (plan)
     table(B,'F2.se.desk',8.55,9.45,0.36,0.96,0.74); chair(B,'F2.se.ch',9.00,1.30,180)
     rug(B,'F2.se.rug',7.6,10.5,0.5,3.5)
     B.zoff=0.0
@@ -609,7 +624,11 @@ def light(B,nm,x,y,z,kind='ceil'):
 def build_lights(B):
     # 1. krs (from '1 krs valaistus' drawing)
     B.floor='1krs'; L=lambda nm,x,y,z,k='ceil': light(B,nm,x,y,z,k)
-    L('Light_1krs_LH',1.40,6.60,2.30);      L('Light_1krs_PH',3.20,6.60,2.42)
+    L('Light_1krs_LH',1.40,6.60,2.30)
+    # pesuhuone: 2x2 LED grid, one switch
+    L('Light_1krs_PH',2.95,6.30,2.42,'spot')
+    for i,(px,py) in enumerate([(3.85,6.30),(2.95,7.10),(3.85,7.10)],start=2):
+        L(f'Light_1krs_PH.p{i}',px,py,2.42,'spot')
     # kodinhoitohuone: 3x2 LED grid, one switch
     L('Light_1krs_KHH',5.00,6.25,2.52,'spot')
     for i,(px,py) in enumerate([(6.20,6.25),(7.40,6.25),(5.00,7.05),(6.20,7.05),(7.40,7.05)],start=2):
@@ -638,15 +657,18 @@ def build_lights(B):
     L('Light_ulko_terassi_1',12.20,-0.02,2.30,'wall_s'); L('Light_ulko_terassi_2',13.80,-0.02,2.30,'wall_s')
     # 2. krs
     B.floor='2krs'; z2=Z_2+2.50
-    L('Light_2krs_MH',2.60,6.20,z2);        L('Light_2krs_VH',5.95,6.60,z2)
-    # kylpyhuone: 2x2 LED grid, one switch
-    L('Light_2krs_KPH',6.90,6.20,z2,'spot')
-    for i,(px,py) in enumerate([(8.00,6.20),(6.90,7.10),(8.00,7.10)],start=2):
-        L(f'Light_2krs_KPH.p{i}',px,py,z2,'spot')
-    L('Light_2krs_AULA_1',5.30,3.30,z2);    L('Light_2krs_AULA_2',7.30,4.70,z2)
-    L('Light_2krs_AULA_3',4.50,1.00,z2);    L('Light_2krs_PORRAS',9.80,6.50,z2)
-    L('Light_2krs_MH2',2.00,2.00,z2);       L('Light_2krs_MH3',9.00,2.00,z2)
-    L('Light_ulko_parveke',-0.02,6.90,Z_2+2.15,'wall_w')
+    L('Light_2krs_MH',2.25,6.27,z2)
+    L('Light_2krs_VH',5.60,6.80,z2)
+    L('Light_2krs_KPH',7.80,6.65,z2)
+    # aula: 4 LED spots in series (one switch) + kattovalo by the south windows
+    L('Light_2krs_AULA',4.50,4.20,z2,'spot')
+    for i,(px,py) in enumerate([(6.60,4.20),(8.20,4.80),(9.70,4.80)],start=2):
+        L(f'Light_2krs_AULA.p{i}',px,py,z2,'spot')
+    L('Light_2krs_AULA_KATTO',5.55,1.00,z2)
+    L('Light_2krs_MH2',0.85,2.20,z2); L('Light_2krs_MH2.p2',1.95,2.20,z2)
+    L('Light_2krs_MH3',8.81,2.22,z2)
+    L('Light_ulko_parveke',-0.02,4.45,Z_2+2.15,'wall_w')
+    L('Light_ulko_parveke.p2',-0.02,7.40,Z_2+2.15,'wall_w')
     # kellari
     B.floor='kellari'; zk=Z_K+2.42
     L('Light_kellari_VAR1_1',3.00,4.00,zk)

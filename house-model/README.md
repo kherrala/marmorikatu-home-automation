@@ -11,10 +11,10 @@ photos. Levels +132.86 / +135.90 / +138.91, ridge +143.60.
 | `marmorikatu.blend` | Blender scene — rebuild after editing `spec.py` (snippet below) |
 | `marmorikatu-house.glb` | The model (~1.8 MB, textured, y-up glTF) — Android/web |
 | `marmorikatu-house.usdz` | Same model for iOS/SceneKit (USD, Y-up, names preserved) |
-| `viewer.html` | three.js reference viewer (fetches the .glb next to it) |
 | `marmorikatu-3d.html` | Same viewer fully self-contained (offline / WebView-ready) |
 | `cameras.json` | Generated per-room camera presets + light anchor positions |
 | `spec.py` / `bpy_backend.py` | Parametric source of truth |
+| `viewer_template.html` / `pack.py` | Viewer template + packer that builds `marmorikatu-3d.html` |
 | `tex/*.jpg` | PBR textures (Poly Haven CC0, palette-matched: siding, floor, pavers, concrete, brick, lawn) + normal maps |
 
 Rebuild + re-export in Blender's Python console:
@@ -82,11 +82,13 @@ Light_ulko_*                   outdoors     etuovi_1/2, tekn, terassi_1/2, parve
 Light_katos_*                  carport      katos_1/2, katos_VAR
 ```
 
-43 anchors total; positions per the valaistus drawings. **LED groups on one switch are
+41 anchors total; positions per the valaistus drawings. **LED groups on one switch are
 one anchor with `.pN` sub-head meshes** that light together: `Light_1krs_OH` (3×2 grid),
 `Light_1krs_KT` (4 in series; the island pendant is its own `Light_1krs_SAAREKE`),
-`Light_1krs_KHH` (3×2), `Light_2krs_KPH` (2×2), `Light_1krs_IKKUNA` (decorative lights
-over the wing windows), `Light_kellari_VAR1_2` (3 pendants over the billiard).
+`Light_1krs_KHH` (3×2), `Light_1krs_PH` (2×2), `Light_2krs_AULA` (4 in series, plus a
+separate `Light_2krs_AULA_KATTO` ceiling lamp), `Light_1krs_IKKUNA` (decorative lights
+over the wing windows), `Light_kellari_VAR1_2` (3 pendants over the billiard),
+`Light_2krs_MH2` (2 heads) and `Light_ulko_parveke` (2 heads on the balcony).
 Other sub-parts (cords, poles) also carry a `.` suffix — the anchor is always the
 dot-free name. `cameras.json → lights` lists every anchor's world position for placing
 tap targets or badges without traversing the scene.
