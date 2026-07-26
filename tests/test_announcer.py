@@ -127,3 +127,50 @@ def test_iv_boost_transition():
     assert a._iv_boost_transition(None, 2, boost_mode=2) is None  # first reading, no edge
     # a change that doesn't cross the boost value is not a boost transition
     assert a._iv_boost_transition(1, 3, boost_mode=2) is None
+
+
+# ── news presence gate: _house_occupied ───────────────────────────────────────
+class _FakeInflux:
+    """Duck-typed Influx for the news presence gate."""
+    def __init__(self, presence=None, kitchen_co2=None):
+        self._presence = presence
+        self._co2 = kitchen_co2
+
+    def presence_occupied(self, room):
+        return self._presence
+
+    def latest_air_quality(self):
+        if self._co2 is None:
+            return {}
+        return {a.NEWS_KITCHEN_SENSOR: {"co2": self._co2}}
+
+
+def test_house_occupied_true_when_living_room_present():
+    # mmWave/Zigbee presence sensor reads occupied → someone home
+    assert a._house_occupied(_FakeInflux(presence=True)) is True
+
+
+def test_house_occupied_true_when_kitchen_co2_elevated():
+    # presence sensor silent, but kitchen CO2 above the occupancy threshold
+    assert a._house_occupied(
+        _FakeInflux(presence=None, kitchen_co2=a.NEWS_KITCHEN_CO2_PPM + 50)) is True
+
+
+def test_house_occupied_false_when_empty():
+    # living room vacant and kitchen CO2 low → skip the bulletin
+    assert a._house_occupied(
+        _FakeInflux(presence=False, kitchen_co2=a.NEWS_KITCHEN_CO2_PPM - 100)) is False
+
+
+def test_house_occupied_false_when_no_signals():
+    # neither sensor has reported → don't read news to a maybe-empty house
+    assert a._house_occupied(_FakeInflux(presence=None, kitchen_co2=None)) is False
+
+
+def test_house_occupied_survives_influx_errors():
+    class _Boom:
+        def presence_occupied(self, room):
+            raise RuntimeError("db down")
+        def latest_air_quality(self):
+            raise RuntimeError("db down")
+    assert a._house_occupied(_Boom()) is False

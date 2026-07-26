@@ -94,6 +94,16 @@ NEWS_NATIONAL_SRC   = os.environ.get("NEWS_ANNOUNCE_NATIONAL_SOURCE", "Uutiset")
 NEWS_REGIONAL_SRC   = os.environ.get("NEWS_ANNOUNCE_REGIONAL_SOURCE", "Pirkanmaa")
 NEWS_FETCH_TIMEOUT  = float(os.environ.get("NEWS_ANNOUNCE_FETCH_TIMEOUT", "8"))
 
+# Don't read the hourly news to an empty house: skip the bulletin when nobody is
+# detected in the kitchen (Ruuvi CO2 elevated) nor the living room (Zigbee/mmWave
+# presence sensor). When absent we leave last_news_hour unset, so the hour's
+# bulletin still plays the moment someone comes home within the daytime window.
+NEWS_PRESENCE_GATE     = os.environ.get("NEWS_PRESENCE_GATE_ENABLED", "1") == "1"
+NEWS_PRESENCE_ROOM     = os.environ.get("NEWS_PRESENCE_ROOM", "living_room")
+NEWS_KITCHEN_SENSOR    = os.environ.get("NEWS_KITCHEN_SENSOR", "Keittiö")
+NEWS_KITCHEN_CO2_PPM   = float(os.environ.get("NEWS_KITCHEN_CO2_PPM", "580"))
+NEWS_PRESENCE_MIN_CONF = float(os.environ.get("NEWS_PRESENCE_MIN_CONFIDENCE", "0.5"))
+
 # Air-quality classification thresholds (ppm CO2, µg/m³ PM2.5).
 CO2_ELEVATED   = float(os.environ.get("ANNOUNCE_CO2_ELEVATED", "800"))
 CO2_HIGH       = float(os.environ.get("ANNOUNCE_CO2_HIGH",     "1100"))
@@ -176,6 +186,21 @@ def _fetch_headlines(source: str, limit: int) -> list[dict]:
     except Exception as e:
         log.warning("news fetch (%s) failed: %s", source, e)
         return []
+
+
+def _house_occupied(infl) -> bool:
+    """Best-effort "is anyone home" for the news gate: the living-room presence
+    sensor reads occupied, OR the kitchen Ruuvi CO2 is elevated above the
+    occupancy threshold. Errors/absent signals fall through to "not occupied"
+    (the caller only skips a non-critical bulletin, and retries next tick)."""
+    try:
+        if infl.presence_occupied(NEWS_PRESENCE_ROOM) is True:
+            return True
+        co2 = infl.latest_air_quality().get(NEWS_KITCHEN_SENSOR, {}).get("co2")
+        return co2 is not None and co2 >= NEWS_KITCHEN_CO2_PPM
+    except Exception as e:
+        log.warning("news presence check failed: %s", e)
+        return False
 
 
 def _push(event: Event, *, force: bool = False) -> None:
@@ -342,6 +367,33 @@ class Influx:
                 if ts > slot["ts"]:
                     slot["ts"] = ts
         return out
+
+    def presence_occupied(self, room: str) -> bool | None:
+        """Whether the normalized presence engine currently marks `room` occupied.
+
+        Reads the `presence` measurement (written by the presence service from
+        Zigbee2MQTT / mmWave), tag `room`, fields `occupied` (1/0) + `confidence`.
+        Returns None when the sensor hasn't reported recently, so callers can fall
+        back to another signal instead of treating silence as "vacant".
+        """
+        flux = (
+            f'from(bucket: "{INFLUXDB_BUCKET}")\n'
+            f'  |> range(start: -10m)\n'
+            f'  |> filter(fn: (r) => r._measurement == "presence" and r.room == "{room}")\n'
+            f'  |> filter(fn: (r) => r._field == "occupied" or r._field == "confidence")\n'
+            f'  |> last()\n'
+            f'  |> pivot(rowKey: ["_time"], columnKey: ["_field"], valueColumn: "_value")\n'
+        )
+        for table in self._query(flux):
+            for rec in table.records:
+                occ = rec.values.get("occupied")
+                if occ is None:
+                    return None
+                conf = rec.values.get("confidence")
+                if conf is not None and float(conf) < NEWS_PRESENCE_MIN_CONF:
+                    return False
+                return bool(occ)
+        return None
 
     def latest_heating_tier(self) -> tuple[str | None, float | None, datetime | None]:
         flux = (
@@ -1452,21 +1504,28 @@ def tick(infl: Influx, st: TickState, *, bootstrap: bool = False) -> None:
         hour_key = now_local.strftime("%Y-%m-%d-%H")
         if (NEWS_START_HOUR <= now_local.hour < NEWS_END_HOUR
                 and hour_key != st.last_news_hour):
-            st.last_news_hour = hour_key  # one attempt per hour, success or not
-            national = _fetch_headlines(NEWS_NATIONAL_SRC, NEWS_NATIONAL_N)
-            regional = _fetch_headlines(NEWS_REGIONAL_SRC, NEWS_REGIONAL_N)
-            if national or regional:
-                parts = [h["title"].strip().rstrip(".") + "."
-                         for h in national if h.get("title")]
-                text = "Uutiskatsaus. " + " ".join(parts)
-                reg_titles = [h["title"].strip().rstrip(".") + "."
-                              for h in regional if h.get("title")]
-                if reg_titles:
-                    text += " Pirkanmaalta: " + " ".join(reg_titles)
-                _push(Event(text, "news_headlines", 2, f"news:{hour_key}",
-                            now_local.timestamp()), force=True)
+            if NEWS_PRESENCE_GATE and not _house_occupied(infl):
+                # Nobody in the kitchen (CO2) or living room (Zigbee) — don't read
+                # the news to an empty house. Leave last_news_hour UNSET so this
+                # hour's bulletin still plays if someone comes home before the
+                # window closes; the presence check just re-runs each tick.
+                log.info("news: skipped %s — no presence detected", hour_key)
             else:
-                log.info("news: no headlines available for %s", hour_key)
+                st.last_news_hour = hour_key  # one attempt per hour, success or not
+                national = _fetch_headlines(NEWS_NATIONAL_SRC, NEWS_NATIONAL_N)
+                regional = _fetch_headlines(NEWS_REGIONAL_SRC, NEWS_REGIONAL_N)
+                if national or regional:
+                    parts = [h["title"].strip().rstrip(".") + "."
+                             for h in national if h.get("title")]
+                    text = "Uutiskatsaus. " + " ".join(parts)
+                    reg_titles = [h["title"].strip().rstrip(".") + "."
+                                  for h in regional if h.get("title")]
+                    if reg_titles:
+                        text += " Pirkanmaalta: " + " ".join(reg_titles)
+                    _push(Event(text, "news_headlines", 2, f"news:{hour_key}",
+                                now_local.timestamp()), force=True)
+                else:
+                    log.info("news: no headlines available for %s", hour_key)
 
     # Cap per-tick burst — keep highest-priority items, drop the rest.
     if not deferred:

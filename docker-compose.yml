@@ -558,6 +558,14 @@ services:
       - NEWS_ANNOUNCE_END_HOUR=20
       - NEWS_ANNOUNCE_NATIONAL_COUNT=3
       - NEWS_ANNOUNCE_REGIONAL_COUNT=1
+      # Skip the hourly news when the house looks empty: nobody in the living room
+      # (Zigbee/mmWave presence) nor the kitchen (Ruuvi CO2 >= threshold). Set
+      # NEWS_PRESENCE_GATE_ENABLED=0 to always read the news. Absence leaves the
+      # hour unmarked, so the bulletin still plays if someone returns before 20:00.
+      - NEWS_PRESENCE_GATE_ENABLED=1
+      - NEWS_PRESENCE_ROOM=living_room
+      - NEWS_KITCHEN_SENSOR=Keittiö
+      - NEWS_KITCHEN_CO2_PPM=580
       # Per-floor indoor heat warning (names the floor, suggests its cooler).
       # Weather warnings (helle/myrsky) are deduced by the weather service and
       # merely spoken here; their thresholds live on that service, not here.
