@@ -2,27 +2,41 @@
 
 Built from the architect drawings (`0krs/1krs/2krs_pohja50` DWG-vector extraction, `julkisivut`
 elevations), the electrical drawings (`1/2 krs valaistus` — light positions), and the owner's
-photos. Levels +132.86 / +135.90 / +138.91, ridge +143.60.
+photos. Levels +132.86 / +135.90 / +138.91, block ridge +143.40, living-wing ridge +140.40.
 
 ## Files (house-model/)
 
 | file | purpose |
 |---|---|
 | `marmorikatu.blend` | Blender scene — rebuild after editing `spec.py` (snippet below) |
-| `marmorikatu-house.glb` | The model (~1.8 MB, textured, y-up glTF) — Android/web |
+| `marmorikatu-house.glb` | The model (~7.1 MB, textured, y-up glTF) — Android/web |
 | `marmorikatu-house.usdz` | Same model for iOS/SceneKit (USD, Y-up, names preserved) |
 | `marmorikatu-3d.html` | Same viewer fully self-contained (offline / WebView-ready) |
 | `cameras.json` | Generated per-room camera presets + light anchor positions |
 | `spec.py` / `bpy_backend.py` | Parametric source of truth |
 | `viewer_template.html` / `pack.py` | Viewer template + packer that builds `marmorikatu-3d.html` |
-| `tex/*.jpg` | PBR textures (Poly Haven CC0, palette-matched: siding, floor, pavers, concrete, brick, lawn) + normal maps |
+| `vendor/three.min.js` | three.js r128, inlined into the viewer by `pack.py` so no build step needs the network |
+| `tex/*.jpg` | PBR textures + tangent-space normal maps: exterior set (Poly Haven CC0, palette-matched: siding, pavers, concrete, brick, lawn) and the procedural set (`floor` oak, `tile`/`tiledark` ceramic, `cfloor`/`cdark` basement concrete, `vboard` white vertical cladding) |
+| `mktex.py` | Generates the procedural floor set — run it after changing a floor palette or module (§7) |
+| `check_dupes.py` | Duplicate-geometry sweep — run after touching a facade (§8) |
+| `out/` | Packer staging area; the tracked copies live at this level and `pack.py` refreshes them |
+| `preview/` | Scratch renders. Not part of the contract; safe to delete |
 
-Rebuild + re-export in Blender's Python console:
+Full rebuild, two commands. In Blender's Python console:
 
 ```python
 ns={}; BASE='/Users/kyostiherrala/IdeaProjects/marmorikatu-home-automation/house-model'
 exec(compile(open(BASE+'/bpy_backend.py').read(),'b','exec'),ns); ns['hk_run'](BASE); ns['hk_export'](BASE)
 ```
+
+then in a shell, to rebuild the viewer and `cameras.json` from the fresh GLB:
+
+```sh
+cd house-model && python3 pack.py          # needs Pillow; writes out/ and the tracked copies
+```
+
+`hk_run` prints the object count — **1483** for the current spec. A number that moved
+without you meaning it to is the fastest signal that an edit did more than you thought.
 
 ---
 
@@ -35,6 +49,14 @@ glTF/three.js: **x** runs pohjoinen→etelä along the house (0…16.98), **y** 
 the terrace side is +z, the itä facade −z. All distances in meters. Yard levels per the
 asemapiirustus: entrance yard/carport bay −0.55 (+135.35), street corner −0.78 (+135.10),
 VAR floor −0.05 (+135.85), SW terrace yard −3.00 (+132.90).
+
+**Roof.** Both roofs are the same 1:3 gable (18.44°) folding about plan y = 3.990, taken
+off `julkisivut.pdf`. Deck top at the ridge is 7.501 over the two-storey block and 4.503
+over the living wing — exactly 3.000 m apart — with eaves at 5.938 / 2.940 on the y =
+−0.699 and 8.681 lines and a 0.197 m vertical deck thickness throughout. Everything that
+lands on a roof (wall bands, fascias, barge boards, gutters, standing-seam ribs) is
+derived in `build_roof` from the two `mz()` / `wz()` height functions, so changing a
+ridge moves the whole assembly with it.
 
 ## 2. Node hierarchy (the visibility API)
 
@@ -149,19 +171,27 @@ and render it flat: `color` black, `emissive` = lerp cold `#3b82f6` → hot `#ef
 lighting/tone mapping; values 0..1, booleans map to 0/1. Tapping a visible circuit
 toggles it. Viewer/WebView API: `setHeatByName('Heat_1krs_41', true)` (bare `'41'` works
 too), `setHeatingVisible(true)`; URL `?heat=1&hot=41,53,11` restores layer + hot set.
-`cameras.json → heating` lists every circuit's `center`/`size` (three.js frame), served
-rooms and loop length — place badges or map thermostat telemetry (e.g. the
-home-automation MCP room temperatures) onto circuits without traversing the scene. Base
+`cameras.json → heating` lists every circuit's `circuit`, `floor`, `center`/`size`
+(three.js frame), served `rooms` and `loop_m` — place badges or map thermostat telemetry
+(e.g. the home-automation MCP room temperatures) onto circuits without traversing the
+scene. Note that several circuits share one room (OH is split west/east, VAR1 into four
+bands): heat is addressed per **circuit**, not per room, exactly as the manifold is. Base
 material is `HeatOff` (neutral `#8E9AA8`) so an uncolored patch reads "no data". On iOS
 the names survive as-is (`Heat_1krs_41` is dot-free); color via `SCNMaterial.diffuse` +
 `emission`.
 
 **Pipe view (the drawn loops).** Each circuit also carries its serpentine as
-**`Heat_<kerros>_<nn>.pipe`** — one mesh: the runs at drawing c/c (the sheet's line is a
+**`Heat_<kerros>_<nn>.pipe`** — one mesh, now a **swept round tube**: an 8-sided Ø22 mm
+profile (r = 11 mm) mitred through every bend and centred at slab z+0.057, so the loops
+read as pipe rather than as a flat ribbon and the corners join cleanly instead of
+overlapping. Geometry follows the sheets: runs at drawing c/c (the sheet's line is a
 supply+return pair, so c/c = 2·area/lenkki), run orientation per sheet, plus the feed
-tail to its jakotukki. The five manifolds are `Heat_<kerros>_JT1…JT5` boxes (JT1/JT2 on
-the kellari divider, JT3 in TEKN, JT4 by the kitchen, JT5 by the upstairs stair);
-`cameras.json → manifolds` has their positions. The viewer's Lämmitys select switches
+tail to its jakotukki. The routing is checked against the drawings on every build —
+**0 self-overlaps within a circuit and 0 clashes between circuits**; if you edit a loop
+in `spec.py`, re-run that check before shipping. The five manifolds are
+`Heat_<kerros>_JT1…JT5` boxes (JT1/JT2 on the kellari divider, JT3 in TEKN, JT4 by the
+kitchen, JT5 by the upstairs stair); `cameras.json → manifolds` has their positions.
+The viewer's Lämmitys select switches
 **Alueet / Piirit / Molemmat** (zones solid · pipes with a 10 % zone hint · zones at 30 %
 + pipes; the zone patch stays the tap target in every mode): URL `&hv=a|p|b`, bridge
 `setHeatView('areas'|'pipes'|'both')`. Mirror it on mobile: areas = patch, pipes =
@@ -190,6 +220,13 @@ another floor, switch floor visibility at tween start. Deep links: `?room=Room_2
 animates to that room; combine with `&lights=1`, `&walls=0`, `&doors=0`, `&mode=`,
 `&explode=`, `&cam=θ,φ,r`.
 
+**Apply deep links from the model-loaded callback, never on a timer.** The room presets
+and light meshes only exist once the GLB has finished parsing, and the model is now ~6 MB
+— any fixed delay races the load and silently turns `?room=` into a no-op. For the same
+reason an explicit room framing must outrank the viewer's deferred "fit the scene"
+retarget: the viewer sets a `camLock` flag in `focusRoom` and only the *Sovita* button
+clears it. Port both rules.
+
 To "pinpoint activity" (motion, light turned on, temperature alert): look up the room or
 light anchor in `cameras.json`, call your tween to its orbit, flash the room patch emissive
 or toggle the fixture — everything is addressable by name.
@@ -212,9 +249,105 @@ or toggle the fixture — everything is addressable by name.
   to the nearest `Room_`/`Light_` ancestor from `SCNHitTestResult.node`. Visibility =
   `node.hidden`; light on/off = `SCNMaterial.emission` (§4 recipe); camera presets/tweens
   from `cameras.json` apply unchanged.
-* **Multiplatform today:** ship `marmorikatu-3d.html` in a WebView (offline, ~2.4 MB) and
+* **Multiplatform today:** ship `marmorikatu-3d.html` in a WebView (offline, ~10 MB) and
   drive it with the URL params / a small JS bridge (`focusRoom(name)`, `setLight(name,on)`,
   `setHeatByName(name,hot)`, `setHeatingVisible(v)` are global functions in the page —
   call them via `evaluateJavascript`).
 * Mapping to the home-automation MCP: `list_lights` names ↔ `Light_<kerros>_<huone>` tokens;
   floors kellari/1krs/2krs match `set_lights_by_floor`.
+
+## 7. Textures
+
+Exterior and wall maps are palette-matched Poly Haven CC0 scans. The **floors are
+procedural**: `mktex.py` builds them from FFT-filtered Gaussian noise, so every map tiles
+perfectly in both axes with no seam — which the photo scans did not, and at floor scale
+their repeat showed as regular straight lines across the big basement store. Run
+`python3 mktex.py` (needs `numpy` + `Pillow`) to regenerate `tex/` and a `tex_sheet.png`
+contact sheet, then rebuild the scene.
+
+| material | map | authored square | reads as |
+|---|---|---|---|
+| `Wood` | `floor` | 3.0 m | light matte-lacquered oak, 200 mm planks in irregular stagger |
+| `Tile` | `tile` | 2.4 m | matte porcelain 300×600 mm, running bond, warm light grey |
+| `TileDark` | `tiledark` | 2.4 m | anthracite 300×300 mm stone-look porcelain (sauna / wet rooms) |
+| `ConcreteDark` | `cdark` | 4.0 m | dark sealed concrete — kellari VAR1 rec room |
+| `ConcreteF` | `cfloor` | 4.0 m | pale untreated concrete — kellari VAR2, TEKN, carport, terrace steps |
+| `Slat` | `vboard` | 1.92 m | white-painted 120 mm vertical boards — the facade panels around the windows |
+
+Two rules keep these correct. **(1) Scale.** `bpy_backend` gives floors world-space UVs
+(`u = x_m·s`, `v = y_m·s`), so a map authored for a *T* metre square must be listed in
+`TEXSETS` with `scale = 1/T` — the `Wood`/`Tile` entries are `1/3.0` and `1/2.4` for
+exactly this reason. **(2) Module division.** A tiled pattern's module must divide the
+1024 px canvas exactly, or the joint lines break at every repeat: 300×600 mm tiles are
+authored on a 2.4 m square (4×8 tiles = 256/128 px), not 3.0 m, which would need 204.8 px
+tiles and leave a 4 px sliver. Normal maps are tangent-space OpenGL (+Y up) at global
+strength 0.85, which is what Blender's Normal Map node and three.js both expect.
+
+Walls take the other mapping, `u = (x+y)·s`, `v = z·s`, so for a wall map the image
+**columns** run horizontally along the facade and the **rows** run up it. `vboard` uses
+that to stand its boards upright: the stripes are drawn across the columns, on a 1.92 m
+square holding exactly 16 boards of 120 mm (64 px each). Nothing in it varies along `v`,
+so the vertical repeat is invisible however tall the panel is.
+
+Where the boards sit is a separate question from what they look like, and it is decided
+once, in `build_f1_walls`, next to the openings they frame — `F1.slat.mh.*` and
+`F1.slat.kit.*` split at the strip windows' sill (0.74) and head (1.25), `F1.ent.*` around
+the front door, `F1.slat.n.*` on the pohjoinen gable. Nothing downstream should add facade
+panels: a second, eyeballed pair used to be re-added in the furniture pass 10 mm proud of
+these, and the two sets z-fought into what read as a doubled, stepped column that missed
+the glass line. See §8.
+
+**(3) Ship size.** Diffuse maps are authored and shipped at 1024 px; normal maps are
+downsampled to 512 px on the way out — `mktex.py` does this itself in `save_nor`
+(`NOR_PX = 512`), *after* taking the derivative, so the relief keeps its authored slope
+instead of being computed from a blurred height field. A normal map only carries
+low-frequency surface tilt here, so halving it is invisible at any camera distance the
+viewer allows, and it is most of the reason the whole texture set is 2.8 MB rather than
+4.2 MB. This rule is easy to lose: the procedural set was regenerated at some point
+without it and shipped six 1024 px normals, which quietly added 1.45 MB to the GLB and
+1.9 MB to the viewer before it was caught. If `ls -l tex/*_nor.jpg` shows anything much
+over 160 kB, that has happened again.
+
+## 8. Working on the model
+
+Everything needed to build lives in this folder; nothing depends on a cloud sandbox or a
+particular session. The loop is: edit `spec.py` → `hk_run`/`hk_export` in Blender →
+`python3 pack.py` → look at it. `HANDOFF-LOCAL.md` next to this file carries the working
+notes that do not belong in a contract: drawing calibrations, the overlay recipe for
+checking geometry against the PDFs, camera settings for the elevation renders, and the
+list of what is currently unverified.
+
+**Requirements.** Blender 4.2+ for the build (the USDZ post-process wants `usd-core`,
+which ships inside Blender); Python 3.10+ with `numpy` and `Pillow` for `mktex.py` and
+`pack.py`. No network access is needed at any point — three.js is vendored.
+
+**Rebuilding after a texture change.** Blender caches images by filepath, so a rebuilt
+scene will happily keep showing the old bitmap. Force a reload in the same call:
+
+```python
+import bpy
+for im in bpy.data.images: im.reload()
+```
+
+**Checks worth running before calling something done.** `check_dupes.py` replays
+`build_all` against a recording stub instead of Blender — no `bpy` needed, so it runs in a
+plain shell in about a second — and reports pairs of same-material boxes whose volumes
+overlap by more than half of the smaller one:
+
+```sh
+python3 check_dupes.py Slat      # one material
+python3 check_dupes.py           # everything
+```
+
+Two builders adding the same panel from different passes is the classic defect, and it is
+invisible in a render until the z-fighting catches your eye at a particular angle. The
+boxes never coincide exactly — each pass rounds differently — so an exact-extent test
+misses them, which is why the test is volumetric. A clean run on the current spec reports
+exactly two hits, both benign: `F1.wS.liv.seg3`×`F1.wE.din.seg0` and
+`F1.wS.notch.seg2`×`F1.wE.seg0` are ordinary outside-corner intersections of
+perpendicular walls. Anything else is a real duplicate.
+
+One caveat when extending the stub: every builder method `spec.py` calls must exist on it,
+even as a no-op. If one is missing, `build_all` dies at the first call and the sweep
+silently stops covering everything below that line while still printing a confident "0
+pairs".

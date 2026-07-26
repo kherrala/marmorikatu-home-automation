@@ -1,0 +1,15 @@
+# Build scratch and rescue copies. Everything listed here is derived or transient: the
+# committed artefacts at house-model/ (marmorikatu-house.glb, marmorikatu-house.usdz,
+# marmorikatu-3d.html, cameras.json) are what the mobile app consumes, and these
+# directories only ever duplicate them.
+
+# pack.py staging dir -- byte-identical copies of the committed artefacts
+out/
+# EEVEE check renders; regenerable from the camera recipes in HANDOFF-LOCAL.md
+preview/
+# inbound tarballs/zips shuttled between the sandbox and this machine
+_incoming/
+# 2026-07-25 recovery snapshot, kept only until the tree was verified
+_rec25/
+# cur-*.py scratch copies used for diffing
+tmp_lls/

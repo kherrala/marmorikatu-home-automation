@@ -170,18 +170,19 @@ const renderer=new THREE.WebGLRenderer({canvas,antialias:true,alpha:true});
 renderer.setPixelRatio(Math.min(devicePixelRatio,2));
 renderer.outputEncoding=THREE.sRGBEncoding;
 renderer.toneMapping=THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure=0.98;
+renderer.toneMappingExposure=1.18;   // was 0.98 -- ACES rolls the highlights off hard, so the
+                                     // whole model sat dull until the exposure came up with it
 renderer.shadowMap.enabled=true;
 renderer.shadowMap.type=THREE.PCFSoftShadowMap;
 const scene=new THREE.Scene();
 const camera=new THREE.PerspectiveCamera(46,1,0.1,300);
-scene.add(new THREE.HemisphereLight(0xf4f6ff,0x9a917f,0.34));
-const dl=new THREE.DirectionalLight(0xfff1d6,1.28); dl.position.set(24,34,16);
+scene.add(new THREE.HemisphereLight(0xf4f6ff,0x9a917f,0.46));   // was 0.34: lifts the shadow side
+const dl=new THREE.DirectionalLight(0xfff1d6,2.05); dl.position.set(24,34,16);   // sun, was 1.28
 dl.castShadow=true; dl.shadow.mapSize.set(2048,2048);
 dl.shadow.camera.left=-24; dl.shadow.camera.right=24; dl.shadow.camera.top=24; dl.shadow.camera.bottom=-24;
 dl.shadow.camera.near=2; dl.shadow.camera.far=110; dl.shadow.bias=-0.0006; dl.shadow.normalBias=0.03;
 dl.target.position.set(8.5,0,-2); scene.add(dl); scene.add(dl.target);
-const dl2=new THREE.DirectionalLight(0xdde8ff,0.12); dl2.position.set(-14,12,-16); scene.add(dl2);
+const dl2=new THREE.DirectionalLight(0xdde8ff,0.20); dl2.position.set(-14,12,-16); scene.add(dl2);  // fill, was 0.12
 // procedural environment (PMREM) so PBR materials get soft sky/ground ambience
 {
   const es=new THREE.Scene();
@@ -361,6 +362,7 @@ getModel().then(async buf=>{
   for(const m of heatMeshes) setHeat(m, hot.includes(m.name.split('_').pop())?1:0);
   applyHeatView();
   setMode(mode); applyCam();
+  applyDeepLinks();            // only now are ROOMCAMS / lightMeshes populated
 });
 const EXPL={Kellari:0,Krs1:1,Terassi:1,Katos:1,Krs2:2,Katto:3};
 let mode='all';
@@ -438,9 +440,11 @@ function tweenOrbit(to,ms=750){
          t0:performance.now(),ms};
 }
 function focusRoom(name){
-  const p=ROOMCAMS[name]; if(!p)return;
+  const p=ROOMCAMS[name]; if(!p)return false;
   if(p.mode&&p.mode!==mode) setMode(p.mode);
+  camLock=true;                 // an explicit room framing must survive the deferred retarget()
   tweenOrbit({tgt:p.tgt,r:p.r,ph:p.ph},800);
+  return true;
 }
 
 // hover/tap room highlight -------------------------------------------------
@@ -562,9 +566,17 @@ window.setHeatByName=(name,v)=>{const m=heatMeshes.find(h=>h.name===name||h.name
 window.setHeatingVisible=v=>{document.getElementById('heatcb').checked=!!v;refresh();saveHash();};
 window.setHeatView=v=>{const map={areas:'a',pipes:'p',both:'b',a:'a',p:'p',b:'b'};
   document.getElementById('heatview').value=map[v]||'b';applyHeatView();saveHash();};
-if(Q.has('room')) setTimeout(()=>focusRoom(Q.get('room')),400);
-if(Q.get('fixtures')==='1') setTimeout(()=>window.setFixturesVisible(true),450);
-if(Q.has('lights')&&Q.get('lights')!=='0') setTimeout(()=>{document.getElementById('lightcb').checked=true;lightMeshes.forEach(m=>setLight(m,true));},500);
+// Deep links are applied from the GLB load callback, NOT on a timer: the embedded model is
+// ~9 MB and base64 decode + parse routinely runs past any fixed delay, which silently made
+// ?room= a no-op (ROOMCAMS was still empty when focusRoom fired).
+function applyDeepLinks(){
+  if(Q.get('fixtures')==='1') window.setFixturesVisible(true);
+  if(Q.has('lights')&&Q.get('lights')!=='0'){
+    document.getElementById('lightcb').checked=true;
+    lightMeshes.forEach(m=>setLight(m,true));
+  }
+  if(Q.has('room')) focusRoom(Q.get('room'));
+}
 </script>
 </body>
 </html>
