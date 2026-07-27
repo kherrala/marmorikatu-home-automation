@@ -121,7 +121,10 @@ PRESENCE_MIN_CONFIDENCE = float(os.environ.get("PRESENCE_MIN_CONFIDENCE", "0.6")
 # daylight ~50-80) while the FP300 runs 95-180. Rooms without a lux sensor fall
 # back to the sun-elevation gate.
 DARK_LUX_THRESHOLD = float(os.environ.get("DARK_LUX_THRESHOLD", "40"))   # SNZB PIR default
-ROOM_DARK_LUX = {"living_room": 120}    # FP300 scale override
+# Per-room overrides. living_room: FP300 scale (higher). khh: strict — its sensor
+# reads ~19-21 lux even at midday (window barely lights it), so only auto-on when
+# genuinely dark, not on a dim daytime reading.
+ROOM_DARK_LUX = {"living_room": 120, "khh": 12}
 # Per-room vacancy TIMING lives in the Presence Engine (its per-room linger_s),
 # so the optimizer just needs a small on-time floor before a vacancy-off — it
 # bridges the race where a light is switched on a beat before the sensor reports
@@ -248,9 +251,11 @@ CATEGORY_OF: dict[int, str] = {
     # UTILITY / CLOSET — windowless, forgotten-prone, manual-on (no room sensor).
     # 43 = KHH wardrobe (closet, stays manual); 53 = basement storage.
     31: "utility", 36: "utility", 43: "utility", 53: "utility",
-    # WORKROOM — KHH (kodinhoitohuone) + its attached varasto: motion auto-on via
-    # the snzb_khh PIR (LIGHT_ROOM=khh). 6/56 = KHH room lights, 61 = varasto.
-    6: "workroom", 56: "workroom", 61: "workroom",
+    # WORKROOM — motion auto-on via the snzb_khh PIR (LIGHT_ROOM=khh). Only the
+    # KHH LED (6) + attached varasto (61) auto-on; the KHH ceiling (56) is
+    # secondary (manual-on, auto-off only) — user wants just the LED automatic.
+    6: "workroom", 61: "workroom",
+    56: "secondary",
     # TOILET — WCs + mirror lights
     29: "toilet", 34: "toilet", 44: "toilet", 45: "toilet", 52: "toilet",
     # BEDROOM (sleep) — ceilings/wardrobes upstairs (no daylight-off, nap-safe)

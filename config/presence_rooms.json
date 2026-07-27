@@ -9,7 +9,7 @@
     "hall_up":     { "type": "pir",    "linger_s": 90,  "confidence": 0.85 },
     "wc_down":     { "type": "pir",    "linger_s": 90,  "confidence": 0.85 },
     "wc_basement": { "type": "pir",    "linger_s": 90,  "confidence": 0.85 },
-    "khh":         { "type": "pir",    "linger_s": 300, "confidence": 0.85 },
+    "khh":         { "type": "pir",    "linger_s": 120, "confidence": 0.85 },
     "bath_up":     { "type": "pir",    "linger_s": 600, "confidence": 0.85 },
     "bedroom_seela":  { "type": "pir", "linger_s": 120, "confidence": 0.85 },
     "bedroom_aarni":  { "type": "pir", "linger_s": 120, "confidence": 0.85 },

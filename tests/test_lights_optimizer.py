@@ -356,6 +356,21 @@ def test_windowless_varasto_auto_ons_in_daylight(harness):
     assert (61, True, "auto_on_comfort") in harness["published"]
 
 
+def test_khh_ceiling_does_not_auto_on(harness):
+    # Only the KHH LED (6) auto-ons; the ceiling (56) is secondary (manual-on).
+    assert lo.CATEGORY_OF[56] == "secondary"
+    assert lo.CATS["secondary"].auto_on is False
+    harness["state"]["presence_rooms"] = {"khh": True}
+    _eval(56, False, _local(2026, 1, 15, 2, 0), dark=True)  # dark + occupied
+    assert harness["published"] == []
+
+
+def test_khh_led_auto_ons_when_dark(harness):
+    harness["state"]["presence_rooms"] = {"khh": True}
+    _eval(6, False, _local(2026, 1, 15, 2, 0), dark=True)
+    assert (6, True, "auto_on_comfort") in harness["published"]
+
+
 def test_portaikko_not_driven_by_hall_down_sensor():
     # The hall_down PIR is nowhere near the portaikko (42) — must stay unmapped.
     assert lo.LIGHT_ROOM.get(42) != "hall_down"
