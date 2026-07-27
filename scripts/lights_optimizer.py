@@ -388,7 +388,44 @@ from(bucket: "{INFLUXDB_BUCKET}")
     return out
 
 
+# Last-transition cache: idx -> (is_on, since). At 1s ticks a 24h is_on query per
+# light every tick (49/tick) would hammer InfluxDB. Instead we bootstrap each
+# light once from history, then maintain the cache incrementally from the
+# per-tick state snapshot (already one query) — a state that differs from the
+# cache means an edge just happened (since = now).
+_transition_cache: dict[int, tuple] = {}
+
+
+def update_transition_cache(states: dict[int, bool]) -> None:
+    """Refresh the last-transition cache from this tick's light-state snapshot.
+    First sight of a light bootstraps its `since` from the full 24h history;
+    thereafter a changed state stamps `since = now`, an unchanged one is kept."""
+    now = datetime.now(timezone.utc)
+    for idx, is_on in states.items():
+        on = bool(is_on)
+        cached = _transition_cache.get(idx)
+        if cached is None:
+            v, since = _fetch_last_transition_uncached(idx)
+            # Trust the fetched edge only if it agrees with the current state.
+            _transition_cache[idx] = (on, since if (v == on and since is not None) else now)
+        elif cached[0] != on:
+            _transition_cache[idx] = (on, now)      # edge this tick
+        # else: unchanged → keep the cached since
+
+
 def fetch_last_transition(idx: int) -> tuple[bool | None, datetime | None]:
+    """(current_is_on, time_of_last_change). Served from the cache maintained by
+    update_transition_cache(); falls back to a direct history query on a miss
+    (e.g. a special-block light not in the tick snapshot)."""
+    cached = _transition_cache.get(idx)
+    if cached is not None:
+        return cached
+    v, since = _fetch_last_transition_uncached(idx)
+    _transition_cache[idx] = (bool(v) if v is not None else False, since)
+    return _transition_cache[idx]
+
+
+def _fetch_last_transition_uncached(idx: int) -> tuple[bool | None, datetime | None]:
     """(current_is_on, time_of_last_change) for one light over 24 h. If the
     light held one state the whole window, time is the window start (treated as
     'on since long ago'). Uses difference() to find the last edge."""
@@ -1056,6 +1093,7 @@ def check_and_control():
     elev = sun_elev(now)
     is_dark = elev < SUN_DARK_ELEVATION_DEG
     states = fetch_current_light_states()
+    update_transition_cache(states)   # maintain last-transition cache (1 query/tick, not 49)
     away = whole_house_away()
 
     # Drop stale dismissals from previous days.
