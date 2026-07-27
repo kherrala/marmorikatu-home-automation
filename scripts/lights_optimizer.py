@@ -121,6 +121,7 @@ PRESENCE_MIN_CONFIDENCE = float(os.environ.get("PRESENCE_MIN_CONFIDENCE", "0.6")
 # daylight ~50-80) while the FP300 runs 95-180. Rooms without a lux sensor fall
 # back to the sun-elevation gate.
 DARK_LUX_THRESHOLD = float(os.environ.get("DARK_LUX_THRESHOLD", "40"))   # SNZB PIR default
+ILLUMINANCE_WINDOW_MIN = float(os.environ.get("ILLUMINANCE_WINDOW_MIN", "5"))  # lux mean window
 # Per-room overrides. living_room: FP300 scale (higher). khh: strict — its sensor
 # reads ~19-21 lux even at midday (window barely lights it), so only auto-on when
 # genuinely dark, not on a dim daytime reading.
@@ -129,10 +130,13 @@ ROOM_DARK_LUX = {"living_room": 120, "khh": 12}
 # room's own sensor reads above this (lux). ONLY listed rooms qualify, and the
 # value must sit ABOVE what the room's own lights add to the reading — otherwise
 # the light's own output would flip it off (feedback flap). So it's a big room
-# where only real daylight crosses it: the living room (light alone stays well
-# under 300; sun pushes it to 400-600+). Not set for small rooms (KHH etc.) where
-# the light dominates the sensor. Never culls a human-on light.
-ROOM_BRIGHT_LUX = {"living_room": 300}
+# where only real daylight crosses it: the living room. Compared against the
+# 5-min MEAN lux (partly-cloudy daytime mean sits ~250-300), so the light stays
+# on when it's genuinely dim and off when the room is bright on average. Above
+# the 120 dark-on threshold with margin, so culling then reading daylight-only
+# doesn't immediately re-auto-on (no flap). Not set for small rooms (KHH etc.)
+# where the light dominates the sensor. Never culls a human-on light.
+ROOM_BRIGHT_LUX = {"living_room": 200}
 # Per-room vacancy TIMING lives in the Presence Engine (its per-room linger_s),
 # so the optimizer just needs a small on-time floor before a vacancy-off — it
 # bridges the race where a light is switched on a beat before the sensor reports
@@ -477,12 +481,16 @@ def room_illuminance(room: str | None) -> float | None:
 
 
 def _room_illuminance_uncached(room: str) -> float | None:
+    # MEAN over a short window, not the instantaneous last() — indoor lux is very
+    # noisy on a partly-cloudy day (seen swinging 150↔620 minute-to-minute), and
+    # driving auto-on/off off a single sample would chatter the light on every
+    # passing cloud. The mean is the stable ambient level.
     flux = f'''
 from(bucket: "{INFLUXDB_BUCKET}")
-  |> range(start: -15m)
+  |> range(start: -{ILLUMINANCE_WINDOW_MIN}m)
   |> filter(fn: (r) => r._measurement == "presence" and r.room == "{room}")
   |> filter(fn: (r) => r._field == "illuminance")
-  |> last()
+  |> mean()
 '''
     rows = _query(flux)
     if not rows:
