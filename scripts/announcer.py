@@ -878,6 +878,7 @@ def _format_lights_optimizer(row: dict) -> Event | None:
             "overnight_off": f"{name} sammutettiin yöksi.",
             "away_off":      f"{name} sammutettiin, koska kotona ei ole ketään.",
             "vacancy_off":   f"{name} sammutettiin — huone on tyhjä.",
+            "bright_enough": f"{name} sammutettiin — huoneessa on jo valoisaa.",
             "duration_cap":  f"{name} sammutettiin automaattisesti.",
         }
         base = OFF_MESSAGES.get(reason, f"{name} sammutettiin automaattisesti.")
@@ -889,7 +890,7 @@ def _format_lights_optimizer(row: dict) -> Event | None:
                     suffix = f" Se oli päällä {mins} minuuttia."
             except (TypeError, ValueError):
                 pass
-        prio = 2 if reason in ("daylight_off", "overnight_off") else 1
+        prio = 2 if reason in ("daylight_off", "overnight_off", "bright_enough") else 1
         return Event(base + suffix, "lights_opt_auto_off", prio,
                      f"lights_opt_off:{light_id}", ts)
 
@@ -948,10 +949,11 @@ def _format_lights_group(rows: list[dict]) -> Event | None:
         "overnight_off": f"{names} sammutettiin yöksi.",
         "away_off":      f"{names} sammutettiin, koska kotona ei ole ketään.",
         "vacancy_off":   f"{names} sammutettiin — huone on tyhjä.",
+        "bright_enough": f"{names} sammutettiin — huoneessa on jo valoisaa.",
         "duration_cap":  f"{names} sammutettiin automaattisesti.",
     }
     text = OFF.get(reason, f"{names} sammutettiin automaattisesti.")
-    prio = 2 if reason in ("daylight_off", "overnight_off") else 1
+    prio = 2 if reason in ("daylight_off", "overnight_off", "bright_enough") else 1
     return Event(text, "lights_opt_auto_off", prio, f"lights_opt_off_grp:{ids}", ts)
 
 

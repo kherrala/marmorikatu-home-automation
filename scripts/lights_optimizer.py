@@ -125,6 +125,14 @@ DARK_LUX_THRESHOLD = float(os.environ.get("DARK_LUX_THRESHOLD", "40"))   # SNZB 
 # reads ~19-21 lux even at midday (window barely lights it), so only auto-on when
 # genuinely dark, not on a dim daytime reading.
 ROOM_DARK_LUX = {"living_room": 120, "khh": 12}
+# Bright-again cull: a light WE auto-on'd in the dim is turned back off once the
+# room's own sensor reads above this (lux). ONLY listed rooms qualify, and the
+# value must sit ABOVE what the room's own lights add to the reading — otherwise
+# the light's own output would flip it off (feedback flap). So it's a big room
+# where only real daylight crosses it: the living room (light alone stays well
+# under 300; sun pushes it to 400-600+). Not set for small rooms (KHH etc.) where
+# the light dominates the sensor. Never culls a human-on light.
+ROOM_BRIGHT_LUX = {"living_room": 300}
 # Per-room vacancy TIMING lives in the Presence Engine (its per-room linger_s),
 # so the optimizer just needs a small on-time floor before a vacancy-off — it
 # bridges the race where a light is switched on a beat before the sensor reports
@@ -912,6 +920,17 @@ def evaluate_light(idx: int, is_on: bool, now: datetime, sunrise: datetime,
         if cat.daylight_off and in_daylight(now, sunrise, sunset):
             _act_off(idx, "daylight_off", cat_name, human_on, on_dur_min)
             return
+        # 2b) Bright again — a light WE auto-on'd in the dim is redundant once its
+        #     room measures clearly bright (clouds cleared / sun out). Measured,
+        #     not astronomical, so it catches overcast→sun. Never culls a human's
+        #     light, and only rooms in ROOM_BRIGHT_LUX (big enough that the light
+        #     can't push the sensor over the bar). Grace floor avoids flapping.
+        if (cat.auto_on and not human_on and on_dur_min >= VACANCY_GRACE_MIN
+                and room in ROOM_BRIGHT_LUX):
+            room_lux = room_illuminance(room)
+            if room_lux is not None and room_lux > ROOM_BRIGHT_LUX[room]:
+                _act_off(idx, "bright_enough", cat_name, human_on, on_dur_min)
+                return
         # 3) Presence vacancy-off — ONLY when a REAL presence signal says empty
         #    (mmWave/PIR via the Presence Engine, which already applied the
         #    room's linger). Never fires on CO₂/no-data. Small on-time floor

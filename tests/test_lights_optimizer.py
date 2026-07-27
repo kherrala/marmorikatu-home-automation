@@ -376,6 +376,34 @@ def test_portaikko_not_driven_by_hall_down_sensor():
     assert lo.LIGHT_ROOM.get(42) != "hall_down"
 
 
+def test_bright_enough_culls_our_auto_on(harness):
+    # A light WE auto-on'd, room now above ROOM_BRIGHT_LUX (sun out) → turn off.
+    harness["state"]["origin"] = "optimizer"
+    harness["state"]["presence_rooms"] = {"living_room": True}
+    harness["state"]["lux"] = {"living_room": lo.ROOM_BRIGHT_LUX["living_room"] + 50}
+    _eval(54, True, _local(2026, 6, 15, 15, 0), dark=False)
+    assert (54, False, "bright_enough") in harness["published"]
+
+
+def test_bright_enough_respects_manual_on(harness):
+    # Same brightness, but a human turned it on → held, not culled.
+    harness["state"]["origin"] = "wall"
+    harness["state"]["presence_rooms"] = {"living_room": True}
+    harness["state"]["lux"] = {"living_room": lo.ROOM_BRIGHT_LUX["living_room"] + 50}
+    _eval(54, True, _local(2026, 6, 15, 15, 0), dark=False)
+    assert (54, False, "bright_enough") not in harness["published"]
+
+
+def test_bright_enough_only_listed_rooms(harness):
+    # KHH is not in ROOM_BRIGHT_LUX (its light dominates the sensor) → no bright cull.
+    assert "khh" not in lo.ROOM_BRIGHT_LUX
+    harness["state"]["origin"] = "optimizer"
+    harness["state"]["presence_rooms"] = {"khh": True}
+    harness["state"]["lux"] = {"khh": 500}
+    _eval(6, True, _local(2026, 6, 15, 15, 0), dark=False)
+    assert (6, False, "bright_enough") not in harness["published"]
+
+
 def test_windowed_khh_light_stays_daylight_gated(harness):
     # KHH room light (6) has a window → stays suppressed in daylight, same PIR.
     assert 6 not in lo.WINDOWLESS_LIGHTS
