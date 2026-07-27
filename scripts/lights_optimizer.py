@@ -527,7 +527,7 @@ def _room_illuminance_uncached(room: str) -> float | None:
     # passing cloud. The mean is the stable ambient level.
     flux = f'''
 from(bucket: "{INFLUXDB_BUCKET}")
-  |> range(start: -{ILLUMINANCE_WINDOW_MIN}m)
+  |> range(start: -{int(ILLUMINANCE_WINDOW_MIN)}m)
   |> filter(fn: (r) => r._measurement == "presence" and r.room == "{room}")
   |> filter(fn: (r) => r._field == "illuminance")
   |> mean()
