@@ -203,7 +203,8 @@ def on_message(client, userdata, msg):
     st = _state.setdefault(room, {"occupied": False, "last_positive": 0.0,
                                   "illuminance": None, "battery": None,
                                   "source": friendly, "last_emit": 0.0,
-                                  "pending_vacant_since": 0.0})
+                                  "pending_vacant_since": 0.0,
+                                  "sensor_occupied": None})
     st["source"] = friendly
     lux = _num(payload, "illuminance_lux", "illuminance")
     if lux is not None:
@@ -214,19 +215,33 @@ def on_message(client, userdata, msg):
 
     pos = _positive(payload)
     room_type = (_rooms.get(room) or {}).get("type")
+
+    # Raw sensor occupancy (matches Z2M) — tracked and emitted separately from the
+    # debounced `occupied` so the dashboard can show the real sensor state, not
+    # only the lingered one. A raw change alone (e.g. a PIR falling edge, which the
+    # debounce below ignores) still writes a point so Grafana clears in step.
+    emit_needed = False
+    if pos is not None and pos != st.get("sensor_occupied"):
+        st["sensor_occupied"] = pos
+        emit_needed = True
+
     if pos is True:
         st["last_positive"] = time.time()   # refresh the failsafe / linger window
         st["pending_vacant_since"] = 0.0     # a re-detect cancels a pending vacancy
         if not st["occupied"]:
             st["occupied"] = True
-            emit_room(room)                  # rising edge — publish immediately
+            emit_needed = True               # rising edge of the debounced state
     elif pos is False and room_type == "mmwave":
         # Level-sensor falling edge: arm the confirmation timer instead of
         # clearing now. The tick loop clears it after FALLING_CONFIRM_S unless a
         # re-detect arrives first — see _tick_vacancy.
         if st["occupied"] and not st["pending_vacant_since"]:
             st["pending_vacant_since"] = time.time()
-    # PIR `false` is the gap between motion re-triggers — ignored; linger bridges.
+    # PIR `false` is the gap between motion re-triggers — the debounced `occupied`
+    # ignores it (linger bridges), but the raw `sensor_occupied` above records it.
+
+    if emit_needed:
+        emit_room(room)
 
 
 def emit_room(room: str):
@@ -247,6 +262,8 @@ def emit_room(room: str):
         "source": st["source"],
         "ts": int(now),
     }
+    if st.get("sensor_occupied") is not None:
+        payload["sensor_occupied"] = bool(st["sensor_occupied"])
     if st["illuminance"] is not None:
         payload["illuminance"] = st["illuminance"]
     if st["battery"] is not None:
@@ -263,6 +280,8 @@ def emit_room(room: str):
          .field("occupied", 1 if st["occupied"] else 0)
          .field("confidence", float(payload["confidence"]))
          .time(datetime.now(timezone.utc), WritePrecision.S))
+    if st.get("sensor_occupied") is not None:
+        p = p.field("sensor_occupied", 1 if st["sensor_occupied"] else 0)
     if st["illuminance"] is not None:
         p = p.field("illuminance", float(st["illuminance"]))
     if st["battery"] is not None:

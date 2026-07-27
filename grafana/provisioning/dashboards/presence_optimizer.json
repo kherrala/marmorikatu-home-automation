@@ -97,7 +97,7 @@
                 "1": {
                   "color": "green",
                   "index": 1,
-                  "text": "Läsnä"
+                  "text": "Havaittu"
                 }
               }
             }
@@ -119,7 +119,7 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 9,
+        "h": 8,
         "w": 24,
         "x": 0,
         "y": 0
@@ -140,8 +140,92 @@
           "sort": "none"
         }
       },
-      "title": "Läsnäolo huoneittain",
-      "description": "Per-room occupancy from the Presence Engine (`presence` measurement, occupied field). Sparse mmWave/PIR reports are held via the engine's linger; a window is 'Läsnä' if occupied at any point in it.",
+      "title": "Läsnäolo huoneittain (anturi)",
+      "description": "Raw per-room occupancy straight from the sensor (`presence.sensor_occupied`) — matches what Zigbee2MQTT shows. This is \"is the sensor detecting right now\", before the engine's linger.",
+      "type": "state-timeline",
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
+          "query": "from(bucket: \"building_automation\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"presence\")\n  |> filter(fn: (r) => r._field == \"sensor_occupied\")\n  |> aggregateWindow(every: v.windowPeriod, fn: max, createEmpty: false)\n  |> map(fn: (r) => ({r with _field: r.room}))\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "fillOpacity": 80,
+            "lineWidth": 0,
+            "spanNulls": true
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "color": "dark-blue",
+                  "index": 0,
+                  "text": "Tyhjä"
+                },
+                "1": {
+                  "color": "super-light-blue",
+                  "index": 1,
+                  "text": "Läsnä (pidetty)"
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "dark-blue",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 8
+      },
+      "id": 5,
+      "options": {
+        "alignValue": "center",
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "mergeValues": true,
+        "rowHeight": 0.8,
+        "showValue": "auto",
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "title": "Läsnäolo optimoijalle (viive/linger)",
+      "description": "The debounced occupancy the lights-optimizer consumes (`presence.occupied`): held for the room's linger after the last detection so a still person keeps the light. Trails the sensor panel above by the linger — that gap is expected, not a fault.",
       "type": "state-timeline",
       "targets": [
         {
@@ -259,7 +343,7 @@
         "h": 11,
         "w": 24,
         "x": 0,
-        "y": 9
+        "y": 16
       },
       "id": 2,
       "options": {
@@ -325,7 +409,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 20
+        "y": 27
       },
       "id": 3,
       "options": {
@@ -391,7 +475,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 20
+        "y": 27
       },
       "id": 4,
       "options": {
@@ -460,6 +544,6 @@
   "timezone": "Europe/Helsinki",
   "title": "Läsnäolo & optimointi",
   "uid": "presence-optimizer",
-  "version": 1,
+  "version": 2,
   "weekStart": ""
 }
