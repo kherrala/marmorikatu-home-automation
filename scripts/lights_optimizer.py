@@ -114,6 +114,11 @@ MIN_DWELL_SECONDS = float(os.environ.get("MIN_DWELL_SECONDS", "300"))
 # `presence` measurement for a room; until then presence_for_room() returns None
 # and the room keeps its interim (comfort-first) behaviour.
 PRESENCE_MIN_CONFIDENCE = float(os.environ.get("PRESENCE_MIN_CONFIDENCE", "0.6"))
+# Measured-brightness auto-on: a room whose sensor reports illuminance below this
+# (lux) counts as "dark" for comfort auto-on even before astronomical dusk — so
+# an overcast, dim afternoon lights up. Only rooms with a lux-reporting sensor
+# (the living-room FP300) use it; others fall back to the sun-elevation gate.
+DARK_LUX_THRESHOLD = float(os.environ.get("DARK_LUX_THRESHOLD", "120"))
 # Per-room vacancy TIMING lives in the Presence Engine (its per-room linger_s),
 # so the optimizer just needs a small on-time floor before a vacancy-off — it
 # bridges the race where a light is switched on a beat before the sensor reports
@@ -177,6 +182,11 @@ CATS: dict[str, Cat] = {
     # in that room — no-op until the Presence Engine publishes it).
     "circulation":Cat(True,  False, True,  True,  CIRCULATION_TIMEOUT_MIN, SHORT_HOLD_MIN,  "hall",         "motion"),
     "utility":    Cat(False, False, True,  True,  UTILITY_TIMEOUT_MIN,     SHORT_HOLD_MIN,  None,           "motion"),
+    # Work/storage room (KHH + attached varasto): motion auto-ON, held while
+    # present, vacancy/duration/overnight/away-off. KHH has a window so it's
+    # daylight-gated; its windowless varasto light (61) is in WINDOWLESS_LIGHTS
+    # to auto-on any hour.
+    "workroom":   Cat(True,  False, True,  True,  UTILITY_TIMEOUT_MIN,     SHORT_HOLD_MIN,  None,           "motion"),
     "toilet":     Cat(True,  False, False, True,  TOILET_TIMEOUT_MIN,      SHORT_HOLD_MIN,  None,           "motion"),
     "bedroom":    Cat(True,  False, True,  True,  None,                    BEDROOM_HOLD_MIN,None,           "motion"),
     "office":     Cat(True,  False, False, True,  None,                    MANUAL_HOLD_MIN, "office",       "mmwave"),
@@ -201,8 +211,17 @@ LIGHT_ROOM: dict[int, str] = {
     25: "hall_up", 26: "hall_up", 3: "hall_up",               # upstairs hall/stairs (PIR); 3 = YK aula LED
     44: "wc_down", 45: "wc_down", 52: "wc_basement",          # WCs (PIR)
     29: "bath_up", 34: "bath_up",                             # upstairs bathroom (PIR)
+    6: "khh", 56: "khh", 61: "khh",                          # KHH (6,56) + attached varasto (61), one PIR
     22: "bedroom_seela", 28: "bedroom_aarni", 33: "bedroom_adults",  # bedrooms (PIR)
 }
+
+# Windowless LIGHTS have no natural light, so their motion-auto-on must NOT be
+# gated on outdoor darkness — walking in during the day should light them. Keyed
+# per-light (not per-room): a room can mix windowed + windowless lights — the KHH
+# room has a window, but its attached varasto (61) does not.
+WINDOWLESS_LIGHTS = set(
+    int(x) for x in os.environ.get("WINDOWLESS_LIGHTS", "61").split(",") if x.strip()
+)
 
 # Light index → category. Every index in LIGHT_LABELS is covered. Special-block
 # lights (porch 47, laude 4, post-sauna 1/38/39) are handled outside the loop.
@@ -222,9 +241,12 @@ CATEGORY_OF: dict[int, str] = {
     # CIRCULATION — halls, entry, staircases (transient). 3 = YK aula LED, a full
     # upstairs-hall light.
     3: "circulation", 25: "circulation", 26: "circulation", 35: "circulation", 37: "circulation", 42: "circulation",
-    # UTILITY / CLOSET — windowless, forgotten-prone. 6 = KHH (utility room) LED,
-    # a full room light.
-    6: "utility", 31: "utility", 36: "utility", 43: "utility", 53: "utility", 56: "utility", 61: "utility",
+    # UTILITY / CLOSET — windowless, forgotten-prone, manual-on (no room sensor).
+    # 43 = KHH wardrobe (closet, stays manual); 53 = basement storage.
+    31: "utility", 36: "utility", 43: "utility", 53: "utility",
+    # WORKROOM — KHH (kodinhoitohuone) + its attached varasto: motion auto-on via
+    # the snzb_khh PIR (LIGHT_ROOM=khh). 6/56 = KHH room lights, 61 = varasto.
+    6: "workroom", 56: "workroom", 61: "workroom",
     # TOILET — WCs + mirror lights
     29: "toilet", 34: "toilet", 44: "toilet", 45: "toilet", 52: "toilet",
     # BEDROOM (sleep) — ceilings/wardrobes upstairs (no daylight-off, nap-safe)
@@ -427,6 +449,31 @@ def presence_for_room(room: str | None) -> bool | None:
     if not room:
         return None
     return _memoize(("presence", room), lambda: _presence_for_room_uncached(room))
+
+
+def room_illuminance(room: str | None) -> float | None:
+    """Latest measured illuminance (lux) for a room from the `presence`
+    measurement, or None if no sensor there reports it."""
+    if not room:
+        return None
+    return _memoize(("lux", room), lambda: _room_illuminance_uncached(room))
+
+
+def _room_illuminance_uncached(room: str) -> float | None:
+    flux = f'''
+from(bucket: "{INFLUXDB_BUCKET}")
+  |> range(start: -15m)
+  |> filter(fn: (r) => r._measurement == "presence" and r.room == "{room}")
+  |> filter(fn: (r) => r._field == "illuminance")
+  |> last()
+'''
+    rows = _query(flux)
+    if not rows:
+        return None
+    try:
+        return float(rows[0].values.get("_value"))
+    except (TypeError, ValueError):
+        return None
 
 
 def _presence_for_room_uncached(room: str) -> bool | None:
@@ -886,8 +933,14 @@ def evaluate_light(idx: int, is_on: bool, now: datetime, sunrise: datetime,
     # ---- ON (light currently off) → comfort auto-on ----
     if not cat.auto_on:
         return  # category never auto-ons (no log spam for the many off lights)
-    if not is_dark:
-        return
+    # Darkness gate — the room is "dark enough" if the sun is down (astronomical)
+    # OR its own sensor measures dim light (overcast afternoon). Windowless lights
+    # skip the gate entirely (no natural light — auto-on any hour).
+    if idx not in WINDOWLESS_LIGHTS:
+        room_lux = room_illuminance(room)
+        dim = is_dark or (room_lux is not None and room_lux < DARK_LUX_THRESHOLD)
+        if not dim:
+            return
     if _dismissed_date.get(idx) == today:
         log_decision(idx, "hold", "dismissed_today", cat_name)
         return

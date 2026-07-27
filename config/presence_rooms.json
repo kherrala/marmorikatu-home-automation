@@ -9,6 +9,7 @@
     "hall_up":     { "type": "pir",    "linger_s": 90,  "confidence": 0.85 },
     "wc_down":     { "type": "pir",    "linger_s": 90,  "confidence": 0.85 },
     "wc_basement": { "type": "pir",    "linger_s": 90,  "confidence": 0.85 },
+    "khh":         { "type": "pir",    "linger_s": 300, "confidence": 0.85 },
     "bath_up":     { "type": "pir",    "linger_s": 600, "confidence": 0.85 },
     "bedroom_seela":  { "type": "pir", "linger_s": 120, "confidence": 0.85 },
     "bedroom_aarni":  { "type": "pir", "linger_s": 120, "confidence": 0.85 },
@@ -17,9 +18,11 @@
 
   "devices": {
     "fp300_living": "living_room",
-    "_example_snzb_hall_down": "hall_down",
-    "_example_snzb_wc_down": "wc_down",
-    "_example_snzb_bath_up": "bath_up",
+    "snzb_khh": "khh",
+    "snzb_hall_down": "hall_down",
+    "snzb_hall_up": "hall_up",
+    "snzb_wc_down": "wc_down",
+    "snzb_bath_up": "bath_up",
     "_example_snzb_bedroom_seela": "bedroom_seela",
     "_example_snzb_bedroom_aarni": "bedroom_aarni",
     "_example_snzb_bedroom_adults": "bedroom_adults"
