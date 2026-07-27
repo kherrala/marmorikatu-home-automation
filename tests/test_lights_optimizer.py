@@ -334,9 +334,18 @@ def test_living_room_fp300_vacancy_does_not_kill_kitchen(harness):
 
 
 def test_motion_auto_on_suppressed_when_not_dark(harness):
+    # A WINDOWED room light (hall_down 35) with no lux reading is dark-gated.
+    harness["state"]["presence_rooms"] = {"hall_down": True}
+    _eval(35, False, _local(2026, 6, 15, 13, 0), dark=False)
+    assert harness["published"] == []
+
+
+def test_windowless_wc_auto_ons_in_daylight(harness):
+    # WC lights (44/45) + kellari WC (52) are windowless → auto-on any hour.
+    assert {44, 45, 52} <= lo.WINDOWLESS_LIGHTS
     harness["state"]["presence_rooms"] = {"wc_down": True}
     _eval(44, False, _local(2026, 6, 15, 13, 0), dark=False)
-    assert harness["published"] == []
+    assert (44, True, "auto_on_comfort") in harness["published"]
 
 
 def test_windowless_varasto_auto_ons_in_daylight(harness):
@@ -345,6 +354,11 @@ def test_windowless_varasto_auto_ons_in_daylight(harness):
     harness["state"]["presence_rooms"] = {"khh": True}
     _eval(61, False, _local(2026, 6, 15, 13, 0), dark=False)
     assert (61, True, "auto_on_comfort") in harness["published"]
+
+
+def test_portaikko_not_driven_by_hall_down_sensor():
+    # The hall_down PIR is nowhere near the portaikko (42) — must stay unmapped.
+    assert lo.LIGHT_ROOM.get(42) != "hall_down"
 
 
 def test_windowed_khh_light_stays_daylight_gated(harness):
@@ -359,14 +373,14 @@ def test_measured_dim_room_auto_ons_before_dusk(harness):
     # Overcast afternoon: sun up (dark=False) but the living-room sensor reads
     # below DARK_LUX_THRESHOLD and someone is present → auto-on.
     harness["state"]["presence_rooms"] = {"living_room": True}
-    harness["state"]["lux"] = {"living_room": lo.DARK_LUX_THRESHOLD - 30}
+    harness["state"]["lux"] = {"living_room": lo.ROOM_DARK_LUX["living_room"] - 30}
     _eval(54, False, _local(2026, 6, 15, 15, 0), dark=False)
     assert (54, True, "auto_on_comfort") in harness["published"]
 
 
 def test_bright_room_stays_off_in_daylight(harness):
-    # Same room, but bright (above threshold) → no auto-on despite presence.
+    # Same room, but bright (above its per-room threshold) → no auto-on.
     harness["state"]["presence_rooms"] = {"living_room": True}
-    harness["state"]["lux"] = {"living_room": lo.DARK_LUX_THRESHOLD + 100}
+    harness["state"]["lux"] = {"living_room": lo.ROOM_DARK_LUX["living_room"] + 100}
     _eval(54, False, _local(2026, 6, 15, 15, 0), dark=False)
     assert harness["published"] == []

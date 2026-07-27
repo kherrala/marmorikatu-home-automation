@@ -114,11 +114,14 @@ MIN_DWELL_SECONDS = float(os.environ.get("MIN_DWELL_SECONDS", "300"))
 # `presence` measurement for a room; until then presence_for_room() returns None
 # and the room keeps its interim (comfort-first) behaviour.
 PRESENCE_MIN_CONFIDENCE = float(os.environ.get("PRESENCE_MIN_CONFIDENCE", "0.6"))
-# Measured-brightness auto-on: a room whose sensor reports illuminance below this
-# (lux) counts as "dark" for comfort auto-on even before astronomical dusk — so
-# an overcast, dim afternoon lights up. Only rooms with a lux-reporting sensor
-# (the living-room FP300) use it; others fall back to the sun-elevation gate.
-DARK_LUX_THRESHOLD = float(os.environ.get("DARK_LUX_THRESHOLD", "120"))
+# Measured-brightness auto-on: a room whose sensor reports illuminance below its
+# threshold (lux) counts as "dark" for comfort auto-on even before astronomical
+# dusk — so an overcast, dim afternoon lights up. The threshold is PER-ROOM
+# because sensor scales differ wildly: the SNZB PIRs read low (ambient ~17-22,
+# daylight ~50-80) while the FP300 runs 95-180. Rooms without a lux sensor fall
+# back to the sun-elevation gate.
+DARK_LUX_THRESHOLD = float(os.environ.get("DARK_LUX_THRESHOLD", "40"))   # SNZB PIR default
+ROOM_DARK_LUX = {"living_room": 120}    # FP300 scale override
 # Per-room vacancy TIMING lives in the Presence Engine (its per-room linger_s),
 # so the optimizer just needs a small on-time floor before a vacancy-off — it
 # bridges the race where a light is switched on a beat before the sensor reports
@@ -207,7 +210,7 @@ LIGHT_ROOM: dict[int, str] = {
     5: "living_room",                                          # Olohuone LED, full room light (FP300)
     17: "office",                                              # office (future FP300)
     49: "theater", 50: "theater", 51: "theater",              # basement theater
-    35: "hall_down", 37: "hall_down", 42: "hall_down",        # downstairs entry/stairs (PIR)
+    35: "hall_down", 37: "hall_down",                         # eteinen + tuulikaappi (PIR). Portaikko 42 excluded — the hall_down sensor is nowhere near it
     25: "hall_up", 26: "hall_up", 3: "hall_up",               # upstairs hall/stairs (PIR); 3 = YK aula LED
     44: "wc_down", 45: "wc_down", 52: "wc_basement",          # WCs (PIR)
     29: "bath_up", 34: "bath_up",                             # upstairs bathroom (PIR)
@@ -215,12 +218,13 @@ LIGHT_ROOM: dict[int, str] = {
     22: "bedroom_seela", 28: "bedroom_aarni", 33: "bedroom_adults",  # bedrooms (PIR)
 }
 
-# Windowless LIGHTS have no natural light, so their motion-auto-on must NOT be
-# gated on outdoor darkness — walking in during the day should light them. Keyed
-# per-light (not per-room): a room can mix windowed + windowless lights — the KHH
-# room has a window, but its attached varasto (61) does not.
+# Windowless LIGHTS have no natural light, so their motion-auto-on is never gated
+# on brightness — walking in at any hour lights them. Keyed per-light (not
+# per-room) so a room can mix windowed + windowless lights (the KHH room has a
+# window, but its attached varasto 61 does not).
+#   44,45 = alakerta WC · 52 = kellari WC · 61 = varasto (borrows KHH's windowed sensor)
 WINDOWLESS_LIGHTS = set(
-    int(x) for x in os.environ.get("WINDOWLESS_LIGHTS", "61").split(",") if x.strip()
+    int(x) for x in os.environ.get("WINDOWLESS_LIGHTS", "44,45,52,61").split(",") if x.strip()
 )
 
 # Light index → category. Every index in LIGHT_LABELS is covered. Special-block
@@ -938,7 +942,8 @@ def evaluate_light(idx: int, is_on: bool, now: datetime, sunrise: datetime,
     # skip the gate entirely (no natural light — auto-on any hour).
     if idx not in WINDOWLESS_LIGHTS:
         room_lux = room_illuminance(room)
-        dim = is_dark or (room_lux is not None and room_lux < DARK_LUX_THRESHOLD)
+        threshold = ROOM_DARK_LUX.get(room, DARK_LUX_THRESHOLD)
+        dim = is_dark or (room_lux is not None and room_lux < threshold)
         if not dim:
             return
     if _dismissed_date.get(idx) == today:
