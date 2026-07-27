@@ -70,6 +70,9 @@ HOME_LAT = float(os.environ.get("HOME_LAT") or os.environ.get("WEATHER_LAT") or 
 HOME_LON = float(os.environ.get("HOME_LON") or os.environ.get("WEATHER_LON") or "23.7610")
 
 CHECK_INTERVAL = int(os.environ.get("CHECK_INTERVAL", "60"))
+TICK_LOG_S = float(os.environ.get("TICK_LOG_S", "60"))   # throttle the per-tick log line
+_last_tick_log = 0.0
+_last_tick_state: tuple = (None, None)
 MAX_CONSECUTIVE_FAILURES = int(os.environ.get("MAX_CONSECUTIVE_FAILURES", "5"))
 
 # Darkness threshold (astronomical sun elevation, °). Shared by porch + auto-on.
@@ -755,8 +758,27 @@ def within_min_dwell(idx: int) -> bool:
 
 
 # ── Decision logging ──────────────────────────────────────────────────────────
+# Decision-log dedup: at 1s ticks we would otherwise write a lights_optimizer
+# point per light every second. Write only when a light's decision actually
+# changes, on any actuation (on/off is always a real event), or a slow freshness
+# heartbeat — never the same "hold" second after second.
+_last_decision: dict[int, tuple] = {}
+_last_decision_ts: dict[int, float] = {}
+DECISION_HEARTBEAT_S = float(os.environ.get("DECISION_HEARTBEAT_S", "1800"))  # 30 min
+
+
 def log_decision(idx: int, decision: str, reason: str, category: str = "",
                  manual_locked: bool = False, on_dur: float | None = None):
+    key = (decision, reason, category, 1 if manual_locked else 0)
+    now = time.time()
+    # Skip a repeated non-actuation decision (e.g. hold) unless it changed or the
+    # heartbeat is due. Actuations (on/off) always write — they're the events.
+    if (decision not in ("on", "off")
+            and _last_decision.get(idx) == key
+            and (now - _last_decision_ts.get(idx, 0.0)) < DECISION_HEARTBEAT_S):
+        return
+    _last_decision[idx] = key
+    _last_decision_ts[idx] = now
     name = LIGHT_LABELS.get(idx, (f"light_{idx}", None))[0]
     p = (
         Point("lights_optimizer")
@@ -1042,8 +1064,15 @@ def check_and_control():
         if d < today:
             del _dismissed_date[i]
 
-    log.info("tick: %s elev=%.1f dark=%s away=%s lights=%d",
-             now.isoformat(timespec="seconds"), elev, is_dark, away, len(states))
+    # Throttle the tick summary — at 1s ticks it would be a line per second.
+    # Log at most every TICK_LOG_S, or immediately when dark/away flips.
+    global _last_tick_log, _last_tick_state
+    tnow = time.monotonic()
+    if (tnow - _last_tick_log) > TICK_LOG_S or _last_tick_state != (is_dark, away):
+        log.info("tick: %s elev=%.1f dark=%s away=%s lights=%d",
+                 now.isoformat(timespec="seconds"), elev, is_dark, away, len(states))
+        _last_tick_log = tnow
+        _last_tick_state = (is_dark, away)
 
     # Special blocks first.
     run_porch(now, states, sunrise, sunset)
