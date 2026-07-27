@@ -868,7 +868,7 @@ def _format_lights_optimizer(row: dict) -> Event | None:
 
     # Comfort auto-on (living core, dark + occupied).
     if decision == "on" and reason == "auto_on_comfort":
-        return Event(f"{name} syttyi automaattisesti hämärän aikaan.",
+        return Event(f"{name} syttyi automaattisesti.",
                      "lights_opt_auto_on", 1, f"lights_opt_on:{light_id}", ts)
 
     # Auto-off variants — tailored message per high-confidence cull reason.
@@ -939,7 +939,7 @@ def _format_lights_group(rows: list[dict]) -> Event | None:
     ts = max((r.get("ts") or datetime.now(timezone.utc)) for r in rows).timestamp()
 
     if decision == "on":  # auto_on_comfort
-        return Event(f"{names} syttyivät automaattisesti hämärän aikaan.",
+        return Event(f"{names} syttyivät automaattisesti.",
                      "lights_opt_auto_on", 1, f"lights_opt_on_grp:{ids}", ts)
     if reason.startswith("post_sauna"):
         return Event(f"{names} sammutettiin saunavuoron päätteeksi.",
