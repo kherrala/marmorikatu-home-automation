@@ -98,7 +98,10 @@ PIR_DEAD_SENSOR_FAILSAFE_S = float(os.environ.get("PRESENCE_PIR_FAILSAFE_S", "14
 # silence while still catching a genuinely dead sensor.
 TYPE_DEFAULTS = {
     "mmwave": {"linger_s": 7200, "confidence": 0.95},
-    "pir":    {"linger_s": 120, "confidence": 0.85},
+    # PIR linger_s is EXTRA grace on top of the device's ~60s Detection Duration
+    # (which re-arms on every micro-motion), so default 0 → total hold ≈ 60s. Raise
+    # per-room only if a genuinely-still occupant there gets cut off.
+    "pir":    {"linger_s": 0, "confidence": 0.85},
 }
 
 influx_client = None
