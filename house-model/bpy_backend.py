@@ -210,6 +210,54 @@ class BlenderB:
         except Exception:
             for pg in me.polygons: pg.use_smooth=True
         self._add(name,me,mat)
+    def tube3(self,name,pts,r,mat,sides=10):
+        """Round pipe along a THREE-dimensional polyline.
+
+        `tube` sweeps its circle in a horizontal plane, which cannot describe a raking pipe --
+        a downpipe's swan-neck or the shoe at its foot both change height along their length,
+        and building them as extruded prisms gave a flat blade instead of a pipe.  This carries
+        a frame along the path (parallel transport, re-orthogonalised at each vertex) so the
+        section stays circular through a bend in any direction.  No mitre stretch: the bends
+        here are gentle and at 90 mm diameter the slight pinch is not visible.
+        """
+        import math as _m
+        P=[]
+        for q in pts:
+            q=(q[0],q[1],q[2]+self.zoff)
+            if not P or max(abs(q[i]-P[-1][i]) for i in range(3))>1e-6: P.append(q)
+        if len(P)<2: return
+        def sub(a,b): return (a[0]-b[0],a[1]-b[1],a[2]-b[2])
+        def dot(a,b): return a[0]*b[0]+a[1]*b[1]+a[2]*b[2]
+        def crs(a,b): return (a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0])
+        def nrm(a):
+            L=_m.sqrt(dot(a,a)) or 1.0
+            return (a[0]/L,a[1]/L,a[2]/L)
+        D=[nrm(sub(P[i+1],P[i])) for i in range(len(P)-1)]
+        seed=(0.0,0.0,1.0) if abs(dot(D[0],(0.0,0.0,1.0)))<0.9 else (1.0,0.0,0.0)
+        u=nrm(crs(seed,D[0]))
+        v=[]; f=[]
+        for i,p in enumerate(P):
+            t0=D[max(0,i-1)]; t1=D[min(len(D)-1,i)]
+            t=nrm((t0[0]+t1[0],t0[1]+t1[1],t0[2]+t1[2]))
+            u=nrm(sub(u,tuple(dot(u,t)*c for c in t)))       # keep u perpendicular to the path
+            w=crs(t,u)
+            for j in range(sides):
+                a=2*_m.pi*j/sides; c,sn=_m.cos(a),_m.sin(a)
+                v.append((p[0]+r*(u[0]*c+w[0]*sn),p[1]+r*(u[1]*c+w[1]*sn),p[2]+r*(u[2]*c+w[2]*sn)))
+        for i in range(len(P)-1):
+            b0,b1=i*sides,(i+1)*sides
+            for j in range(sides):
+                k=(j+1)%sides
+                f.append((b0+j,b0+k,b1+k,b1+j))
+        f.append(tuple(range(sides-1,-1,-1)))
+        b=(len(P)-1)*sides; f.append(tuple(range(b,b+sides)))
+        me=bpy.data.meshes.new(name)
+        me.from_pydata(v,[],f); me.validate(); me.update()
+        try: me.shade_smooth()
+        except Exception:
+            for pg in me.polygons: pg.use_smooth=True
+        self._add(name,me,mat)
+
     def box(self,name,xs,ys,zs,mat):
         z0,z1=zs[0]+self.zoff,zs[1]+self.zoff
         x0,x1=min(xs),max(xs); y0,y1=min(ys),max(ys)
@@ -276,9 +324,52 @@ def hk_lightcam():
     cam=bpy.data.cameras.new('Cam'); co=bpy.data.objects.new('Cam',cam)
     scn.collection.objects.link(co); scn.camera=co
     co.location=(28,-16,16); co.rotation_euler=(math.radians(60),0,math.radians(55))
+    # ---- world: a sky gradient, not a flat grey card ------------------------------------
+    # 0.85/0.87/0.90 at strength 0.5 is a dead grey backdrop, and it was also the only ambient
+    # the model had, so every surface picked up the same colourless bounce.  A vertical
+    # gradient (warm horizon -> blue zenith) gives the model something to sit in and puts a
+    # little colour back into the shadow side.
     scn.world=bpy.data.worlds.new('World'); scn.world.use_nodes=True
-    bg=scn.world.node_tree.nodes.get('Background')
-    bg.inputs[0].default_value=(0.85,0.87,0.90,1); bg.inputs[1].default_value=0.5
+    nt=scn.world.node_tree
+    for n in list(nt.nodes):
+        if n.type!='OUTPUT_WORLD': nt.nodes.remove(n)
+    out=next(n for n in nt.nodes if n.type=='OUTPUT_WORLD')
+    bg  =nt.nodes.new('ShaderNodeBackground');  bg.location=(-200,0)
+    ramp=nt.nodes.new('ShaderNodeValToRGB');    ramp.location=(-520,0)
+    rng =nt.nodes.new('ShaderNodeMapRange');    rng.location=(-760,0)
+    sep =nt.nodes.new('ShaderNodeSeparateXYZ'); sep.location=(-960,0)
+    geo =nt.nodes.new('ShaderNodeNewGeometry'); geo.location=(-1160,0)
+    # elevation of the viewing ray, not a texture coordinate: Generated coords gave a diagonal
+    # wash across the frame instead of a horizon-to-zenith sky.
+    rng.inputs['From Min'].default_value=-0.25; rng.inputs['From Max'].default_value=0.55
+    rng.clamp=True
+    ramp.color_ramp.elements[0].position=0.0
+    ramp.color_ramp.elements[0].color=(0.78,0.82,0.87,1)             # horizon haze
+    ramp.color_ramp.elements[1].position=1.0
+    ramp.color_ramp.elements[1].color=(0.26,0.45,0.78,1)             # zenith
+    nt.links.new(geo.outputs['Incoming'],sep.inputs['Vector'])
+    nt.links.new(sep.outputs['Z'],rng.inputs['Value'])
+    nt.links.new(rng.outputs['Result'],ramp.inputs['Fac'])
+    nt.links.new(ramp.outputs['Color'],bg.inputs[0])
+    nt.links.new(bg.outputs['Background'],out.inputs['Surface'])
+    bg.inputs[1].default_value=1.15
+    # ---- colour management ---------------------------------------------------------------
+    # Blender 4+/5 defaults the view transform to AgX, which rolls saturation out of anything
+    # bright.  On a model that is mostly pale timber and white joinery that reads as "dull and
+    # grey" no matter what the lights do -- the base colours are fine, AgX is desaturating
+    # them on the way to the screen.  Standard shows the authored colour.  It does not touch
+    # the GLB (base colours export raw); this is purely what Blender puts on screen.
+    try: scn.view_settings.view_transform='Standard'
+    except Exception: pass
+    scn.view_settings.exposure=0.0; scn.view_settings.gamma=1.0
+    # and let the viewport use that world + the scene sun instead of the forest.exr studio HDRI
+    for scr in bpy.data.screens:
+        for ar in scr.areas:
+            if ar.type!='VIEW_3D': continue
+            for sp in ar.spaces:
+                if sp.type!='VIEW_3D': continue
+                sp.shading.use_scene_world=True; sp.shading.use_scene_lights=True
+                sp.shading.use_scene_world_render=True; sp.shading.use_scene_lights_render=True
 
 # CC0 hero furniture (Poly Haven models cached in assets.blend); replaces the
 # parametric stand-ins by name. Missing assets.blend -> stand-ins stay.

@@ -303,6 +303,27 @@ def build_krs1(B):
     wall_y(B,'F1.wN.blk',7.98-e,0,10.98,0,H_1E,EXT,mat='WallExt',skirt=-Z_CLAD,t0=EXT+LINT,ops=[
         W('win',2.840,3.941,1.65,2.16),                      # PH: high short strip (ITA elev)
         W('win',7.040,7.541,0.74,2.16)])                     # KHH tall narrow strip (ITA elev)
+    # East facade only: the cladding does not stop at Z_CLAD along this side.  The ground falls
+    # the length of it and ITA carries the boarding down after it in two steps.  The first bay
+    # is at Z_CLAD, which is why this went unnoticed -- it matches the rest of the house.
+    #
+    # Step DEPTHS are datum-independent and so are the reliable numbers: -0.751 and -0.879,
+    # the first being exactly five 150.5 mm board courses.  Levels below are those depths hung
+    # off Z_CLAD, whose ITA reading (-0.203) was measured independently.
+    #
+    # THE TRAP, and it cost three wrong answers: pdfplumber's `lines` carry BOTTOM-UP y0/y1,
+    # but the elevation transforms in HANDOFF-LOCAL 4.1 are written for TOP-DOWN pty.  Feed
+    # bottom-up values into `z = (289.80 - pty)/S - 0.08` and every z comes out MIRRORED about
+    # the datum -- silently, and looking entirely plausible.  A foot read that way at -0.673 is
+    # really +5.65, near the top of the wall.  Anchor instead on the KHH window, whose 1.422 m
+    # height and x 7.040..7.541 both match this model exactly:
+    #     z = (pty - 146.52)/S        with pty straight off line.y0   (bottom-up)
+    # That lands both roof lines within 0.17 m and reproduces the window to 2 mm.
+    # Same band as the skirt _wall builds: 6 mm proud of the wall plane, 66 mm deep.
+    ECS=tuple(sorted((7.83+EXT/2-0.060,7.83+EXT/2+0.006)))
+    for i,(sx0,sx1,zf) in enumerate((( 4.810,11.690,Z_CLAD-0.751),
+                                     (11.690,16.980,Z_CLAD-0.751-0.879))):
+        B.box(f'F1.wN.step{i}',(sx0,sx1),ECS,(zf,Z_CLAD),'WallExt')
     # LP vertical-slat column at the KHH/KPH window stack (ITA elevation)
     B.box('F1.slat.c.lo',(7.04,7.54),(7.97,8.05),(-0.45,0.74),'Slat')
     B.box('F1.slat.c.mid',(7.04,7.54),(7.97,8.05),(2.16,3.01),'Slat')
@@ -555,6 +576,25 @@ def build_krs1(B):
                                   (rx+0.012,CY1,cz(CY1)+0.02),(rx-0.012,CY1,cz(CY1)+0.02)],0.018,'Roof')
         rx+=0.55; k+=1
     B.box('F1.cflash',(3.896,7.191),(-0.010,0.050),(2.912,3.046),'White')   # upstand at the wall
+    # Eaves gutter along the canopy's low edge, and the downpipe off its LEFT end -- left as
+    # seen standing outside looking at the door, i.e. the low-x end (owner; missing entirely
+    # before).  The canopy is hung off the wall with no posts, so the pipe cannot simply run
+    # down beside it: it drops clear of the soffit first (the soffit at the verge is 2.232, so
+    # the neck has to start below that or it would pass through the slab), necks back to the
+    # cladding, and runs down the wall on clips.  x 3.966 keeps it inboard of the verge and
+    # clear of the left knee brace at 4.236.
+    CGY,CGZ=eaves_gutter(B,'F1.cgut',3.896,7.191,CY1,-1,cz(CY1),pitch=0.78)
+    CPX=3.966
+    B.cyl('F1.cdp.outlet',CPX,CGY,2.130,CGZ-GUT_R+0.03,DP_R*0.78,'Metal',10)
+    B.tube3('F1.cdp.neck',[(CPX,CGY,2.130),(CPX,-0.050,1.430)],DP_R,'Metal',10)
+    B.cyl('F1.cdp.fall',CPX,-0.050,0.097,1.430,DP_R,'Metal',10)
+    for zc in (0.42,1.08):
+        B.box(f'F1.cdp.clip{int(zc*100)}',(CPX-DP_R-0.013,CPX+DP_R+0.013),
+              (-0.050-DP_R-0.011,-0.050+DP_R+0.011),(zc-0.011,zc+0.011),'Metal')
+    # raked round shoe, stopping above the grate rather than running into the ground
+    B.tube3('F1.cdp.shoe',[(CPX,-0.050,0.097),(CPX,-0.280,-0.063)],DP_R,'Metal',10)
+    rainwell(B,'F1.cdp.well',CPX,-0.280,-0.193)
+
     # snow guard on the canopy: bar 4.023..7.025 at z 2.668..2.703, brackets at each end.
     # The roof top under it is cz(-0.833) = 2.636, so the bar stands ~35 mm clear -- this is
     # the detail that fixes the standoff for the two main roofs as well.
@@ -1101,6 +1141,58 @@ def build_krs2(B):
     B.zoff=0.0
 
 # ================================================================= KATTO
+# ================================================================= RAINWATER GOODS
+# The gutters were plain rectangular boxes and the downpipes bare cylinders dropped from the
+# fascia to a nominal point in the ground.  A box reads as a fascia BOARD, not a gutter: what
+# makes a gutter legible is the round throat, the rolled bead along its outer lip and the
+# brackets it hangs on -- and what makes a downpipe legible is that it comes out of the gutter,
+# necks back to the wall, and ends in something.
+GUT_R = 0.058      # 116 mm half-round, the common Finnish size
+DP_R  = 0.045      # 90 mm fall pipe
+
+def eaves_gutter(B,tag,x0,x1,ye,so,ztop,drop=0.045,pitch=0.90,mat='Metal'):
+    """Half-round gutter hung outboard of an eave, returning (centre y, centre z).
+
+    `ye` is the eave line, `so` is +1 when outboard is +y, `ztop` the roof deck top at the
+    eave.  The trough centre sits `drop` below the deck so the sheet overhangs into the
+    throat instead of meeting the gutter edge-to-edge.  Brackets start just clear of the eave
+    so they do not end up inside the roof deck.
+    """
+    yc=ye+so*(GUT_R+0.010); zc=ztop-drop
+    B.tube(f'{tag}.trough',[(x0,yc),(x1,yc)],GUT_R,zc,mat,10)
+    yb=yc+so*GUT_R
+    B.box(f'{tag}.bead',(x0,x1),tuple(sorted((yb-0.011,yb+0.011))),(zc+0.026,zc+0.050),mat)
+    n=max(2,int(round((x1-x0)/pitch)))
+    for i in range(n+1):
+        bx=x0+(x1-x0)*i/n
+        bx0=min(max(bx-0.005,x0),x1-0.010)
+        B.box(f'{tag}.brk{i}',(bx0,bx0+0.010),
+              tuple(sorted((ye+so*0.005,yc+so*(GUT_R+0.016)))),
+              (zc-GUT_R-0.016,zc-GUT_R+0.001),mat)
+    return yc,zc
+
+def downpipe(B,tag,x,yp,yg,ztr,zbot,mat='Metal'):
+    """Syoksytorvi: outlet under the trough, swan-neck across to the pipe line, then the fall
+    pipe on clips.  `yg` is the gutter centre, `yp` the line the pipe runs down, `ztr` the
+    trough underside."""
+    # The neck has to cross the whole eave overhang -- 670 mm on the block -- so a fixed
+    # 340 mm drop laid it over at 63 deg and it read as a diagonal strut rather than a pipe.
+    # Rake it in proportion to the offset instead.
+    zo=ztr-0.02; zn=zo-max(0.34,0.85*abs(yp-yg))
+    B.cyl(f'{tag}.outlet',x,yg,zo-0.05,ztr+0.03,DP_R*0.78,mat,10)
+    B.tube3(f'{tag}.neck',[(x,yg,zo),(x,yp,zn)],DP_R,mat,10)
+    B.cyl(f'{tag}.fall',x,yp,zbot,zn,DP_R,mat,10)
+    for f in (0.32,0.72):
+        zc=zbot+(zn-zbot)*f
+        B.box(f'{tag}.clip{int(f*100)}',(x-DP_R-0.013,x+DP_R+0.013),
+              (yp-DP_R-0.011,yp+DP_R+0.011),(zc-0.011,zc+0.011),mat)
+
+def rainwell(B,tag,x,y,zg):
+    """Sadevesikaivo -- the gully every downpipe discharges into: a concrete collar set flush
+    in the surface with a cast grate standing slightly proud of it."""
+    B.cyl(f'{tag}.collar',x,y,zg-0.060,zg+0.016,0.215,'ConcreteDark',16)
+    B.cyl(f'{tag}.grate', x,y,zg+0.012,zg+0.030,0.170,'Metal',16)
+
 def build_roof(B):
     """Both roofs, measured off julkisivut.pdf.
 
@@ -1165,10 +1257,10 @@ def build_roof(B):
     ribs('',   -0.17,11.42,mz,YS+0.02,YN-0.02)
     ribs('W',  11.25,17.52,wz,YS+0.02,YN-0.02)
     # gutters + downpipes (Metal): outboard of the deck edge, straddling the eaves line
-    B.box('R.gut.s',(-0.45,11.43),(YS-0.13,YS),(mz(YS)-0.09,mz(YS)+0.05),'Metal')
-    B.box('R.gut.n',(-0.45,11.43),(YN,YN+0.13),(mz(YN)-0.09,mz(YN)+0.05),'Metal')
-    B.box('R.gut.ws',(11.43,17.53),(YS-0.13,YS),(wz(YS)-0.14,wz(YS)-0.01),'Metal')
-    B.box('R.gut.wn',(11.43,17.53),(YN,YN+0.13),(wz(YN)-0.14,wz(YN)-0.01),'Metal')
+    eaves_gutter(B,'R.gut.s' ,-0.45,11.43,YS,-1,mz(YS))
+    eaves_gutter(B,'R.gut.n' ,-0.45,11.43,YN,+1,mz(YN))
+    eaves_gutter(B,'R.gut.ws',11.43,17.53,YS,-1,wz(YS),drop=0.075)
+    eaves_gutter(B,'R.gut.wn',11.43,17.53,YN,+1,wz(YN),drop=0.075)
     # ---- snow guards (lumieste).  Drawn on the y=-0.699 slope of BOTH roofs and nowhere else:
     # ITA shows a roof ladder on the block's far slope and nothing at all on the wing's, so
     # only these two runs exist.  One rail of ~32 mm section, not two, on a triangular bracket
@@ -1191,11 +1283,25 @@ def build_roof(B):
             if b1-b0<0.010: continue
             B.prism(f'R.snow.{tag}.br{k}',b0,b1,
                     [(GY0,zf(GY0)),(GYA,zf(GYA)+dz+0.038),(GY1,zf(GY1))],'Metal',axis='x')
-    ZM,ZW=mz(YS)-0.09,wz(YS)-0.14
-    for nm,(px,py,zt2,zb2) in {'p1':(0.30,-0.40,ZM,-0.72),'p2':(10.55,-0.40,ZM,-0.55),
-                               'p3':(0.30,8.28,ZM,-0.85),'p4':(10.55,8.28,ZM,-1.20),
-                               'p5':(17.20,-0.38,ZW,-0.12),'p6':(17.20,8.30,ZW,-3.00)}.items():
-        B.cyl(f'R.pipe.{nm}',px,py,zb2,zt2,0.045,'Metal',10)
+    # Downpipes and their wells.  Ground levels are measured off the built terrain rather than
+    # carried as one nominal figure per pipe: the yard falls 2.4 m along this house, and p4, p5
+    # and p6 all used to stop in mid-air -- p5 by 3.1 m.  Each pipe now dies 60 mm above the
+    # grate of its own well.
+    GS,GN=YS-(GUT_R+0.010),YN+(GUT_R+0.010)            # gutter centre lines
+    for nm,(px,py,yg,ztr,grd) in {
+            'p1':(0.30,-0.095,GS,mz(YS)-0.045-GUT_R,-0.590),
+            'p2':(10.55,-0.095,GS,mz(YS)-0.045-GUT_R,-0.193),
+            'p3':(0.30, 8.075,GN,mz(YN)-0.045-GUT_R,-0.829),
+            'p4':(10.55, 8.075,GN,mz(YN)-0.045-GUT_R,-2.042),
+            'p5':(17.20,-0.38,GS,wz(YS)-0.075-GUT_R,-3.250),
+            'p6':(17.20, 8.30,GN,wz(YN)-0.075-GUT_R,-3.232)}.items():
+        downpipe(B,f'R.pipe.{nm}',px,py,yg,ztr,grd+0.290)
+        # The pipe hugs the cladding, so its well has to stand off the wall -- and the shoe that
+        # turns the water out into it must be a raked ROUND elbow that stops ABOVE the grate
+        # (owner), not a blade running into the ground.  Grate top is grd+0.030.
+        wy=py+(0.29 if py>4.0 else -0.29)
+        B.tube3(f'R.pipe.{nm}.shoe',[(px,py,grd+0.290),(px,wy,grd+0.130)],DP_R,'Metal',10)
+        rainwell(B,f'R.well.{nm}',px,wy,grd)
 
 # ================================================================= AUTOKATOS/TR
 def build_katos(B):

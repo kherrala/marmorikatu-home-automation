@@ -173,6 +173,7 @@ class Recorder:
     #    report with 20-segment facet noise.
     def cyl(self, *a, **k): pass
     def sph(self, *a, **k): pass
+    def tube3(self, *a, **k): pass
 
     def __getattr__(self, k):                      # lights, heating, anything else
         return lambda *a, **kw: None
