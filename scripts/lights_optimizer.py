@@ -309,12 +309,24 @@ influx_client: InfluxDBClient | None = None
 write_api = None
 query_api = None
 
-# Per-light runtime state (rebuilt from InfluxDB on boot → restart-deterministic):
-#   _dismissed_date[idx]  = local date a human turned off our auto-on (suppress
-#                           re-auto-on until the next local day).
+# Per-light runtime state (in-memory; dismissals are NOT reconstructed from history
+# on boot — see the model below).
+#   _dismissed[idx]       = monotonic time a fresh human-off of OUR auto-on began.
+#                           SESSION-SCOPED: suppresses re-auto-on only until the
+#                           room next goes vacant (a new arrival is a new intent to
+#                           have light), with a safety cap. Edge-triggered on the
+#                           actual off transition — NEVER re-derived from stale
+#                           history, so walking back into the room later is a clean
+#                           slate, not a day-long suppression.
 #   _last_publish_ts[idx] = monotonic-ish epoch of our last command (min-dwell).
-_dismissed_date: dict[int, date] = {}
+_dismissed: dict[int, float] = {}
 _last_publish_ts: dict[int, float] = {}
+# A dismissal registers only for an off that JUST happened (within this window); an
+# older off still lingering as the last transition must not re-arm it on return.
+DISMISSAL_FRESH_S = float(os.environ.get("DISMISSAL_FRESH_S", "120"))
+# Safety cap: drop a dismissal after this long even if the room never reports vacant
+# (CO2/sensorless rooms), so auto-on can never be wedged.
+DISMISSAL_SAFETY_CAP_S = float(os.environ.get("DISMISSAL_SAFETY_CAP_S", "1800"))
 # Per-tick memoization of expensive shared queries (cleared each tick).
 _memo: dict = {}
 
@@ -961,8 +973,6 @@ def evaluate_light(idx: int, is_on: bool, now: datetime, sunrise: datetime,
         log_decision(idx, "hold", "min_dwell_hold", cat_name)
         return
 
-    today = now.date()
-
     # REAL per-room presence from the Presence Engine ONLY (None until a sensor
     # exists for this light's room). Deliberately does NOT include kitchen-CO₂:
     # CO₂ lags and reads "dropped" when people sit still, so it may only ever
@@ -1037,8 +1047,8 @@ def evaluate_light(idx: int, is_on: bool, now: datetime, sunrise: datetime,
         dim = is_dark or (room_lux is not None and room_lux < threshold)
         if not dim:
             return
-    if _dismissed_date.get(idx) == today:
-        log_decision(idx, "hold", "dismissed_today", cat_name)
+    if idx in _dismissed:
+        log_decision(idx, "hold", "dismissed_session", cat_name)
         return
     # Auto-ON occupancy: real presence if available, else the CO₂ interim signal
     # for the living category (kitchen/dining/living). CO₂ is allowed to turn
@@ -1062,27 +1072,52 @@ def _act_off(idx: int, reason: str, cat_name: str, human_on: bool, on_dur: float
         log_decision(idx, "hold", "mqtt_publish_failed", cat_name, human_on, on_dur)
 
 
+def _room_of(idx: int) -> str | None:
+    return LIGHT_ROOM.get(idx) or CATS[CATEGORY_OF.get(idx, "utility")].presence_room
+
+
+def maintain_dismissals(now: datetime):
+    """Drop a session dismissal once its intent is spent: the room has gone vacant
+    (the user left → a fresh arrival should get light again) or the safety cap
+    elapsed (rooms whose occupancy we can't sense never wedge auto-on)."""
+    for idx in list(_dismissed):
+        occ = presence_for_room(_room_of(idx))
+        capped = (time.monotonic() - _dismissed[idx]) > DISMISSAL_SAFETY_CAP_S
+        if occ is False or capped:
+            del _dismissed[idx]
+            log.info("light %d dismissal cleared (%s)", idx,
+                     "room vacant" if occ is False else "safety cap")
+
+
 def detect_dismissals(now: datetime, states: dict[int, bool]):
-    """For auto-on-capable lights that are OFF: if we auto-on'd them earlier and
-    a human turned them off, suppress re-auto-on until the next local day."""
-    today = now.date()
+    """Register a SESSION dismissal the moment the user turns OFF a light we
+    auto-on'd, so we stop fighting them. Edge-triggered on the FRESH off transition
+    — an old off still sitting as the last transition (e.g. the user walking back
+    into a room they darkened hours ago) must NOT re-arm suppression. Cleared by
+    maintain_dismissals when the room goes vacant."""
     for idx, cat_name in CATEGORY_OF.items():
         if not CATS[cat_name].auto_on:
             continue
         if states.get(idx):
             continue  # still on
-        if _dismissed_date.get(idx) == today:
+        if idx in _dismissed:
             continue
-        # Was our last command an ON, and the light is now off by a human?
+        _, since = fetch_last_transition(idx)
+        if since is None:
+            continue
+        # Only a JUST-happened off is a dismissal — this is what makes it
+        # session-scoped rather than a stale-history day-lock.
+        if (datetime.now(timezone.utc) - since).total_seconds() > DISMISSAL_FRESH_S:
+            continue
         cmds = fetch_recent_commands(idx)
         if not cmds:
             continue
         last_target, last_src, _ = cmds[-1]
-        _, since = fetch_last_transition(idx)
         off_origin = classify_origin(idx, False, since)
         if last_src == "optimizer" and last_target is True and off_origin in ("human", "wall"):
-            _dismissed_date[idx] = today
-            log.info("light %d dismissed by %s — suppress auto-on until tomorrow", idx, off_origin)
+            _dismissed[idx] = time.monotonic()
+            log.info("light %d dismissed by %s — suppress auto-on until the room is next vacant",
+                     idx, off_origin)
 
 
 # ── Tick ──────────────────────────────────────────────────────────────────────
@@ -1096,11 +1131,8 @@ def check_and_control():
     update_transition_cache(states)   # maintain last-transition cache (1 query/tick, not 49)
     away = whole_house_away()
 
-    # Drop stale dismissals from previous days.
-    today = now.date()
-    for i, d in list(_dismissed_date.items()):
-        if d < today:
-            del _dismissed_date[i]
+    # Clear session dismissals whose room has gone vacant (or the safety cap).
+    maintain_dismissals(now)
 
     # Throttle the tick summary — at 1s ticks it would be a line per second.
     # Log at most every TICK_LOG_S, or immediately when dark/away flips.
@@ -1127,26 +1159,16 @@ def check_and_control():
         evaluate_light(idx, is_on, now, sunrise, sunset, is_dark, away)
 
 
-# ── Boot: rebuild dismissals from the persisted command/state log ─────────────
+# ── Boot ──────────────────────────────────────────────────────────────────────
 def rebuild_state():
-    """Restart-determinism: reconstruct today's dismissals from InfluxDB so a
-    restart doesn't re-enable a light the user dismissed earlier today."""
-    now = datetime.now(LOCAL_TZ)
-    states = fetch_current_light_states()
-    for idx, cat_name in CATEGORY_OF.items():
-        if not CATS[cat_name].auto_on or states.get(idx):
-            continue
-        cmds = fetch_recent_commands(idx, lookback_min=18 * 60)
-        if not cmds:
-            continue
-        last_target, last_src, last_t = cmds[-1]
-        if last_src == "optimizer" and last_target is True:
-            _, since = fetch_last_transition(idx)
-            if since is not None and classify_origin(idx, False, since) in ("human", "wall"):
-                if since.astimezone(LOCAL_TZ).date() == now.date():
-                    _dismissed_date[idx] = now.date()
-    if _dismissed_date:
-        log.info("rebuilt dismissals: %s", {k: str(v) for k, v in _dismissed_date.items()})
+    """Dismissals are session-scoped and edge-triggered, so there is deliberately
+    nothing to reconstruct on boot: a restart starts with a clean slate. The old
+    behaviour — replaying an 18 h history to re-arm day-long suppressions — was
+    exactly what let a single manual-off wedge a room's auto-on for the whole day
+    and survive restarts. If the user is genuinely present at boot, the next
+    manual-off re-registers a fresh session dismissal; if they're not, there's
+    nothing to suppress."""
+    return
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────

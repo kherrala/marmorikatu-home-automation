@@ -5,6 +5,7 @@ functions; tests monkeypatch those to drive `evaluate_light` deterministically
 and capture the resulting publishes / decision-log rows. (scripts/ is put on
 the path by tests/conftest.py.)
 """
+import time
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
@@ -196,7 +197,7 @@ def harness(monkeypatch):
                         lambda idx, decision, reason, category="", manual_locked=False, on_dur=None:
                         decisions.append((idx, decision, reason)))
     lo._memo.clear()
-    lo._dismissed_date.clear()
+    lo._dismissed.clear()
     return {"published": published, "decisions": decisions, "state": state}
 
 
@@ -264,12 +265,63 @@ def test_no_auto_on_when_not_dark(harness):
     assert harness["published"] == []
 
 
-def test_dismissed_today_suppresses_auto_on(harness):
+def test_dismissed_session_suppresses_auto_on(harness):
+    # A live session dismissal blocks re-auto-on even while present + dark.
     harness["state"]["presence"] = True
-    lo._dismissed_date[54] = _local(2026, 1, 15, 18, 0).date()
+    lo._dismissed[54] = time.monotonic()
     _eval(54, False, _local(2026, 1, 15, 18, 0), dark=True)
     assert harness["published"] == []
-    assert harness["decisions"][-1][1:] == ("hold", "dismissed_today")
+    assert harness["decisions"][-1][1:] == ("hold", "dismissed_session")
+
+
+# ── Dismissal model: session-scoped, edge-triggered, vacancy-cleared ──────────
+def test_fresh_manual_off_registers_dismissal(harness, monkeypatch):
+    # The user just turned OFF a light we auto-on'd (fresh off, optimizer was last
+    # to command ON, off attributed to a human) → a session dismissal is armed.
+    harness["state"]["origin"] = "wall"          # off attributed to a human
+    harness["state"]["since"] = datetime.now(timezone.utc) - timedelta(seconds=5)
+    monkeypatch.setattr(lo, "fetch_recent_commands",
+                        lambda idx, lookback_min=30: [(True, "optimizer", None)])
+    lo.detect_dismissals(_local(2026, 1, 15, 18, 0), {54: False})
+    assert 54 in lo._dismissed
+
+
+def test_stale_manual_off_does_not_rearm_on_return(harness, monkeypatch):
+    # REGRESSION (the whole reason for the rewrite): walking back into a room you
+    # darkened hours ago must NOT re-arm suppression. The off transition is old, so
+    # even though it's still the last transition, no dismissal is registered.
+    harness["state"]["origin"] = "wall"
+    harness["state"]["since"] = datetime.now(timezone.utc) - timedelta(hours=3)
+    monkeypatch.setattr(lo, "fetch_recent_commands",
+                        lambda idx, lookback_min=30: [(True, "optimizer", None)])
+    lo.detect_dismissals(_local(2026, 1, 15, 18, 0), {54: False})
+    assert 54 not in lo._dismissed
+
+
+def test_dismissal_cleared_when_room_goes_vacant(harness):
+    # Leaving the room (presence False) drops the dismissal → a fresh arrival can
+    # auto-on again.
+    lo._dismissed[54] = time.monotonic()
+    harness["state"]["presence"] = False
+    lo.maintain_dismissals(_local(2026, 1, 15, 18, 0))
+    assert 54 not in lo._dismissed
+
+
+def test_dismissal_held_while_room_still_occupied(harness):
+    # Still present → dismissal persists (we don't re-light what they just turned off).
+    lo._dismissed[54] = time.monotonic()
+    harness["state"]["presence"] = True
+    lo.maintain_dismissals(_local(2026, 1, 15, 18, 0))
+    assert 54 in lo._dismissed
+
+
+def test_dismissal_safety_cap_clears_without_vacancy(harness):
+    # Sensorless/CO2 room never reports vacant (presence None) → the safety cap
+    # eventually drops the dismissal so auto-on can't be wedged.
+    lo._dismissed[54] = time.monotonic() - (lo.DISMISSAL_SAFETY_CAP_S + 1)
+    harness["state"]["presence"] = None
+    lo.maintain_dismissals(_local(2026, 1, 15, 18, 0))
+    assert 54 not in lo._dismissed
 
 
 def test_min_dwell_holds(harness):
