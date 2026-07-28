@@ -25,9 +25,19 @@ differs by sensor kind:
     sporadically (seconds to minutes apart). So the room is HELD occupied from
     the `true` edge until the `false` edge; `linger_s` is only a long
     dead-sensor failsafe, not the primary timer.
-  * PIR (pulse, e.g. SNZB-03PR2) only fires on motion; its `occupancy:false` is
-    just the gap between re-triggers, so it's ignored and `linger_s` bridges the
-    gaps — the room stays occupied until `linger_s` after the last motion.
+  * PIR (SNZB-03P/PR2) is NOT a bare pulse: it holds `occupancy:true` internally
+    for its Detection Duration (pir_occupied_to_unoccupied_delay, ≤60 s) after the
+    LAST motion, then emits ONE explicit `occupancy:false`. It never re-sends an
+    unchanged `true` — continuous motion is a single rising edge followed by
+    silence (any intermediate `true` seen is an illuminance/battery report
+    piggybacking the full retained state; SONOFF also ignores configured reporting
+    intervals, so periodic re-reports can't be forced). So it's handled like the
+    mmWave LEVEL model: HELD occupied from the `true` edge until the device's
+    `false`, after which `linger_s` is a short grace before vacating. `last_positive`
+    is only a long stuck-sensor failsafe — a real occupant can hold `true` for many
+    minutes on a single edge (an 11 min hold was observed), so it must never double
+    as a presence timeout, which is the bug the old "linger from last motion" model
+    had: it cut a continuously-present person off at `linger_s`.
 
 Consumers therefore see a clean, debounced occupied/vacant — no timers needed.
 
@@ -67,6 +77,14 @@ HEARTBEAT_S = float(os.environ.get("PRESENCE_HEARTBEAT_S", "60"))
 # spurious false from a battery mmWave sensor (which can't run the radar
 # continuously); a genuine departure simply stays false and clears after it.
 FALLING_CONFIRM_S = float(os.environ.get("PRESENCE_FALLING_CONFIRM_S", "60"))
+# PIR stuck-sensor failsafe: a SNZB-03P holds `true` from one rising edge until it
+# emits an explicit `false`, so a genuinely occupied room can stay `true` for many
+# minutes (11 min observed) on a single message. The real vacate is the device's
+# `false` (armed as a pending falling edge → cleared after the room's linger_s). So
+# `last_positive` is ONLY a recovery from a sensor stuck `true` (a known SNZB
+# firmware bug) — set well above any plausible continuous-motion occupancy so it
+# never truncates a present person. Not used for mmWave (its failsafe is linger_s).
+PIR_DEAD_SENSOR_FAILSAFE_S = float(os.environ.get("PRESENCE_PIR_FAILSAFE_S", "14400"))
 
 # Default per-type behaviour when a room omits it.
 # mmWave is held occupied until an explicit falling edge, so its linger is a
@@ -167,6 +185,22 @@ def _tick_vacancy(occupied, pending_since, last_positive, last_emit, now,
     return None
 
 
+def _vacancy_params(rc: dict) -> tuple[float, float]:
+    """(confirm_s, failsafe_s) for the vacancy tick, by sensor type.
+
+    Both mmWave and PIR are LEVEL sensors held occupied from the rising edge until
+    an explicit `false`; they differ only in the two timers:
+      * PIR — the device already held ~60 s before its `false`, so `linger_s` is a
+        short grace AFTER that falling edge, and the last-positive guard is a long
+        stuck-sensor failsafe (PIR_DEAD_SENSOR_FAILSAFE_S), never a presence cap.
+      * mmWave — a short FALLING_CONFIRM_S absorbs a lone spurious `false`, and
+        `linger_s` is the long dead-sensor failsafe.
+    """
+    if rc.get("type") == "pir":
+        return float(rc["linger_s"]), PIR_DEAD_SENSOR_FAILSAFE_S
+    return FALLING_CONFIRM_S, float(rc["linger_s"])
+
+
 def _num(payload: dict, *keys):
     for k in keys:
         if k in payload and isinstance(payload[k], (int, float)):
@@ -231,14 +265,16 @@ def on_message(client, userdata, msg):
         if not st["occupied"]:
             st["occupied"] = True
             emit_needed = True               # rising edge of the debounced state
-    elif pos is False and room_type == "mmwave":
-        # Level-sensor falling edge: arm the confirmation timer instead of
-        # clearing now. The tick loop clears it after FALLING_CONFIRM_S unless a
-        # re-detect arrives first — see _tick_vacancy.
+    elif pos is False and room_type in ("mmwave", "pir"):
+        # Level/held falling edge — for BOTH the FP300 mmWave AND the SNZB-03P PIR
+        # (which holds `true` for its Detection Duration then emits one authoritative
+        # `false`). Arm the confirmation timer instead of clearing now; the tick loop
+        # clears it after the room's grace (FALLING_CONFIRM_S for mmWave, linger_s
+        # for PIR — see _vacancy_params) unless a re-detect arrives first. Treating a
+        # PIR `false` as noise (the old model) truncated a continuously-present person
+        # at linger_s, since a held occupancy never re-sends `true` to refresh it.
         if st["occupied"] and not st["pending_vacant_since"]:
             st["pending_vacant_since"] = time.time()
-    # PIR `false` is the gap between motion re-triggers — the debounced `occupied`
-    # ignores it (linger bridges), but the raw `sensor_occupied` above records it.
 
     if emit_needed:
         emit_room(room)
@@ -337,10 +373,11 @@ def main():
             rc = _rooms.get(room)
             if rc is None:
                 continue  # room dropped from config
+            confirm_s, failsafe_s = _vacancy_params(rc)
             action = _tick_vacancy(
                 st["occupied"], st.get("pending_vacant_since", 0.0),
                 st["last_positive"], st["last_emit"], now,
-                FALLING_CONFIRM_S, rc["linger_s"], HEARTBEAT_S)
+                confirm_s, failsafe_s, HEARTBEAT_S)
             if action == "clear":
                 st["occupied"] = False
                 st["pending_vacant_since"] = 0.0
