@@ -27,7 +27,12 @@ class CB:
     def roofquad(self, *a, **k): pass
     def prism(self, *a, **k): pass
     def tube(self, *a, **k): pass
+    def tube3(self, *a, **k): pass
     def polyseg(self, *a, **k): pass
+    # Safety net: any other non-box builder spec.py grows in future is a no-op here,
+    # so a new method can never silently truncate the sweep (the trap the note above
+    # warns about — tube3 was added and did exactly that until it was stubbed).
+    def __getattr__(self, _name): return lambda *a, **k: None
 
 B = CB(); spec.build_all(B)
 print(f'{len(B.items)} box/cyl primitives collected')

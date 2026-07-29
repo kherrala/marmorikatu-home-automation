@@ -1,8 +1,12 @@
-# Light rig for the native Android / iPad renderers
+# Lighting reference — native Android / iPad renderers
 
-Reference setup for the apps that consume `marmorikatu-house.glb` (Android) and
+The reference light rig for the apps that consume `marmorikatu-house.glb` (Android) and
 `marmorikatu-house.usdz` (iPad). It mirrors the rig in `viewer_template.html`, which was
 retuned after the east facade rendered black on Android and the interiors read washed out.
+
+Sits alongside [`README.md`](README.md) (the consumer contract — coordinate frame, anchors,
+cameras) and [`MODELING.md`](MODELING.md) (how the model is built). This doc is only about
+lighting the model once it is loaded.
 
 **Both files share one coordinate frame.** `hk_export_usdz` exports with `forward =
 NEGATIVE_Z`, verified against the glTF frame with `usd-core`, so every direction vector below

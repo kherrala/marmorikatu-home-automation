@@ -312,7 +312,7 @@ def build_krs1(B):
     # off Z_CLAD, whose ITA reading (-0.203) was measured independently.
     #
     # THE TRAP, and it cost three wrong answers: pdfplumber's `lines` carry BOTTOM-UP y0/y1,
-    # but the elevation transforms in HANDOFF-LOCAL 4.1 are written for TOP-DOWN pty.  Feed
+    # but the elevation transforms in MODELING.md §5 are written for TOP-DOWN pty.  Feed
     # bottom-up values into `z = (289.80 - pty)/S - 0.08` and every z comes out MIRRORED about
     # the datum -- silently, and looking entirely plausible.  A foot read that way at -0.673 is
     # really +5.65, near the top of the wall.  Anchor instead on the KHH window, whose 1.422 m

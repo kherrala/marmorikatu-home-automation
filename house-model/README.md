@@ -25,7 +25,7 @@ photos. Levels +132.86 / +135.90 / +138.91, block ridge +143.40, living-wing rid
 Full rebuild, two commands. In Blender's Python console:
 
 ```python
-ns={}; BASE='/Users/kyostiherrala/IdeaProjects/marmorikatu-home-automation/house-model'
+ns={}; BASE='/ABS/PATH/TO/house-model'   # absolute path to this folder
 exec(compile(open(BASE+'/bpy_backend.py').read(),'b','exec'),ns); ns['hk_run'](BASE); ns['hk_export'](BASE)
 ```
 
@@ -35,8 +35,9 @@ then in a shell, to rebuild the viewer and `cameras.json` from the fresh GLB:
 cd house-model && python3 pack.py          # needs Pillow; writes out/ and the tracked copies
 ```
 
-`hk_run` prints the object count — **1483** for the current spec. A number that moved
-without you meaning it to is the fastest signal that an edit did more than you thought.
+`hk_run` prints the object count — note it and watch it across edits; a number that moved
+without you meaning it to is the fastest signal that an edit did more than you thought. It
+drifts as the spec grows, so it isn't pinned here — your last build's number is the baseline.
 
 ---
 
@@ -311,43 +312,14 @@ over 160 kB, that has happened again.
 ## 8. Working on the model
 
 Everything needed to build lives in this folder; nothing depends on a cloud sandbox or a
-particular session. The loop is: edit `spec.py` → `hk_run`/`hk_export` in Blender →
-`python3 pack.py` → look at it. `HANDOFF-LOCAL.md` next to this file carries the working
-notes that do not belong in a contract: drawing calibrations, the overlay recipe for
-checking geometry against the PDFs, camera settings for the elevation renders, and the
-list of what is currently unverified.
+particular session. The loop is `spec.py` → `hk_run`/`hk_export` in Blender → `python3
+pack.py` → look at it.
 
-**Requirements.** Blender 4.2+ for the build (the USDZ post-process wants `usd-core`,
-which ships inside Blender); Python 3.10+ with `numpy` and `Pillow` for `mktex.py` and
-`pack.py`. No network access is needed at any point — three.js is vendored.
+The full maintainer guide — the build one-liner, the `BlenderB` builder API, the
+drawing→coordinate calibrations, the `check_dupes.py` / `zfight.py` sweeps, and what is
+verified vs still assumed — is [`MODELING.md`](MODELING.md). The native-renderer light rig
+is [`LIGHTING.md`](LIGHTING.md).
 
-**Rebuilding after a texture change.** Blender caches images by filepath, so a rebuilt
-scene will happily keep showing the old bitmap. Force a reload in the same call:
-
-```python
-import bpy
-for im in bpy.data.images: im.reload()
-```
-
-**Checks worth running before calling something done.** `check_dupes.py` replays
-`build_all` against a recording stub instead of Blender — no `bpy` needed, so it runs in a
-plain shell in about a second — and reports pairs of same-material boxes whose volumes
-overlap by more than half of the smaller one:
-
-```sh
-python3 check_dupes.py Slat      # one material
-python3 check_dupes.py           # everything
-```
-
-Two builders adding the same panel from different passes is the classic defect, and it is
-invisible in a render until the z-fighting catches your eye at a particular angle. The
-boxes never coincide exactly — each pass rounds differently — so an exact-extent test
-misses them, which is why the test is volumetric. A clean run on the current spec reports
-exactly two hits, both benign: `F1.wS.liv.seg3`×`F1.wE.din.seg0` and
-`F1.wS.notch.seg2`×`F1.wE.seg0` are ordinary outside-corner intersections of
-perpendicular walls. Anything else is a real duplicate.
-
-One caveat when extending the stub: every builder method `spec.py` calls must exist on it,
-even as a no-op. If one is missing, `build_all` dies at the first call and the sweep
-silently stops covering everything below that line while still printing a confident "0
-pairs".
+**Requirements.** Blender 4.2+ (the USDZ post-process wants `usd-core`, which ships inside
+Blender) and Python 3.10+ with `numpy` + `Pillow` for `mktex.py` / `pack.py`. No network
+access at any point — three.js is vendored.
