@@ -1433,14 +1433,14 @@ def build_katos(B):
     for i in range(3):                                    # three bins, spread over the wider bay
         bx=JX0+0.18+i*0.51
         B.box(f'TR.jate.bin{i}',(bx,bx+0.42),(JY0+0.16,JY0+0.78),(Z_GRADE,Z_GRADE+1.10),'TVBlack')
-    wall_y(B,'TR.wW',Y0+0.06,X0,X1,zf,hw,0.12,mat='WallExt2',t1=0.142)            # west long wall
+    wall_y(B,'TR.wW',Y0+0.06,X0,X1,zf,hw,0.12,mat='WallExt2',m1=-1)               # west long wall (a0 is the open bay end)
     wall_x(B,'TR.wS',X1-0.06,Y0,Y1,zf,hw,0.12,
-           ops=[W('win',-7.60,-6.10,1.55,2.15)],mat='WallExt2')          # rear gable wall + VAR
+           ops=[W('win',-7.60,-6.10,1.55,2.15)],mat='WallExt2',m0=1,m1=1)  # rear gable wall + VAR
            # window: 1.50 x 0.60, a wide low opening (owner).  It was 0.80 x 1.00, near square.
-    wall_x(B,'TR.var.n',Xv+0.06,Y0,Y1,zf,hw,0.12,mat='WallExt2',t0=0.142)         # VAR front wall
+    wall_x(B,'TR.var.n',Xv+0.06,Y0,Y1,zf,hw,0.12,mat='WallExt2',t0=0.142,m1=-1)   # VAR front wall (a0 butts TR.wW = T-junction)
     # inward=-1: the VAR interior is at -y here, so the liner must go on that side.  Left to
     # the building-centre guess it landed on the driveway face and this wall read white.
-    wall_y(B,'TR.var.e',Y1-0.06,Xv,X1,zf,hw,0.12,t0=0.142,t1=0.142,
+    wall_y(B,'TR.var.e',Y1-0.06,Xv,X1,zf,hw,0.12,m0=1,m1=1,
            ops=[W('door',5.80,6.70,0,2.55)],mat='WallExt2',inward=-1)     # VAR door to driveway
     # open bay: corner posts + partial white louver screen at the front-east
     for i,(px,py) in enumerate([(X0+0.02,Y1-0.18),(X0+0.02,Y0+0.06),(X0+3.22,Y1-0.18)]):
