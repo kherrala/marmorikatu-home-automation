@@ -60,11 +60,19 @@ def W(kind,a0,a1,zb=None,zt=None):
 # ConcreteW walls have no liner, so those trim by t alone.  Openings are unaffected:
 # ops are absolute coordinates, so only the first/last segment changes length.
 LINT=0.022   # liner thickness _wall adds on the room side of WallExt/WallExt2
-def wall_x(B,name,x,y0,y1,z0,h,t,ops=(),mat='WallInt',skirt=0.0,inward=None,t0=0.0,t1=0.0):
-    _wall(B,name,'x',x,y0+t0,y1-t1,z0,h,t,ops,mat,skirt,inward)
-def wall_y(B,name,y,x0,x1,z0,h,t,ops=(),mat='WallInt',skirt=0.0,inward=None,t0=0.0,t1=0.0):
-    _wall(B,name,'y',y,x0+t0,x1-t1,z0,h,t,ops,mat,skirt,inward)
-def _wall(B,name,axis,c,a0,a1,z0,h,t,ops,mat,skirt=0.0,inward=None):
+# m0/m1 MITER an end at 45° instead of a square butt: the wall's full-height end segment is
+# cut on the diagonal so its OUTER face runs all the way to the corner point and its INNER
+# face stops one thickness short, meeting the perpendicular wall's identical cut back-to-back
+# on the corner diagonal. The sign says which face extends to the corner: for an axis-'x' wall
+# +1 = the +x face, -1 = the -x face; for axis 'y', +1 = +y, -1 = -y. Always the EXTERIOR
+# face, so two walls meeting at an outside corner get opposite-looking signs that share one
+# diagonal (e.g. wS.notch m1=-1 + wE m0=+1 at plan 16.98,3.30). A mitered end replaces the old
+# t0/t1 butt-trim — pass one or the other, not both.
+def wall_x(B,name,x,y0,y1,z0,h,t,ops=(),mat='WallInt',skirt=0.0,inward=None,t0=0.0,t1=0.0,m0=0,m1=0):
+    _wall(B,name,'x',x,y0+t0,y1-t1,z0,h,t,ops,mat,skirt,inward,m0,m1)
+def wall_y(B,name,y,x0,x1,z0,h,t,ops=(),mat='WallInt',skirt=0.0,inward=None,t0=0.0,t1=0.0,m0=0,m1=0):
+    _wall(B,name,'y',y,x0+t0,x1-t1,z0,h,t,ops,mat,skirt,inward,m0,m1)
+def _wall(B,name,axis,c,a0,a1,z0,h,t,ops,mat,skirt=0.0,inward=None,m0=0,m1=0):
     ops = sorted(ops,key=lambda o:o[1]); cur=a0; i=0
     # exterior walls get a thin white liner on the room side (texture stays outside).
     # `inward` is +1/-1 towards the room and normally falls out of which side of the building
@@ -81,22 +89,39 @@ def _wall(B,name,axis,c,a0,a1,z0,h,t,ops,mat,skirt=0.0,inward=None):
             inward=1 if c<ctr else -1
         sd=inward
         lin=c+sd*(t/2+0.011)
-    def emit(nm,lo,hi,zb,zt):
+    def emit(nm,lo,hi,zb,zt,mlo=0,mhi=0):
         if hi-lo<=0.005 or zt-zb<=0.005: return
-        if axis=='x': B.box(nm,(c-t/2,c+t/2),(lo,hi),(z0+zb,z0+zt),mat)
-        else:         B.box(nm,(lo,hi),(c-t/2,c+t/2),(z0+zb,z0+zt),mat)
+        mit = bool(mlo or mhi)
+        if mit:
+            # mitered end(s): the structural piece is a slab whose footprint is cut on the
+            # 45° diagonal(s). The extending face reaches the raw end; the other retracts t.
+            if axis=='x':
+                xm,xp=c-t/2,c+t/2
+                ylo_m=lo+(t if mlo==1 else 0); ylo_p=lo+(t if mlo==-1 else 0)
+                yhi_m=hi-(t if mhi==1 else 0); yhi_p=hi-(t if mhi==-1 else 0)
+                poly=[(xm,ylo_m),(xp,ylo_p),(xp,yhi_p),(xm,yhi_m)]
+            else:
+                ym,yp=c-t/2,c+t/2
+                xlo_m=lo+(t if mlo==1 else 0); xlo_p=lo+(t if mlo==-1 else 0)
+                xhi_m=hi-(t if mhi==1 else 0); xhi_p=hi-(t if mhi==-1 else 0)
+                poly=[(xlo_m,ym),(xhi_m,ym),(xhi_p,yp),(xlo_p,yp)]
+            B.slab(nm,poly,z0+zb,z0+zt,mat)
+        elif axis=='x': B.box(nm,(c-t/2,c+t/2),(lo,hi),(z0+zb,z0+zt),mat)
+        else:           B.box(nm,(lo,hi),(c-t/2,c+t/2),(z0+zb,z0+zt),mat)
         # cladding skirt: the same board carried below z0 over the slab edge, 6 mm proud of
         # the wall plane so it is not coplanar with the slab face it hangs in front of.
         # Only pieces that actually reach z0 get one, which breaks it at every doorway.
-        if skirt>0.005 and sd is not None and zb<=1e-9:
+        # Skipped on a mitered end — the skirt is a square board and would poke past the cut.
+        if skirt>0.005 and sd is not None and zb<=1e-9 and not mit:
             s0,s1 = sorted((c-sd*(t/2+0.006), c-sd*(t/2-0.060)))
             if axis=='x': B.box(nm+'.clad',(s0,s1),(lo,hi),(z0-skirt,z0),mat)
             else:         B.box(nm+'.clad',(lo,hi),(s0,s1),(z0-skirt,z0),mat)
         if lin is not None:
             # Pull the liner back from the wall's own ends. Otherwise its end cap lands exactly on
             # the perpendicular facade's outer plane and shows as a white stripe near the corner.
-            llo = lo+0.02 if abs(lo-a0)<1e-9 else lo
-            lhi = hi-0.02 if abs(hi-a1)<1e-9 else hi
+            # A mitered end pulls it back a full thickness so it stays behind the diagonal cut.
+            llo = lo+(t+LINT if mlo else (0.02 if abs(lo-a0)<1e-9 else 0))
+            lhi = hi-(t+LINT if mhi else (0.02 if abs(hi-a1)<1e-9 else 0))
             if lhi-llo>0.005:
                 if axis=='x': B.box(nm+'.lin',(lin-0.011,lin+0.011),(llo,lhi),(z0+zb,z0+zt),'WallInt')
                 else:         B.box(nm+'.lin',(llo,lhi),(lin-0.011,lin+0.011),(z0+zb,z0+zt),'WallInt')
@@ -106,7 +131,7 @@ def _wall(B,name,axis,c,a0,a1,z0,h,t,ops,mat,skirt=0.0,inward=None):
         if axis=='x': B.box(nm,(c-t/2-0.015,c+t/2+0.015),(lo,hi),(z0+zb,z0+zt),'Frame')
         else:         B.box(nm,(lo,hi),(c-t/2-0.015,c+t/2+0.015),(z0+zb,z0+zt),'Frame')
     for (kind,o0,o1,zb,zt) in ops:
-        emit(f'{name}.seg{i}',cur,o0,0,h); i+=1
+        emit(f'{name}.seg{i}',cur,o0,0,h,mlo=(m0 if abs(cur-a0)<1e-9 else 0)); i+=1
         emit(f'{name}.sill{i}',o0,o1,0,zb)
         emit(f'{name}.lint{i}',o0,o1,zt,h)
         g=0.03
@@ -126,7 +151,7 @@ def _wall(B,name,axis,c,a0,a1,z0,h,t,ops,mat,skirt=0.0,inward=None):
         frame(f'{name}.{tag}T{i}',o0+f,o1-f,zt-f,zt)
         if kind=='win': frame(f'{name}.{tag}B{i}',o0+f,o1-f,zb,zb+f)
         cur=o1
-    emit(f'{name}.seg{i}',cur,a1,0,h)
+    emit(f'{name}.seg{i}',cur,a1,0,h,mlo=(m0 if abs(cur-a0)<1e-9 else 0),mhi=m1)
 
 def face(B,nm,axis,fc,ind,a0,a1,z0,z1,mat='Frame',pr=0.015,dp=0.030):
     """Board applied flat to an exterior wall face.
@@ -248,22 +273,22 @@ def build_krs1(B):
     #                        ITA    x=(547.5-ptx)/S    z=(697.70-pty)/S-0.08
     #                        POHJ   y=36.651-ptx/S     z=(686.95-pty)/S-0.08     (S=28.3465 pt/m)
     # Ground-floor head height is a constant 2.160 m on every facade.
-    wall_y(B,'F1.wS.blk',0+e,0,10.98,0,H_1E,EXT,mat='WallExt',skirt=-Z_CLAD,t0=EXT+LINT,ops=[
+    wall_y(B,'F1.wS.blk',0+e,0,10.98,0,H_1E,EXT,mat='WallExt',skirt=-Z_CLAD,m0=-1,ops=[
         W('win',1.640,2.739,0.74,1.25),                      # MH: strip window inside the slat column
         W('glassdoor',4.889,5.203,0,2.16),                   # entrance sidelight (left of the leaf)
         W('door',5.203,6.230,0,2.16),                        # front door leaf (4 panels, LANSI elev)
         W('win',8.340,9.440,0.74,1.25)])                     # kitchen: strip window inside the slat column
-    wall_y(B,'F1.wS.liv',0+e,10.98,14.28,0,H_L,EXT,mat='WallExt',skirt=-Z_CLAD,t1=EXT+LINT,ops=[
+    wall_y(B,'F1.wS.liv',0+e,10.98,14.28,0,H_L,EXT,mat='WallExt',skirt=-Z_CLAD,m1=-1,ops=[
         W('win',11.291,12.090,0.59,2.16),                    # RUOKAILU glazing: three panes,
         W('win',12.190,12.989,0.59,2.16),                    # mullions 12.090-12.190 and
         W('win',13.090,13.891,0.59,2.16)])                   # 12.989-13.090 (LANSI elev)
-    wall_x(B,'F1.wE.din',14.28-e,0,3.30,0,H_L,EXT,mat='WallExt',skirt=-Z_CLAD,ops=[
+    wall_x(B,'F1.wE.din',14.28-e,0,3.30,0,H_L,EXT,mat='WallExt',skirt=-Z_CLAD,m0=1,ops=[
         W('win',0.390,1.191,0.59,2.16),W('win',1.289,2.090,0.59,2.16),
         W('glassdoor',2.284,3.194,0,2.16)])                  # terrace door at notch corner (ETELA elev)
-    wall_y(B,'F1.wS.notch',3.30+e,14.28,16.98,0,H_L,EXT,mat='WallExt',skirt=-Z_CLAD,t1=EXT+LINT,ops=[
+    wall_y(B,'F1.wS.notch',3.30+e,14.28,16.98,0,H_L,EXT,mat='WallExt',skirt=-Z_CLAD,m1=-1,ops=[
         W('win',14.289,15.390,0.40,2.16),                    # OH glazing over the terrace, two panes,
         W('win',15.490,16.589,0.40,2.16)])                   # mullion 15.390-15.490 (LANSI elev)
-    wall_x(B,'F1.wE',16.98-e,3.30,7.98,0,H_L,EXT,mat='WallExt',skirt=-Z_CLAD,ops=[
+    wall_x(B,'F1.wE',16.98-e,3.30,7.98,0,H_L,EXT,mat='WallExt',skirt=-Z_CLAD,m0=1,m1=1,ops=[
         W('win',3.690,4.791,0.40,2.16),                      # OH south glazing, three panes,
         W('win',4.889,5.990,0.40,2.16),                      # mullions 4.791-4.889 and
         W('win',6.091,7.190,0.40,2.16)])                     # 5.990-6.091 (ETELA elev)
@@ -298,9 +323,9 @@ def build_krs1(B):
     face(B,'F1.head.din1' ,'x',14.28,-1,-0.07 , 2.106,2.16,2.206,pr=0.075)
     face(B,'F1.head.din2' ,'x',14.28,-1, 2.272, 3.210,2.16,2.206,pr=0.075)
     face(B,'F1.head.wE'   ,'x',16.98,-1, 3.277, 7.207,2.16,2.206,pr=0.075)
-    wall_y(B,'F1.wN.liv',7.98-e,10.98,16.98,0,H_L,EXT,mat='WallExt',skirt=-Z_CLAD,t1=EXT+LINT,
+    wall_y(B,'F1.wN.liv',7.98-e,10.98,16.98,0,H_L,EXT,mat='WallExt',skirt=-Z_CLAD,m1=1,
         ops=[W('win',11.839,12.940,1.65,2.16),W('win',14.540,15.640,1.65,2.16)])  # ITA: high strip band
-    wall_y(B,'F1.wN.blk',7.98-e,0,10.98,0,H_1E,EXT,mat='WallExt',skirt=-Z_CLAD,t0=EXT+LINT,ops=[
+    wall_y(B,'F1.wN.blk',7.98-e,0,10.98,0,H_1E,EXT,mat='WallExt',skirt=-Z_CLAD,m0=1,ops=[
         W('win',2.840,3.941,1.65,2.16),                      # PH: high short strip (ITA elev)
         W('win',7.040,7.541,0.74,2.16)])                     # KHH tall narrow strip (ITA elev)
     # East facade only: the cladding does not stop at Z_CLAD along this side.  The ground falls
@@ -392,7 +417,7 @@ def build_krs1(B):
     for i in range(ncr+1):
         cx=8.902+i*(11.051-8.902)/ncr
         B.box(f'F1.rlad.cg{i}',(cx-0.015,cx+0.015),(4.530,4.670),(7.300,7.330),'Metal')
-    wall_x(B,'F1.wW',0+e,0,7.98,0,H_1E,EXT,mat='WallExt',skirt=-Z_CLAD,ops=[
+    wall_x(B,'F1.wW',0+e,0,7.98,0,H_1E,EXT,mat='WallExt',skirt=-Z_CLAD,m0=-1,m1=-1,ops=[
         W('win',1.640,1.878,0.54,2.16),                      # MH north window, narrow pane, and
         W('win',1.977,2.739,0.54,2.16),                      # main pane; mullion 1.878-1.977 (POHJ elev)
         W('door',4.186,5.195,0,2.16),                        # TEKN exterior door (POHJOINEN elev)
