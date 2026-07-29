@@ -203,10 +203,9 @@ CATS: dict[str, Cat] = {
     # in that room — no-op until the Presence Engine publishes it).
     "circulation":Cat(True,  False, True,  True,  CIRCULATION_TIMEOUT_MIN, SHORT_HOLD_MIN,  "hall",         "motion"),
     "utility":    Cat(False, False, True,  True,  UTILITY_TIMEOUT_MIN,     SHORT_HOLD_MIN,  None,           "motion"),
-    # Work/storage room (KHH + attached varasto): motion auto-ON, held while
+    # KHH utility room (indoor): motion auto-ON via the snzb_khh PIR, held while
     # present, vacancy/duration/overnight/away-off. KHH has a window so it's
-    # daylight-gated; its windowless varasto light (61) is in WINDOWLESS_LIGHTS
-    # to auto-on any hour.
+    # daylight-gated.
     "workroom":   Cat(True,  False, True,  True,  UTILITY_TIMEOUT_MIN,     SHORT_HOLD_MIN,  None,           "motion"),
     "toilet":     Cat(True,  False, False, True,  TOILET_TIMEOUT_MIN,      SHORT_HOLD_MIN,  None,           "motion"),
     "bedroom":    Cat(True,  False, True,  True,  None,                    BEDROOM_HOLD_MIN,None,           "motion"),
@@ -232,7 +231,11 @@ LIGHT_ROOM: dict[int, str] = {
     25: "hall_up", 26: "hall_up", 3: "hall_up",               # upstairs hall/stairs (PIR); 3 = YK aula LED
     44: "wc_down", 45: "wc_down", 52: "wc_basement",          # WCs (PIR)
     29: "bath_up", 34: "bath_up",                             # upstairs bathroom (PIR)
-    6: "khh", 56: "khh", 61: "khh",                          # KHH (6,56) + attached varasto (61), one PIR
+    6: "khh", 56: "khh",                                     # KHH LED (6) + ceiling (56), one indoor PIR.
+    # NOTE: 61 "Varasto" is the detached AUTOKATOS (carport) storage — a separate
+    # outbuilding with NO sensor. It is deliberately NOT mapped here: linking it to
+    # the indoor KHH PIR lit the carport store whenever someone entered the utility
+    # room. It's a manual-on utility light (see CATEGORY_OF).
     22: "bedroom_seela", 28: "bedroom_aarni", 33: "bedroom_adults",  # bedrooms (PIR)
 }
 
@@ -242,7 +245,7 @@ LIGHT_ROOM: dict[int, str] = {
 # window, but its attached varasto 61 does not).
 #   44,45 = alakerta WC · 52 = kellari WC · 61 = varasto (borrows KHH's windowed sensor)
 WINDOWLESS_LIGHTS = set(
-    int(x) for x in os.environ.get("WINDOWLESS_LIGHTS", "44,45,52,61").split(",") if x.strip()
+    int(x) for x in os.environ.get("WINDOWLESS_LIGHTS", "44,45,52").split(",") if x.strip()
 )
 
 # Light index → category. Every index in LIGHT_LABELS is covered. Special-block
@@ -265,11 +268,13 @@ CATEGORY_OF: dict[int, str] = {
     3: "circulation", 25: "circulation", 26: "circulation", 35: "circulation", 37: "circulation", 42: "circulation",
     # UTILITY / CLOSET — windowless, forgotten-prone, manual-on (no room sensor).
     # 43 = KHH wardrobe (closet, stays manual); 53 = basement storage.
-    31: "utility", 36: "utility", 43: "utility", 53: "utility",
-    # WORKROOM — motion auto-on via the snzb_khh PIR (LIGHT_ROOM=khh). Only the
-    # KHH LED (6) + attached varasto (61) auto-on; the KHH ceiling (56) is
-    # secondary (manual-on, auto-off only) — user wants just the LED automatic.
-    6: "workroom", 61: "workroom",
+    # 61 "Varasto" = detached autokatos (carport) storage, no sensor → manual-on.
+    31: "utility", 36: "utility", 43: "utility", 53: "utility", 61: "utility",
+    # WORKROOM — motion auto-on via the snzb_khh indoor PIR (LIGHT_ROOM=khh). Only
+    # the KHH LED (6) auto-ons; the KHH ceiling (56) is secondary (manual-on,
+    # auto-off only) — user wants just the LED automatic. The autokatos varasto (61)
+    # is NOT here — it's a detached outbuilding, manual-on utility (see above).
+    6: "workroom",
     56: "secondary",
     # TOILET — WCs + mirror lights
     29: "toilet", 34: "toilet", 44: "toilet", 45: "toilet", 52: "toilet",

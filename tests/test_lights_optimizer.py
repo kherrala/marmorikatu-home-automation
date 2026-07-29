@@ -400,12 +400,17 @@ def test_windowless_wc_auto_ons_in_daylight(harness):
     assert (44, True, "auto_on_comfort") in harness["published"]
 
 
-def test_windowless_varasto_auto_ons_in_daylight(harness):
-    # Varasto (61) is windowless (WINDOWLESS_LIGHTS) → motion auto-on any hour.
-    assert 61 in lo.WINDOWLESS_LIGHTS
-    harness["state"]["presence_rooms"] = {"khh": True}
-    _eval(61, False, _local(2026, 6, 15, 13, 0), dark=False)
-    assert (61, True, "auto_on_comfort") in harness["published"]
+def test_autokatos_varasto_not_linked_to_indoor_khh_sensor(harness):
+    # REGRESSION: 61 "Varasto" is the DETACHED autokatos (carport) storage — it must
+    # NOT be driven by the indoor KHH PIR. It's manual-on utility: no room link, not
+    # windowless-auto-on, and KHH occupancy never turns it on.
+    assert lo.LIGHT_ROOM.get(61) is None
+    assert 61 not in lo.WINDOWLESS_LIGHTS
+    assert lo.CATEGORY_OF[61] == "utility"
+    assert lo.CATS["utility"].auto_on is False
+    harness["state"]["presence_rooms"] = {"khh": True}   # someone in the utility room
+    _eval(61, False, _local(2026, 1, 15, 18, 0), dark=True)
+    assert harness["published"] == []                    # carport store stays off
 
 
 def test_khh_ceiling_does_not_auto_on(harness):
