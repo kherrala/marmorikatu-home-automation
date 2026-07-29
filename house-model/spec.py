@@ -207,15 +207,15 @@ def build_kellari(B):
     B.floor='kellari'
     B.slab('K.slab',PK,Z_K-0.30,Z_K,'Concrete')
     t=KXT; h=H_K
-    wall_y(B,'K.wS',0.07+t/2,0.07,13.83,Z_K,h,t,mat='ConcreteW',t0=t)      # a1 butts K.wNW
+    wall_y(B,'K.wS',0.07+t/2,0.07,13.83,Z_K,h,t,mat='ConcreteW',m0=-1)     # a1 still butts K.wNW (its +x offset makes a miter there irregular)
     wall_x(B,'K.wNW',13.83+t/2,0.07,3.37,Z_K,h,t,          # notch west wall, exit door
            ops=[W('door',2.18,3.19,0,2.05)],mat='ConcreteW')
-    wall_y(B,'K.wNN',3.37+t/2,13.83,16.91,Z_K,h,t,mat='ConcreteW',t1=t)    # a0 butts K.wNW
+    wall_y(B,'K.wNN',3.37+t/2,13.83,16.91,Z_K,h,t,mat='ConcreteW',m1=-1)   # a0 butts K.wNW (inside corner)
     wall_x(B,'K.wE',16.91-t/2,3.37,7.91,Z_K,h,t,
-           ops=[W('win',5.08,6.18,1.75,2.30)],mat='ConcreteW')
-    wall_y(B,'K.wN',7.91-t/2,0.07,16.91,Z_K,h,t,t0=t,t1=t,
+           ops=[W('win',5.08,6.18,1.75,2.30)],mat='ConcreteW',m0=1,m1=1)
+    wall_y(B,'K.wN',7.91-t/2,0.07,16.91,Z_K,h,t,m0=1,m1=1,
            ops=[W('win',11.84,12.94,1.75,2.30),W('win',14.54,15.64,1.75,2.30)],mat='ConcreteW')
-    wall_x(B,'K.wW',0.07+t/2,0.07,7.91,Z_K,h,t,mat='ConcreteW')
+    wall_x(B,'K.wW',0.07+t/2,0.07,7.91,Z_K,h,t,mat='ConcreteW',m0=-1,m1=-1)
     wall_x(B,'K.div',10.805,0.41,7.57,Z_K,h,0.27,
            ops=[W('door',2.28,3.19,0,2.05)],mat='ConcreteW')
     # WC in the NW corner (built after the drawings; west side per owner)
@@ -1062,7 +1062,7 @@ def build_krs2(B):
     B.slab('F2.slab.c',[(10.68,5.50),(10.88,5.50),(10.88,7.88),(10.68,7.88)],2.56,Z_2,'Concrete')
     e=EXT/2; z=Z_2
     # 2krs openings all share one band: absolute z 3.550..5.169 = Z_2 + 0.540..2.159
-    wall_y(B,'F2.wS',0+e,0,10.98,z,H_2E,EXT,mat='WallExt2',t0=EXT+LINT,t1=EXT+LINT,ops=[
+    wall_y(B,'F2.wS',0+e,0,10.98,z,H_2E,EXT,mat='WallExt2',t0=EXT+LINT,t1=EXT+LINT,ops=[  # NB: gable-end wall — miter here clashes the roof gable prism (R.gable), left as butt
         W('win',1.644,2.773,0.54,2.16),                      # MH2 loft (mullion 1.912-2.014)
         W('win',4.392,5.489,0.54,2.16),                      # AULA pair (mullions 4.664-4.762
         W('win',5.623,6.724,0.54,2.16),                      #  and 6.452-6.650)
