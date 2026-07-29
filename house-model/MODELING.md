@@ -233,11 +233,40 @@ re-derive with §5 rather than duplicating them here.
 
 ## 8. Textures
 
-The exterior/wall maps are palette-matched Poly Haven CC0 scans; the **floors are
-procedural** — `mktex.py` builds them from FFT-filtered Gaussian noise so every map tiles
-seamlessly in both axes (the photo scans did not, and their repeat showed as straight lines
-across the big basement). Run `python3 mktex.py` (needs `numpy` + `Pillow`) to regenerate
-`tex/` and a `tex_sheet.png` contact sheet, then rebuild. See [`README.md`](README.md) §7
-for the material→map table, the scale/module rules, and the **512 px normal-map** rule
-(`mktex.py` enforces it via `NOR_PX = 512`; `ls -l tex/*_nor.jpg` over ~160 kB means it
-regressed to 1024 and quietly added ~1.5 MB to the GLB).
+Exterior/wall maps are palette-matched Poly Haven CC0 scans; the **floors are procedural** —
+`mktex.py` builds them from FFT-filtered Gaussian noise so every map tiles seamlessly in
+both axes (the photo scans did not, and their repeat showed as straight lines across the big
+basement). Run `python3 mktex.py` (needs `numpy` + `Pillow`) to regenerate `tex/` + a
+`tex_sheet.png` contact sheet, then rebuild.
+
+| material | map | authored square | reads as |
+|---|---|---|---|
+| `Wood` | `floor` | 3.0 m | matte-lacquered oak, 200 mm planks |
+| `Tile` | `tile` | 2.4 m | matte porcelain 300×600 mm, running bond |
+| `TileDark` | `tiledark` | 2.4 m | anthracite 300×300 mm porcelain (sauna / wet rooms) |
+| `ConcreteDark` | `cdark` | 4.0 m | dark sealed concrete — kellari VAR1 |
+| `ConcreteF` | `cfloor` | 4.0 m | pale concrete — kellari VAR2, TEKN, carport, terrace steps |
+| `Slat` | `vboard` | 1.92 m | white 120 mm vertical boards — the facade panels |
+
+Three rules keep these correct:
+
+1. **Scale.** Floors get world-space UVs (`u = x_m·s`, `v = y_m·s`), so a map authored for a
+   *T*-metre square must be listed in `TEXSETS` with `scale = 1/T` (`Wood` = 1/3.0, `Tile` =
+   1/2.4). Walls take the other mapping (`u = (x+y)·s`, `v = z·s`) — image *columns* run
+   along the facade, *rows* run up it. `vboard` stands its boards upright this way (stripes
+   across the columns, 1.92 m square = 16 boards of 120 mm), and nothing varies along `v` so
+   the vertical repeat is invisible at any panel height.
+2. **Module division.** A tiled pattern's module must divide the 1024 px canvas exactly or
+   the joints break at every repeat: 300×600 mm tiles are authored on a 2.4 m square
+   (4×8 = 256/128 px), not 3.0 m (which needs 204.8 px tiles → a 4 px sliver). Normal maps
+   are tangent-space OpenGL (+Y up), global strength 0.85.
+3. **Ship size — normals at 512 px.** Diffuse maps ship at 1024 px; normals are downsampled
+   to 512 (`mktex.py` does it in `save_nor`, `NOR_PX = 512`, *after* the derivative so the
+   relief keeps its authored slope). This is most of why the set is 2.8 MB not 4.2 MB. It
+   silently regressed to 1024 once and quietly added 1.45 MB to the GLB — **`ls -l
+   tex/*_nor.jpg` over ~160 kB means it happened again.**
+
+Where the facade boards *sit* is decided once, in `build_f1_walls`, next to the openings
+they frame (`F1.slat.*` split at the strip-window sill/head, `F1.ent.*` around the front
+door). Nothing downstream should add facade panels — a second eyeballed pair once z-fought
+into a doubled, stepped column (§6 catches this).

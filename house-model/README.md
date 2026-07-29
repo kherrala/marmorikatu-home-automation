@@ -8,7 +8,7 @@ photos. Levels +132.86 / +135.90 / +138.91, block ridge +143.40, living-wing rid
 
 | file | purpose |
 |---|---|
-| `marmorikatu.blend` | Blender scene — rebuild after editing `spec.py` (snippet below) |
+| `marmorikatu.blend` | Blender scene — rebuild after editing `spec.py` (see `MODELING.md`) |
 | `marmorikatu-house.glb` | The model (~7.1 MB, textured, y-up glTF) — Android/web |
 | `marmorikatu-house.usdz` | Same model for iOS/SceneKit (USD, Y-up, names preserved) |
 | `marmorikatu-3d.html` | Same viewer fully self-contained (offline / WebView-ready) |
@@ -17,27 +17,16 @@ photos. Levels +132.86 / +135.90 / +138.91, block ridge +143.40, living-wing rid
 | `viewer_template.html` / `pack.py` | Viewer template + packer that builds `marmorikatu-3d.html` |
 | `vendor/three.min.js` | three.js r128, inlined into the viewer by `pack.py` so no build step needs the network |
 | `tex/*.jpg` | PBR textures + tangent-space normal maps: exterior set (Poly Haven CC0, palette-matched: siding, pavers, concrete, brick, lawn) and the procedural set (`floor` oak, `tile`/`tiledark` ceramic, `cfloor`/`cdark` basement concrete, `vboard` white vertical cladding) |
-| `mktex.py` | Generates the procedural floor set — run it after changing a floor palette or module (§7) |
-| `check_dupes.py` | Duplicate-geometry sweep — run after touching a facade (§8) |
+| `mktex.py` | Generates the procedural floor textures (see `MODELING.md` §8) |
+| `check_dupes.py` | Duplicate-geometry sweep (see `MODELING.md` §6) |
 | `out/` | Packer staging area; the tracked copies live at this level and `pack.py` refreshes them |
 | `preview/` | Scratch renders. Not part of the contract; safe to delete |
 
-Full rebuild, two commands. In Blender's Python console:
-
-```python
-ns={}; BASE='/ABS/PATH/TO/house-model'   # absolute path to this folder
-exec(compile(open(BASE+'/bpy_backend.py').read(),'b','exec'),ns); ns['hk_run'](BASE); ns['hk_export'](BASE)
-```
-
-then in a shell, to rebuild the viewer and `cameras.json` from the fresh GLB:
-
-```sh
-cd house-model && python3 pack.py          # needs Pillow; writes out/ and the tracked copies
-```
-
-`hk_run` prints the object count — note it and watch it across edits; a number that moved
-without you meaning it to is the fastest signal that an edit did more than you thought. It
-drifts as the spec grows, so it isn't pinned here — your last build's number is the baseline.
+Rebuilding the model, changing geometry, and regenerating textures are maintainer tasks —
+the build loop, the `BlenderB` builder API and the drawing calibrations live in
+[`MODELING.md`](MODELING.md). The native-renderer sun/fill/ambient light rig is in
+[`LIGHTING.md`](LIGHTING.md). Everything below is the **consume-time contract**: what the
+model guarantees to whatever renders it.
 
 ---
 
@@ -133,6 +122,10 @@ off: intensity 0, sprite hidden. This is per-fixture stateful and costs no real 
 If you want true illumination for a *focused* room, attach ONE `PointLight` (intensity ~6,
 distance ~6) at the anchor of the room you're viewing — never all 41 at once.
 Viewer URL params for testing: `?lights=1` (all on), tap any fixture to toggle it.
+
+This is *fixture* state (a lamp's own glow). The scene's sun/fill/ambient rig that lights
+the whole model — the directions, ratios, and per-engine Filament/SceneKit setup — is a
+separate concern in [`LIGHTING.md`](LIGHTING.md).
 
 ## 4b. Floor heating (lattialämmitys)
 
@@ -257,57 +250,14 @@ or toggle the fixture — everything is addressable by name.
 * Mapping to the home-automation MCP: `list_lights` names ↔ `Light_<kerros>_<huone>` tokens;
   floors kellari/1krs/2krs match `set_lights_by_floor`.
 
-## 7. Textures
+## 7. Materials & textures
 
-Exterior and wall maps are palette-matched Poly Haven CC0 scans. The **floors are
-procedural**: `mktex.py` builds them from FFT-filtered Gaussian noise, so every map tiles
-perfectly in both axes with no seam — which the photo scans did not, and at floor scale
-their repeat showed as regular straight lines across the big basement store. Run
-`python3 mktex.py` (needs `numpy` + `Pillow`) to regenerate `tex/` and a `tex_sheet.png`
-contact sheet, then rebuild the scene.
-
-| material | map | authored square | reads as |
-|---|---|---|---|
-| `Wood` | `floor` | 3.0 m | light matte-lacquered oak, 200 mm planks in irregular stagger |
-| `Tile` | `tile` | 2.4 m | matte porcelain 300×600 mm, running bond, warm light grey |
-| `TileDark` | `tiledark` | 2.4 m | anthracite 300×300 mm stone-look porcelain (sauna / wet rooms) |
-| `ConcreteDark` | `cdark` | 4.0 m | dark sealed concrete — kellari VAR1 rec room |
-| `ConcreteF` | `cfloor` | 4.0 m | pale untreated concrete — kellari VAR2, TEKN, carport, terrace steps |
-| `Slat` | `vboard` | 1.92 m | white-painted 120 mm vertical boards — the facade panels around the windows |
-
-Two rules keep these correct. **(1) Scale.** `bpy_backend` gives floors world-space UVs
-(`u = x_m·s`, `v = y_m·s`), so a map authored for a *T* metre square must be listed in
-`TEXSETS` with `scale = 1/T` — the `Wood`/`Tile` entries are `1/3.0` and `1/2.4` for
-exactly this reason. **(2) Module division.** A tiled pattern's module must divide the
-1024 px canvas exactly, or the joint lines break at every repeat: 300×600 mm tiles are
-authored on a 2.4 m square (4×8 tiles = 256/128 px), not 3.0 m, which would need 204.8 px
-tiles and leave a 4 px sliver. Normal maps are tangent-space OpenGL (+Y up) at global
-strength 0.85, which is what Blender's Normal Map node and three.js both expect.
-
-Walls take the other mapping, `u = (x+y)·s`, `v = z·s`, so for a wall map the image
-**columns** run horizontally along the facade and the **rows** run up it. `vboard` uses
-that to stand its boards upright: the stripes are drawn across the columns, on a 1.92 m
-square holding exactly 16 boards of 120 mm (64 px each). Nothing in it varies along `v`,
-so the vertical repeat is invisible however tall the panel is.
-
-Where the boards sit is a separate question from what they look like, and it is decided
-once, in `build_f1_walls`, next to the openings they frame — `F1.slat.mh.*` and
-`F1.slat.kit.*` split at the strip windows' sill (0.74) and head (1.25), `F1.ent.*` around
-the front door, `F1.slat.n.*` on the pohjoinen gable. Nothing downstream should add facade
-panels: a second, eyeballed pair used to be re-added in the furniture pass 10 mm proud of
-these, and the two sets z-fought into what read as a doubled, stepped column that missed
-the glass line. See §8.
-
-**(3) Ship size.** Diffuse maps are authored and shipped at 1024 px; normal maps are
-downsampled to 512 px on the way out — `mktex.py` does this itself in `save_nor`
-(`NOR_PX = 512`), *after* taking the derivative, so the relief keeps its authored slope
-instead of being computed from a blurred height field. A normal map only carries
-low-frequency surface tilt here, so halving it is invisible at any camera distance the
-viewer allows, and it is most of the reason the whole texture set is 2.8 MB rather than
-4.2 MB. This rule is easy to lose: the procedural set was regenerated at some point
-without it and shipped six 1024 px normals, which quietly added 1.45 MB to the GLB and
-1.9 MB to the viewer before it was caught. If `ls -l tex/*_nor.jpg` shows anything much
-over 160 kB, that has happened again.
+Textures are baked into the GLB/USDZ — there is nothing to do at consume time. The material
+**names** the recipes above tint are the mesh material names: `WallExt`, `Glass`,
+`LightOff` (§4), `HeatOff`/`HeatPipe` (§4b), and the floor set `Wood`/`Tile`/`TileDark`/
+`ConcreteDark`/`ConcreteF`/`Slat`. Regenerating the procedural floor maps and the authoring
+rules (UV scale, tile-module division, the 512 px normal-map budget) are a maintainer task —
+[`MODELING.md`](MODELING.md) §8.
 
 ## 8. Working on the model
 
