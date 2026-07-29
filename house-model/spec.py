@@ -1062,17 +1062,17 @@ def build_krs2(B):
     B.slab('F2.slab.c',[(10.68,5.50),(10.88,5.50),(10.88,7.88),(10.68,7.88)],2.56,Z_2,'Concrete')
     e=EXT/2; z=Z_2
     # 2krs openings all share one band: absolute z 3.550..5.169 = Z_2 + 0.540..2.159
-    wall_y(B,'F2.wS',0+e,0,10.98,z,H_2E,EXT,mat='WallExt2',t0=EXT+LINT,t1=EXT+LINT,ops=[  # NB: gable-end wall — miter here clashes the roof gable prism (R.gable), left as butt
+    wall_y(B,'F2.wS',0+e,0,10.98,z,H_2E,EXT,mat='WallExt2',m0=-1,m1=-1,ops=[
         W('win',1.644,2.773,0.54,2.16),                      # MH2 loft (mullion 1.912-2.014)
         W('win',4.392,5.489,0.54,2.16),                      # AULA pair (mullions 4.664-4.762
         W('win',5.623,6.724,0.54,2.16),                      #  and 6.452-6.650)
         W('win',8.343,9.472,0.54,2.16)])                     # MH3 (mullion 9.105-9.204)
-    wall_x(B,'F2.wE',10.98-e,0,7.98,z,H_2,EXT,mat='WallExt2',
+    wall_x(B,'F2.wE',10.98-e,0,7.98,z,H_2,EXT,mat='WallExt2',m0=1,m1=1,
         ops=[W('win',1.53,2.25,0.90,2.35)])          # MH3 gable window: narrow + high (user)
-    wall_y(B,'F2.wN',7.98-e,0,10.98,z,H_2E,EXT,mat='WallExt2',t0=EXT+LINT,t1=EXT+LINT,
+    wall_y(B,'F2.wN',7.98-e,0,10.98,z,H_2E,EXT,mat='WallExt2',m0=1,m1=1,
         ops=[W('win',7.040,7.541,0.74,2.16)])                # KPH tall narrow strip (ITA elev)
     B.box('F2.slat.c',(7.04,7.54),(7.97,8.05),(3.01,3.748),'Slat')  # LP slat between the stacked windows
-    wall_x(B,'F2.wW',0+e,0,7.98,z,H_2,EXT,mat='WallExt2',ops=[
+    wall_x(B,'F2.wW',0+e,0,7.98,z,H_2,EXT,mat='WallExt2',m0=-1,m1=-1,ops=[
         W('win',1.640,1.878,0.54,2.16),                      # MH2 north: narrow pane, then main pane,
         W('win',1.977,2.739,0.54,2.16),                      #  mullion 1.878-1.977 (POHJ elev)
         W('win',4.816,5.346,0.30,2.16),                      # balcony flank A  (sills hidden behind the
@@ -1237,9 +1237,13 @@ def build_roof(B):
     def uz(y): return wz(y)-TH                         # wing  deck UNDERSIDE
     B.roofquad('R.main.s',[(-0.45,YS,mz(YS)),(11.43,YS,mz(YS)),(11.43,yr,mz(yr)),(-0.45,yr,mz(yr))],TH,'Roof')
     B.roofquad('R.main.n',[(-0.45,yr,mz(yr)),(11.43,yr,mz(yr)),(11.43,YN,mz(YN)),(-0.45,YN,mz(YN))],TH,'Roof')
+    # y-ends inset one wall thickness so the gable tucks between the now-mitered krs2
+    # eave-wall corners (F2.wS/F2.wN) instead of overlapping them; still fully under the
+    # roof overhang (YS -0.699 / YN 8.681), so no exposed gap.
+    gy=EXT
     for nm,gx in [('w',0.125),('e',10.855)]:
         B.prism(f'R.gable.{nm}',gx-0.125,gx+0.125,
-                [(0.0,5.59),(7.98,5.59),(7.98,mz(7.98)-TH),(yr,mz(yr)-TH),(0.0,mz(0.0)-TH)],'WallExt2',axis='x')
+                [(gy,5.59),(7.98-gy,5.59),(7.98-gy,mz(7.98-gy)-TH),(yr,mz(yr)-TH),(gy,mz(gy)-TH)],'WallExt2',axis='x')
     # wing: flat interior ceiling at 2.60, cold roof space above, same gable over it
     B.slab('R.wing.ceil',[(11.00,0.10),(14.18,0.10),(14.18,3.40),(16.88,3.40),(16.88,7.88),(11.00,7.88)],2.60,2.66,'WallInt')
     B.roofquad('R.wing.s',[(10.98,YS,wz(YS)),(17.53,YS,wz(YS)),(17.53,yr,wz(yr)),(10.98,yr,wz(yr))],TH,'Roof')
