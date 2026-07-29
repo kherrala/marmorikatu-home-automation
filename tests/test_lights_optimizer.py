@@ -413,6 +413,25 @@ def test_autokatos_varasto_not_linked_to_indoor_khh_sensor(harness):
     assert harness["published"] == []                    # carport store stays off
 
 
+def test_aula_led_not_auto_on_by_hall_sensor(harness):
+    # Only the aula kattovalo (26) auto-ons from the upstairs-hall PIR; the aula LED
+    # (3) is manual-on secondary, fully unlinked from the sensor.
+    assert lo.CATEGORY_OF[3] == "secondary"
+    assert lo.CATS["secondary"].auto_on is False
+    assert lo.LIGHT_ROOM.get(3) is None
+    harness["state"]["presence_rooms"] = {"hall_up": True}
+    _eval(3, False, _local(2026, 1, 15, 18, 0), dark=True)
+    assert harness["published"] == []
+
+
+def test_aula_kattovalo_auto_ons_by_hall_sensor(harness):
+    assert lo.CATEGORY_OF[26] == "circulation"
+    assert lo.LIGHT_ROOM[26] == "hall_up"
+    harness["state"]["presence_rooms"] = {"hall_up": True}
+    _eval(26, False, _local(2026, 1, 15, 18, 0), dark=True)
+    assert (26, True, "auto_on_comfort") in harness["published"]
+
+
 def test_khh_ceiling_does_not_auto_on(harness):
     # Only the KHH LED (6) auto-ons; the ceiling (56) is secondary (manual-on).
     assert lo.CATEGORY_OF[56] == "secondary"

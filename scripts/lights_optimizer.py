@@ -109,9 +109,13 @@ BLE_WINDOW_MIN = int(os.environ.get("BLE_WINDOW_MIN", "5"))
 # the activity fallback until real occupancy comes from the Presence Service.
 BLE_AWAY_ENABLED = os.environ.get("BLE_AWAY_ENABLED", "0") in ("1", "true", "yes")
 
-# Idempotent reconciler: never reverse a light within MIN_DWELL_SECONDS of our
-# own last command (hard floor against flapping; sits above the ~13 s PLC latency).
-MIN_DWELL_SECONDS = float(os.environ.get("MIN_DWELL_SECONDS", "300"))
+# Idempotent reconciler: don't re-issue/reverse a light within MIN_DWELL_SECONDS of
+# our own last command, so a stale state read during the command→actuate→broadcast
+# round-trip (~13 s PLC actuation + ~13 s state broadcast) can't cause a double
+# command. It only needs to cover that round-trip — NOT act as a long lockout. The
+# old 300 s (5 min) value meant re-entering a room within 5 min of an auto-off was
+# ignored ("nothing happens on the second visit"): a real bug for bathrooms/halls.
+MIN_DWELL_SECONDS = float(os.environ.get("MIN_DWELL_SECONDS", "30"))
 
 # Presence-Service contract (Core C). Consumed once the Presence Engine writes a
 # `presence` measurement for a room; until then presence_for_room() returns None
@@ -228,7 +232,8 @@ LIGHT_ROOM: dict[int, str] = {
     17: "office",                                              # office (future FP300)
     49: "theater", 50: "theater", 51: "theater",              # basement theater
     35: "hall_down", 37: "hall_down",                         # eteinen + tuulikaappi (PIR). Portaikko 42 excluded — the hall_down sensor is nowhere near it
-    25: "hall_up", 26: "hall_up", 3: "hall_up",               # upstairs hall/stairs (PIR); 3 = YK aula LED
+    25: "hall_up", 26: "hall_up",                             # upstairs hall kattovalo (26) + stairs (25), PIR.
+    # 3 "Yläkerta aula LED" intentionally omitted — manual-on, no sensor link.
     44: "wc_down", 45: "wc_down", 52: "wc_basement",          # WCs (PIR)
     29: "bath_up", 34: "bath_up",                             # upstairs bathroom (PIR)
     6: "khh", 56: "khh",                                     # KHH LED (6) + ceiling (56), one indoor PIR.
@@ -256,16 +261,18 @@ CATEGORY_OF: dict[int, str] = {
     8: "living", 19: "living", 40: "living", 54: "living",
     # SECONDARY — full room light, manual-on only (no auto-on), still auto-off.
     # 5 = Olohuone LED: user wants only the kattovalo (54/55) to auto-on.
-    5: "secondary",
+    # 3 = Yläkerta aula LED: manual-on, NOT sensor-driven — user wants only the
+    # aula kattovalo (26) to auto-on from the upstairs-hall PIR, not the LED too.
+    3: "secondary", 5: "secondary",
     # WINDOW — decorative window lights, pointless in daylight
     18: "window", 20: "window", 23: "window", 24: "window",
     30: "window", 32: "window", 41: "window", 46: "window",
     # ACCENT — kitchen cabinet LED strips only: 2 = mood (above cupboards),
     # 7 = task (under-cabinet). Full-room LEDs (3/5/6) are NOT accent — see below.
     2: "accent", 7: "accent",
-    # CIRCULATION — halls, entry, staircases (transient). 3 = YK aula LED, a full
-    # upstairs-hall light.
-    3: "circulation", 25: "circulation", 26: "circulation", 35: "circulation", 37: "circulation", 42: "circulation",
+    # CIRCULATION — halls, entry, staircases (transient). 26 = aula kattovalo,
+    # 25 = aula stairs. The aula LED (3) is deliberately NOT here (secondary above).
+    25: "circulation", 26: "circulation", 35: "circulation", 37: "circulation", 42: "circulation",
     # UTILITY / CLOSET — windowless, forgotten-prone, manual-on (no room sensor).
     # 43 = KHH wardrobe (closet, stays manual); 53 = basement storage.
     # 61 "Varasto" = detached autokatos (carport) storage, no sensor → manual-on.
