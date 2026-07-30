@@ -114,14 +114,22 @@ def _wall(B,name,axis,c,a0,a1,z0,h,t,ops,mat,skirt=0.0,inward=None,m0=0,m1=0):
         # Skipped on a mitered end — the skirt is a square board and would poke past the cut.
         if skirt>0.005 and sd is not None and zb<=1e-9 and not mit:
             s0,s1 = sorted((c-sd*(t/2+0.006), c-sd*(t/2-0.060)))
-            if axis=='x': B.box(nm+'.clad',(s0,s1),(lo,hi),(z0-skirt,z0),mat)
-            else:         B.box(nm+'.clad',(lo,hi),(s0,s1),(z0-skirt,z0),mat)
+            # Top runs 2 mm INTO the wall rather than stopping flush on z0.  The skirt's inboard
+            # 60 mm sits over the slab, so a top face exactly on z0 is coplanar with the slab
+            # top and z-fights.  Harmless everywhere the slab stops at the wall's outer face,
+            # which is why it went unnoticed -- but F1.wS.notch runs through the middle of the
+            # footprint, where the slab continues past it on both sides.  The 2 mm overlap is
+            # buried inside the wall above.
+            if axis=='x': B.box(nm+'.clad',(s0,s1),(lo,hi),(z0-skirt,z0+0.002),mat)
+            else:         B.box(nm+'.clad',(lo,hi),(s0,s1),(z0-skirt,z0+0.002),mat)
         if lin is not None:
             # Pull the liner back from the wall's own ends. Otherwise its end cap lands exactly on
             # the perpendicular facade's outer plane and shows as a white stripe near the corner.
             # A mitered end pulls it back a full thickness so it stays behind the diagonal cut.
-            llo = lo+(t+LINT if mlo else (0.02 if abs(lo-a0)<1e-9 else 0))
-            lhi = hi-(t+LINT if mhi else (0.02 if abs(hi-a1)<1e-9 else 0))
+            # At a mitered end pull the liner back exactly one wall thickness so it reaches
+            # the INTERIOR corner (where the two inner faces meet) instead of stopping short.
+            llo = lo+(t if mlo else (0.02 if abs(lo-a0)<1e-9 else 0))
+            lhi = hi-(t if mhi else (0.02 if abs(hi-a1)<1e-9 else 0))
             if lhi-llo>0.005:
                 if axis=='x': B.box(nm+'.lin',(lin-0.011,lin+0.011),(llo,lhi),(z0+zb,z0+zt),'WallInt')
                 else:         B.box(nm+'.lin',(llo,lhi),(lin-0.011,lin+0.011),(z0+zb,z0+zt),'WallInt')
@@ -282,10 +290,17 @@ def build_krs1(B):
         W('win',11.291,12.090,0.59,2.16),                    # RUOKAILU glazing: three panes,
         W('win',12.190,12.989,0.59,2.16),                    # mullions 12.090-12.190 and
         W('win',13.090,13.891,0.59,2.16)])                   # 12.989-13.090 (LANSI elev)
-    wall_x(B,'F1.wE.din',14.28-e,0,3.30,0,H_L,EXT,mat='WallExt',skirt=-Z_CLAD,m0=1,ops=[
+    wall_x(B,'F1.wE.din',14.28-e,0,3.30,0,H_L,EXT,mat='WallExt',skirt=-Z_CLAD,m0=1,t1=-EXT,m1=-1,ops=[
         W('win',0.390,1.191,0.59,2.16),W('win',1.289,2.090,0.59,2.16),
         W('glassdoor',2.284,3.194,0,2.16)])                  # terrace door at notch corner (ETELA elev)
-    wall_y(B,'F1.wS.notch',3.30+e,14.28,16.98,0,H_L,EXT,mat='WallExt',skirt=-Z_CLAD,m1=-1,ops=[
+    # The notch corner at (14.28,3.30) IS mitered, but it is a REFLEX corner -- 270 deg through
+    # the solid, 90 deg through the notch void -- so the miter runs the other way from a normal
+    # external corner: each wall's face on the void side stops on the corner line while its far
+    # face runs on past it, and the two meet on the diagonal (14.28,3.30)-(13.98,3.60).  Hence
+    # t0/t1 = -EXT to reach the far side, and signs opposite to the convex corners above.
+    # Getting this wrong in either direction leaves x 13.98..14.28 by y 3.30..3.60 belonging to
+    # neither wall, which is the 300 x 300 hole that was open here.
+    wall_y(B,'F1.wS.notch',3.30+e,14.28,16.98,0,H_L,EXT,mat='WallExt',skirt=-Z_CLAD,m1=-1,t0=-EXT,m0=1,ops=[
         W('win',14.289,15.390,0.40,2.16),                    # OH glazing over the terrace, two panes,
         W('win',15.490,16.589,0.40,2.16)])                   # mullion 15.390-15.490 (LANSI elev)
     wall_x(B,'F1.wE',16.98-e,3.30,7.98,0,H_L,EXT,mat='WallExt',skirt=-Z_CLAD,m0=1,m1=1,ops=[
@@ -432,13 +447,22 @@ def build_krs1(B):
     wall_x(B,'F1.khh_vh',7.92,5.60,7.68,0,H_1,INT,ops=[W('door',6.35,7.10)])  # VH entered from KHH
     wall_x(B,'F1.vh_st',9.64,5.55,7.68,0,H_1,INT)
     wall_x(B,'F1.st_liv',10.84,5.52,7.68,0,2.56,INT)
-    wall_x(B,'F1.tekn_wc',2.49,3.90,5.45,0,H_1,INT)
-    wall_x(B,'F1.wc_et',4.10,3.90,5.45,0,H_1,INT,ops=[W('door',4.35,5.10)])
-    wall_y(B,'F1.mh_n',3.90,0.30,4.10,0,H_1,INT)
-    wall_x(B,'F1.mh_e',3.75,0.30,3.90,0,H_1,INT,ops=[W('door',2.55,3.40)])
-    wall_y(B,'F1.tk_n',2.50,3.75,6.34,0,H_1,INT,ops=[W('door',5.00,5.90)])
-    wall_y(B,'F1.vh2_n',2.50,6.34,7.92,0,H_1,INT)
-    wall_x(B,'F1.tk_vh2',6.34,0.30,2.45,0,H_1,INT,ops=[W('door',0.95,1.70)])  # VH2 from the vestibule
+    wall_x(B,'F1.tekn_wc',2.49,4.083,5.45,0,H_1,INT)
+    wall_x(B,'F1.wc_et',4.10,4.083,5.45,0,H_1,INT,ops=[W('door',4.35,5.10)])
+    # Plan: y 4.083, and it runs east to mh_e's far face so MH closes and mh_e has something
+    # to butt into.  At y 3.90 / x..4.10 it stopped 313 mm short of the relocated mh_e.
+    wall_y(B,'F1.mh_n',4.083,0.30,4.413,0,H_1,INT)   # ends on mh_e's centreline; cap buried
+    # 1krs_pohja50_1: faces at x 4.373 / 4.452 -> centre 4.413, running y 0.30..4.07 where it
+    # meets F1.mh_n.  The model had it at 3.750 -- 663 mm too far north -- which is what made the
+    # entrance lobby read as an L: it left a 1.00 m passage west of the vestibule that is not on
+    # the plan.  With the wall here, TK's west edge lands on it and ET comes out rectangular.
+    wall_x(B,'F1.mh_e',4.413,0.30,4.083,0,H_1,INT,ops=[W('door',2.55,3.40)])
+    # Plan: faces y 2.284 / 2.364 -> centre 2.324, x 4.46..7.87.  Both ends are T-butts, not
+    # corners -- 4.46 lands on mh_e's face (4.452) and 7.87 on kit_et's (7.874) -- so neither is
+    # mitered.  The model ran this 176 mm north and started it 710 mm too far north as well.
+    wall_y(B,'F1.tk_n',2.324,4.463,6.34,0,H_1,INT,ops=[W('door',5.00,5.90)])
+    wall_y(B,'F1.vh2_n',2.324,6.34,7.87,0,H_1,INT)
+    wall_x(B,'F1.tk_vh2',6.34,0.30,2.274,0,H_1,INT,ops=[W('door',0.95,1.70)])  # VH2 from the vestibule
     wall_x(B,'F1.kit_et',7.92,0.77,4.07,0,H_1,INT)           # kitchen wall, passage N of it
     # rooms
     R=B.room
@@ -447,12 +471,14 @@ def build_krs1(B):
     R('Room_1krs_KHH',[(4.49,5.65),(7.87,5.65),(7.87,7.68),(4.49,7.68)],'Tile')
     R('Room_1krs_VH',[(7.97,5.65),(9.59,5.65),(9.59,7.68),(7.97,7.68)],'Wood')
     R('Room_1krs_PORRAS',[(9.69,5.55),(10.79,5.55),(10.79,7.68),(9.69,7.68)],'Wood')
-    R('Room_1krs_TEKN',[(0.30,3.95),(2.44,3.95),(2.44,5.40),(0.30,5.40)],'ConcreteF')
-    R('Room_1krs_WC',[(2.54,3.95),(4.05,3.95),(4.05,5.40),(2.54,5.40)],'Tile')
-    R('Room_1krs_MH',[(0.30,0.30),(3.70,0.30),(3.70,3.85),(0.30,3.85)],'Wood')
-    R('Room_1krs_TK',[(4.80,0.30),(6.29,0.30),(6.29,2.45),(4.80,2.45)],'Tile')
-    R('Room_1krs_VH2',[(6.39,0.30),(7.87,0.30),(7.87,2.45),(6.39,2.45)],'Wood')
-    R('Room_1krs_ET',[(3.80,0.30),(4.75,0.30),(4.75,2.55),(7.87,2.55),(7.87,5.40),(3.80,5.40)],'Wood')  # one L-shaped lobby
+    R('Room_1krs_TEKN',[(0.30,4.133),(2.44,4.133),(2.44,5.40),(0.30,5.40)],'ConcreteF')
+    R('Room_1krs_WC',[(2.54,4.133),(4.05,4.133),(4.05,5.40),(2.54,5.40)],'Tile')
+    R('Room_1krs_MH',[(0.30,0.30),(4.363,0.30),(4.363,4.033),(0.30,4.033)],'Wood')
+    R('Room_1krs_TK',[(4.463,0.30),(6.29,0.30),(6.29,2.274),(4.463,2.274)],'Tile')
+    R('Room_1krs_VH2',[(6.39,0.30),(7.87,0.30),(7.87,2.274),(6.39,2.274)],'Wood')
+    # Rectangular, as the plan draws it.  The L came from mh_e sitting 663 mm north, which
+    # opened a 1.00 m passage between it and the vestibule that does not exist on the drawing.
+    R('Room_1krs_ET',[(4.463,2.374),(7.87,2.374),(7.87,5.40),(4.463,5.40)],'Wood')
     # open-plan wing split into three zones (no walls) so lights map per area
     R('Room_1krs_KT',[(7.97,0.30),(10.92,0.30),(10.92,5.52),(7.97,5.52)],'Wood')
     R('Room_1krs_RUOKAILU',[(10.96,0.30),(14.06,0.30),(14.06,3.43),(10.96,3.43)],'Wood')
@@ -510,9 +536,9 @@ def build_krs1(B):
     B.cyl('F1.mh.side',1.80,1.05,0,0.50,0.25,'WoodFurn')
     wardrobe(B,'F1.mh.ward',2.73,3.12,0.90,2.60,2.10)                   # per plan, e-wall closet
     plant(B,'F1.mh.plant',3.30,3.40,0.8)
-    B.box('F1.tk.bench',(3.82,4.16),(0.50,2.10),(0.15,0.48),'WoodFurn')   # entry bench on the west wall
-    B.box('F1.tk.rack',(3.81,3.87),(0.60,2.00),(1.60,1.92),'WoodFurn')    # coat rack above the bench
-    for i,y in enumerate([0.45,1.90]):
+    B.box('F1.tk.bench',(4.48,4.82),(0.50,2.10),(0.15,0.48),'WoodFurn')   # entry bench on the west wall
+    B.box('F1.tk.rack',(4.47,4.53),(0.60,2.00),(1.60,1.92),'WoodFurn')    # coat rack above the bench
+    for i,y in enumerate([0.45,1.85]):        # 1.85+0.42 clears the wall face at y 2.274
         B.box(f'F1.vh2.sh{i}',(6.44,7.82),(y,y+0.42),(0,2.0),'Cabinet')
     B.box('F1.et.sk',(7.30,7.86),(2.60,4.05),(0,2.10),'Cabinet')        # SK/pantry column hall side
     # kitchen per 1krs plan: L-counter on the hall wall (x7.97) with AP+sink,
@@ -1572,8 +1598,8 @@ HEAT = {
  '24': ('kellari','VAR1 itäkaista',     74,[(0.41,5.80),(10.67,5.80),(10.67,7.57),(0.41,7.57)],Z_K),
  '31': ('1krs','LH+PH',                 35,[(0.30,5.50),(4.39,5.50),(4.39,7.68),(0.30,7.68)],0.0),
  '32': ('1krs','KHH+VH',                56,[(4.49,5.65),(9.59,5.65),(9.59,7.68),(4.49,7.68)],0.0),
- '33': ('1krs','ET+TK+VH2+WC+TEKN',     70,[(0.30,3.95),(3.80,3.95),(3.80,0.30),(7.87,0.30),(7.87,5.40),(0.30,5.40)],0.0),
- '34': ('1krs','MH',                    57,[(0.30,0.30),(3.70,0.30),(3.70,3.85),(0.30,3.85)],0.0),
+ '33': ('1krs','ET+TK+VH2+WC+TEKN',     70,[(0.30,4.133),(4.463,4.133),(4.463,0.30),(7.87,0.30),(7.87,5.40),(0.30,5.40)],0.0),
+ '34': ('1krs','MH',                    57,[(0.30,0.30),(4.363,0.30),(4.363,4.033),(0.30,4.033)],0.0),
  '41': ('1krs','KT',                    42,[(7.97,0.30),(10.92,0.30),(10.92,5.52),(7.97,5.52)],0.0),
  '42': ('1krs','RUOKAILU',              55,[(10.96,0.30),(14.06,0.30),(14.06,3.43),(10.96,3.43)],0.0),
  '43': ('1krs','OH länsiosa',           56,[(10.96,3.47),(16.68,3.47),(16.68,5.48),(10.96,5.48)],0.0),
@@ -1920,9 +1946,9 @@ HEATFIELDS={
       ([(2.49,5.50),(4.39,5.50),(4.39,7.68),(2.49,7.68)],'x')],   # PH runs pitkittain
  '32':[([(4.49,5.65),(7.87,5.65),(7.87,7.68),(4.49,7.68)],'x'),
       ([(7.97,5.65),(9.59,5.65),(9.59,7.68),(7.97,7.68)],'x')],
- '33':[([(2.54,3.95),(3.80,3.95),(3.80,5.40),(2.54,5.40)],'x'),   # WC only -- TEKN is the
+ '33':[([(2.54,4.133),(4.05,4.133),(4.05,5.40),(2.54,5.40)],'x'),   # WC only -- TEKN is the
       # plant room and carries the jakotukki itself; no floor loops in it (owner).
-      ([(3.80,0.30),(7.87,0.30),(7.87,5.40),(3.80,5.40)],'x')],   # ET+TK+VH2
+      ([(4.463,0.30),(7.87,0.30),(7.87,5.40),(4.463,5.40)],'x')],   # ET+TK+VH2
 }
 # jakotukit: first digit of the circuit -> (kerros, x, y, mount axis)
 HEATJT={'1':('kellari',10.98,0.80,'y'),'2':('kellari',10.635,0.80,'y'),
