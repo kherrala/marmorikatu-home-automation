@@ -447,16 +447,16 @@ def build_krs1(B):
     wall_x(B,'F1.khh_vh',7.92,5.60,7.68,0,H_1,INT,ops=[W('door',6.35,7.10)])  # VH entered from KHH
     wall_x(B,'F1.vh_st',9.64,5.55,7.68,0,H_1,INT)
     wall_x(B,'F1.st_liv',10.84,5.52,7.68,0,2.56,INT)
-    wall_x(B,'F1.tekn_wc',2.49,4.083,5.45,0,H_1,INT)
-    wall_x(B,'F1.wc_et',4.10,4.083,5.45,0,H_1,INT,ops=[W('door',4.35,5.10)])
+    wall_x(B,'F1.tekn_wc',2.49,3.55,5.45,0,H_1,INT)
+    wall_x(B,'F1.wc_et',4.10,3.55,5.45,0,H_1,INT,ops=[W('door',4.35,5.10)])
     # Plan: y 4.083, and it runs east to mh_e's far face so MH closes and mh_e has something
     # to butt into.  At y 3.90 / x..4.10 it stopped 313 mm short of the relocated mh_e.
-    wall_y(B,'F1.mh_n',4.083,0.30,4.413,0,H_1,INT)   # ends on mh_e's centreline; cap buried
+    wall_y(B,'F1.mh_n',3.55,0.30,4.413,0,H_1,INT)   # ends on mh_e's centreline; cap buried
     # 1krs_pohja50_1: faces at x 4.373 / 4.452 -> centre 4.413, running y 0.30..4.07 where it
     # meets F1.mh_n.  The model had it at 3.750 -- 663 mm too far north -- which is what made the
     # entrance lobby read as an L: it left a 1.00 m passage west of the vestibule that is not on
     # the plan.  With the wall here, TK's west edge lands on it and ET comes out rectangular.
-    wall_x(B,'F1.mh_e',4.413,0.30,4.083,0,H_1,INT,ops=[W('door',2.55,3.40)])
+    wall_x(B,'F1.mh_e',4.413,0.30,3.55,0,H_1,INT,ops=[W('door',2.55,3.40)])
     # Plan: faces y 2.284 / 2.364 -> centre 2.324, x 4.46..7.87.  Both ends are T-butts, not
     # corners -- 4.46 lands on mh_e's face (4.452) and 7.87 on kit_et's (7.874) -- so neither is
     # mitered.  The model ran this 176 mm north and started it 710 mm too far north as well.
@@ -471,9 +471,9 @@ def build_krs1(B):
     R('Room_1krs_KHH',[(4.49,5.65),(7.87,5.65),(7.87,7.68),(4.49,7.68)],'Tile')
     R('Room_1krs_VH',[(7.97,5.65),(9.59,5.65),(9.59,7.68),(7.97,7.68)],'Wood')
     R('Room_1krs_PORRAS',[(9.69,5.55),(10.79,5.55),(10.79,7.68),(9.69,7.68)],'Wood')
-    R('Room_1krs_TEKN',[(0.30,4.133),(2.44,4.133),(2.44,5.40),(0.30,5.40)],'ConcreteF')
-    R('Room_1krs_WC',[(2.54,4.133),(4.05,4.133),(4.05,5.40),(2.54,5.40)],'Tile')
-    R('Room_1krs_MH',[(0.30,0.30),(4.363,0.30),(4.363,4.033),(0.30,4.033)],'Wood')
+    R('Room_1krs_TEKN',[(0.30,3.60),(2.44,3.60),(2.44,5.40),(0.30,5.40)],'ConcreteF')
+    R('Room_1krs_WC',[(2.54,3.60),(4.05,3.60),(4.05,5.40),(2.54,5.40)],'Tile')
+    R('Room_1krs_MH',[(0.30,0.30),(4.363,0.30),(4.363,3.50),(0.30,3.50)],'Wood')
     R('Room_1krs_TK',[(4.463,0.30),(6.29,0.30),(6.29,2.274),(4.463,2.274)],'Tile')
     R('Room_1krs_VH2',[(6.39,0.30),(7.87,0.30),(7.87,2.274),(6.39,2.274)],'Wood')
     # Rectangular, as the plan draws it.  The L came from mh_e sitting 663 mm north, which
@@ -534,7 +534,7 @@ def build_krs1(B):
     rug(B,'F1.mh.rug',0.8,3.4,0.7,3.3)
     sofa(B,'F1.mh.sofa',0.45,1.40,0.70,2.70,'W','SofaGreen')
     B.cyl('F1.mh.side',1.80,1.05,0,0.50,0.25,'WoodFurn')
-    wardrobe(B,'F1.mh.ward',2.73,3.12,0.90,2.60,2.10)                   # per plan, e-wall closet
+    wardrobe(B,'F1.mh.ward',3.97,4.36,0.90,2.50,2.10)                   # per plan, e-wall closet
     plant(B,'F1.mh.plant',3.30,3.40,0.8)
     B.box('F1.tk.bench',(4.48,4.82),(0.50,2.10),(0.15,0.48),'WoodFurn')   # entry bench on the west wall
     B.box('F1.tk.rack',(4.47,4.53),(0.60,2.00),(1.60,1.92),'WoodFurn')    # coat rack above the bench
