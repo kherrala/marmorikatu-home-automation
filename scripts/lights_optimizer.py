@@ -128,11 +128,15 @@ PRESENCE_MIN_CONFIDENCE = float(os.environ.get("PRESENCE_MIN_CONFIDENCE", "0.6")
 # daylight ~50-80) while the FP300 runs 95-180. Rooms without a lux sensor fall
 # back to the sun-elevation gate.
 DARK_LUX_THRESHOLD = float(os.environ.get("DARK_LUX_THRESHOLD", "40"))   # SNZB PIR default
-ILLUMINANCE_WINDOW_MIN = float(os.environ.get("ILLUMINANCE_WINDOW_MIN", "5"))  # lux mean window
-# Per-room overrides. living_room: FP300 scale (higher). khh: strict — its sensor
-# reads ~19-21 lux even at midday (window barely lights it), so only auto-on when
-# genuinely dark, not on a dim daytime reading.
-ROOM_DARK_LUX = {"living_room": 120, "khh": 12}
+ILLUMINANCE_WINDOW_MIN = float(os.environ.get("ILLUMINANCE_WINDOW_MIN", "10"))  # lux mean window
+# Per-room overrides. living_room: FP300 scale. Its bright-day floor is ~107 lux
+# (observed a partly-cloudy day swinging 107..537), so the dark-on threshold MUST
+# sit below that floor — else cloud dips cross it and auto_on_comfort fires, then
+# sun + the light's own output crosses ROOM_BRIGHT_LUX and bright_enough culls, and
+# the two fight (the reported on/off flicker in a bright, occupied room). 60 auto-ons
+# only at genuine dusk (<60), never on a daytime cloud dip. khh: strict — its sensor
+# reads ~19-21 lux even at midday (window barely lights it).
+ROOM_DARK_LUX = {"living_room": 60, "khh": 12}
 # Bright-again cull: a light WE auto-on'd in the dim is turned back off once the
 # room's own sensor reads above this (lux). ONLY listed rooms qualify, and the
 # value must sit ABOVE what the room's own lights add to the reading — otherwise
