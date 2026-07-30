@@ -1598,8 +1598,8 @@ HEAT = {
  '24': ('kellari','VAR1 itäkaista',     74,[(0.41,5.80),(10.67,5.80),(10.67,7.57),(0.41,7.57)],Z_K),
  '31': ('1krs','LH+PH',                 35,[(0.30,5.50),(4.39,5.50),(4.39,7.68),(0.30,7.68)],0.0),
  '32': ('1krs','KHH+VH',                56,[(4.49,5.65),(9.59,5.65),(9.59,7.68),(4.49,7.68)],0.0),
- '33': ('1krs','ET+TK+VH2+WC+TEKN',     70,[(0.30,4.133),(4.463,4.133),(4.463,0.30),(7.87,0.30),(7.87,5.40),(0.30,5.40)],0.0),
- '34': ('1krs','MH',                    57,[(0.30,0.30),(4.363,0.30),(4.363,4.033),(0.30,4.033)],0.0),
+ '33': ('1krs','ET+TK+VH2+WC+TEKN',     70,[(0.30,3.60),(4.463,3.60),(4.463,0.30),(7.87,0.30),(7.87,5.40),(0.30,5.40)],0.0),
+ '34': ('1krs','MH',                    57,[(0.30,0.30),(4.363,0.30),(4.363,3.50),(0.30,3.50)],0.0),
  '41': ('1krs','KT',                    42,[(7.97,0.30),(10.92,0.30),(10.92,5.52),(7.97,5.52)],0.0),
  '42': ('1krs','RUOKAILU',              55,[(10.96,0.30),(14.06,0.30),(14.06,3.43),(10.96,3.43)],0.0),
  '43': ('1krs','OH länsiosa',           56,[(10.96,3.47),(16.68,3.47),(16.68,5.48),(10.96,5.48)],0.0),
@@ -1946,9 +1946,13 @@ HEATFIELDS={
       ([(2.49,5.50),(4.39,5.50),(4.39,7.68),(2.49,7.68)],'x')],   # PH runs pitkittain
  '32':[([(4.49,5.65),(7.87,5.65),(7.87,7.68),(4.49,7.68)],'x'),
       ([(7.97,5.65),(9.59,5.65),(9.59,7.68),(7.97,7.68)],'x')],
- '33':[([(2.54,4.133),(4.05,4.133),(4.05,5.40),(2.54,5.40)],'x'),   # WC only -- TEKN is the
-      # plant room and carries the jakotukki itself; no floor loops in it (owner).
-      ([(4.463,0.30),(7.87,0.30),(7.87,5.40),(4.463,5.40)],'x')],   # ET+TK+VH2
+ # ET+TK+VH2 only.  Neither TEKN nor WC gets floor loops (owner): TEKN is the plant room and
+ # carries the jakotukki itself, and the WC is warmed by the supply lines running through it
+ # rather than by a loop of its own.  That is also what the geometry wants -- once the MH/WC
+ # wall came down to y 3.55 the WC floor sits across the jt3 corridor (the bar is at y 4.02,
+ # its corridor band y 3.56..4.48), so a loop there fragmented into three pieces joined by
+ # diagonal hops and self-crossed thirteen times.
+ '33':[([(4.463,0.30),(7.87,0.30),(7.87,5.40),(4.463,5.40)],'x')],
 }
 # jakotukit: first digit of the circuit -> (kerros, x, y, mount axis)
 HEATJT={'1':('kellari',10.98,0.80,'y'),'2':('kellari',10.635,0.80,'y'),
@@ -2228,6 +2232,24 @@ _BOD={}
 _P1={}
 _SPN={}
 
+def _prune(f):
+    """Drop field pieces too narrow to hold a flow/return pair.
+
+    The corridor and shadow-lane cuts can leave a ribbon -- moving the MH/WC wall left circuit
+    33 with a 0.19 m x 5.1 m strip beside the relocated mh_e.  `_body` will still try to
+    serpentine it, and at any sensible pitch the pair simply folds back over itself: that one
+    ribbon was 13 of the circuit's self-crossings.  An installer would not lay a loop in a
+    190 mm strip either.  Width is measured as area / longer bbox side, which handles the L
+    pieces the corner cuts produce as well as plain rectangles.
+    """
+    out=[]
+    for g,ax in f:
+        b=_bbox(g); L=max(b[1]-b[0],b[3]-b[2])
+        if L<=1e-9: continue
+        if _area(g)/L < 0.40: continue
+        out.append((g,ax))
+    return out or f          # never strip a circuit to nothing
+
 def _layout(rank):
     """Ports, feed corridors and feed lanes, in that order -- each one needs the one before it.
     Run twice: the first pass has to guess the port order from where the rooms are, the second
@@ -2239,7 +2261,7 @@ def _layout(rank):
     HEATPORT=_ports(rank); _F0={}; _F1={}; _CCS.clear(); _BOD.clear(); _P1.clear(); _SPN.clear()
     HEATFLD0={nn:_fields(nn) for nn in HEAT}
     HEATENTRY,_SHADOW=_shadow()
-    HEATFLD={nn:_fields2(nn) for nn in HEAT}
+    HEATFLD={nn:_prune(_fields2(nn)) for nn in HEAT}
 
 _CCS={}
 def heat_cc(nn):

@@ -144,10 +144,24 @@ plausibly. (`curve['pts']` has the opposite convention — top-down while `lines
 bottom-up.)
 
 **Plans (`1krs_pohja50_1.pdf`).** `S = 56.6795` pt/m; `plan_x = (ptx − 142.283)/S`,
-`plan_y = (795.79 − pty)/S`. Plan is authoritative for x/y, elevation for z. There is a
-**systematic offset: elevation x = plan x + 0.016** — subtract 16 mm from any x taken off
-`julkisivut.pdf`. (When picking wall faces, avoid full-width dimension strings / section
-markers / title-block rules, which carry more ink than the real wall lines.)
+`plan_y = (646.62 − pty)/S`, with **`pty` taken straight off `line.y0` (bottom-up — no flip
+here, unlike the elevations above)**. Plan is authoritative for x/y, elevation for z. There is
+a **systematic offset: elevation x = plan x + 0.016** — subtract 16 mm from any x taken off
+`julkisivut.pdf`.
+
+> The y datum was recorded here as `795.79`, which is **wrong by 149.2 pt = 2.63 m**.
+> Re-solved against `F1.kit_et`, the kitchen wall at x 7.92 running y 0.77..4.07: the sheet
+> draws it at `ptx` 7.874..7.968, `pty` 415.9..603.0 — 3.301 m against the model's 3.300 — and
+> both ends independently give `D = 646.64` / `646.59`, agreeing to 0.9 mm. Cross-checked on
+> `F1.tk_n` (y 2.50 → 2.550), `F1.mh_n` (3.90 → 3.944) and `F1.wS.blk` (0.00 → 0.014).
+
+Two things to restrict before searching this sheet:
+
+- It carries **several drawings**, not only the 1. krs plan — stacked 6.27 m runs at plan-x
+  21.5..27.8 and 9.25 m runs at 40.4..49.7 belong to other views. Clip to plan-x −0.1..17.1.
+- The three full-width 17.14 m lines near `pty` 64 / 86 / 108 are the **dimension stack**, not
+  walls. They sit 0.39 m apart, which is dimension-line spacing at 1:50 — no wall is that
+  thick. This is the trap that made the y axis look unsolvable the first time.
 
 **Site plan (`Asemapiirustus 3.9.2009.pdf`).** 1:200, and the drawing is rotated ~165° on
 the sheet. `S = 14.17064` pt/m, `th = 165.171°`:
