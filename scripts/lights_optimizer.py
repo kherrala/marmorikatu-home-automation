@@ -268,6 +268,10 @@ CATEGORY_OF: dict[int, str] = {
     # 3 = Yläkerta aula LED: manual-on, NOT sensor-driven — user wants only the
     # aula kattovalo (26) to auto-on from the upstairs-hall PIR, not the LED too.
     3: "secondary", 5: "secondary",
+    # 53 = Kellari varasto: sensorless storeroom used for long spells. Was 'utility'
+    # (30-min duration cap) which kept cutting off work sessions — secondary drops
+    # the cap but keeps the overnight/away forgotten-light culls.
+    53: "secondary",
     # WINDOW — decorative window lights, pointless in daylight
     18: "window", 20: "window", 23: "window", 24: "window",
     30: "window", 32: "window", 41: "window", 46: "window",
@@ -278,9 +282,9 @@ CATEGORY_OF: dict[int, str] = {
     # 25 = aula stairs. The aula LED (3) is deliberately NOT here (secondary above).
     25: "circulation", 26: "circulation", 35: "circulation", 37: "circulation", 42: "circulation",
     # UTILITY / CLOSET — windowless, forgotten-prone, manual-on (no room sensor).
-    # 43 = KHH wardrobe (closet, stays manual); 53 = basement storage.
+    # 43 = KHH wardrobe (closet, stays manual).
     # 61 "Varasto" = detached autokatos (carport) storage, no sensor → manual-on.
-    31: "utility", 36: "utility", 43: "utility", 53: "utility", 61: "utility",
+    31: "utility", 36: "utility", 43: "utility", 61: "utility",
     # WORKROOM — motion auto-on via the snzb_khh indoor PIR (LIGHT_ROOM=khh). Only
     # the KHH LED (6) auto-ons; the KHH ceiling (56) is secondary (manual-on,
     # auto-off only) — user wants just the LED automatic. The autokatos varasto (61)
