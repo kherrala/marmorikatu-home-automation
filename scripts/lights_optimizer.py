@@ -226,12 +226,14 @@ CATS: dict[str, Cat] = {
 
 # Per-light PHYSICAL room → matches a room in config/presence_rooms.json. A light
 # uses this room's presence for auto-on/vacancy-off; lights not listed fall back
-# to their category's presence_room. Kitchen (8, 40) intentionally stays on
-# `living_core` (CO₂, no vacancy sensor) so a living-room FP300 going vacant
-# can't turn off the kitchen. Populate as sensors are installed; a room with no
-# sensor simply yields no presence (comfort-first hold), so this is safe now.
+# to their category's presence_room. Populate as sensors are installed; a room
+# with no sensor simply yields no presence (comfort-first hold), so this is safe.
 LIGHT_ROOM: dict[int, str] = {
     54: "living_room", 19: "living_room",                      # living-room proper (FP300)
+    8: "kitchen", 40: "kitchen",                              # kitchen ceilings — dedicated snzb_kitchen PIR.
+    # Was on living_core (CO₂, no vacancy) so the living FP300 couldn't kill the
+    # kitchen; the kitchen now has its own sensor, so it auto-ons AND auto-offs on
+    # it (CO₂ via living_core_occupied stays a dead-sensor fallback in evaluate_light).
     5: "living_room",                                          # Olohuone LED, full room light (FP300)
     17: "office",                                              # office (future FP300)
     49: "theater", 50: "theater", 51: "theater",              # basement theater

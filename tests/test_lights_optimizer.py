@@ -373,16 +373,29 @@ def test_theater_never_auto_on_even_with_presence(harness):
     assert harness["published"] == []
 
 
-def test_living_room_fp300_vacancy_does_not_kill_kitchen(harness):
-    # FP300 (living_room) reads vacant, but the kitchen (idx 40, room=living_core,
-    # no sensor) must NOT be turned off by it.
-    harness["state"]["presence_rooms"] = {"living_room": False}  # living_core → None
+def test_kitchen_uses_own_sensor_not_living_fp300(harness):
+    # The living-room FP300 reading vacant must NOT turn off the kitchen (idx 40) —
+    # it now has its own snzb_kitchen sensor. Kitchen present => held on.
+    harness["state"]["presence_rooms"] = {"living_room": False, "kitchen": True}
     harness["state"]["since"] = datetime.now(timezone.utc) - timedelta(minutes=30)
     _eval(40, True, _local(2026, 1, 15, 14, 0))
     assert harness["published"] == []
     # ...while the living-room ceiling (54, room=living_room) IS turned off.
     _eval(54, True, _local(2026, 1, 15, 14, 0))
     assert (54, False, "vacancy_off") in harness["published"]
+
+
+def test_kitchen_auto_on_and_off_by_sensor(harness):
+    # The kitchen sensor drives BOTH directions now.
+    harness["state"]["presence_rooms"] = {"kitchen": True}
+    _eval(40, False, _local(2026, 1, 15, 18, 0), dark=True)          # occupied + dark
+    assert (40, True, "auto_on_comfort") in harness["published"]
+    harness["published"].clear()
+    lo._memo.clear()                                                # new tick: re-read presence
+    harness["state"]["presence_rooms"] = {"kitchen": False}          # vacant
+    harness["state"]["since"] = datetime.now(timezone.utc) - timedelta(minutes=30)
+    _eval(40, True, _local(2026, 1, 15, 18, 0), dark=True)
+    assert (40, False, "vacancy_off") in harness["published"]
 
 
 def test_motion_auto_on_suppressed_when_not_dark(harness):
