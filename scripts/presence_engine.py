@@ -77,6 +77,18 @@ HEARTBEAT_S = float(os.environ.get("PRESENCE_HEARTBEAT_S", "60"))
 # spurious false from a battery mmWave sensor (which can't run the radar
 # continuously); a genuine departure simply stays false and clears after it.
 FALLING_CONFIRM_S = float(os.environ.get("PRESENCE_FALLING_CONFIRM_S", "60"))
+# Dead/silent-sensor guard. A vacant room re-emits an occupied=0 heartbeat every
+# HEARTBEAT_S forever, so a sensor that has gone offline keeps asserting a *fresh,
+# confident* vacancy — and the optimizer culls lights off it (observed: the living
+# FP300 dropped off the mesh, room read hard-vacant for hours, the open-plan lights
+# would not stay on with people present). If the underlying device has sent NOTHING
+# for this long, stop trusting its vacancy: emit confidence 0.0 so the optimizer's
+# PRESENCE_MIN_CONFIDENCE gate rejects it and the room degrades to comfort-first
+# (hold — never cull, never wrong auto-on). Must exceed every healthy sensor's
+# periodic report cadence (FP300 reports ~hourly even while vacant) so a genuinely
+# idle room is not wrongly demoted; 90 min clears that with margin. An occupied
+# reading is never demoted (the failsafe/linger already bounds a stuck sensor).
+STALE_SENSOR_S = float(os.environ.get("PRESENCE_STALE_SENSOR_S", "5400"))
 # PIR stuck-sensor failsafe: a SNZB-03P holds `true` from one rising edge until it
 # emits an explicit `false`, so a genuinely occupied room can stay `true` for many
 # minutes (11 min observed) on a single message. The real vacate is the device's
@@ -241,8 +253,9 @@ def on_message(client, userdata, msg):
                                   "illuminance": None, "battery": None,
                                   "source": friendly, "last_emit": 0.0,
                                   "pending_vacant_since": 0.0,
-                                  "sensor_occupied": None})
+                                  "sensor_occupied": None, "last_msg": 0.0})
     st["source"] = friendly
+    st["last_msg"] = time.time()   # any device message = the sensor is alive
     lux = _num(payload, "illuminance_lux", "illuminance")
     if lux is not None:
         st["illuminance"] = lux
@@ -290,14 +303,21 @@ def emit_room(room: str):
         return
     now = time.time()
     st["last_emit"] = now
+    # Confidence = reliability of the reading (sensor quality), NOT occupancy
+    # magnitude. A *confident vacancy* must carry the room's confidence so it clears
+    # the optimizer's PRESENCE_MIN_CONFIDENCE gate and enables vacancy-off; emitting
+    # 0.0 on vacant silently disables auto-off. So we hold full confidence normally,
+    # but DEMOTE a VACANT room to 0.0 once its sensor has gone silent past
+    # STALE_SENSOR_S — a dead/offline sensor must not keep culling lights via a stale
+    # heartbeat vacancy. An occupied reading keeps full confidence (its own
+    # failsafe/linger bounds a stuck sensor); a fresh reading of either state does too.
+    last_msg = st.get("last_msg", 0.0)
+    stale = (not st["occupied"]) and last_msg > 0.0 and (now - last_msg) > STALE_SENSOR_S
+    confidence = 0.0 if stale else rc["confidence"]
     payload = {
         "room": room,
         "occupied": bool(st["occupied"]),
-        # Confidence = reliability of the reading (sensor quality), NOT occupancy
-        # magnitude. A *confident vacancy* must carry the room's confidence so it
-        # clears the optimizer's PRESENCE_MIN_CONFIDENCE gate and enables
-        # vacancy-off; emitting 0.0 on vacant silently disabled auto-off.
-        "confidence": rc["confidence"],
+        "confidence": confidence,
         "source": st["source"],
         "ts": int(now),
     }

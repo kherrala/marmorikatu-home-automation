@@ -3,6 +3,7 @@
 (scripts/ is on the path via tests/conftest.py.)
 """
 import json
+import time
 
 import presence_engine as pe
 
@@ -178,3 +179,54 @@ def test_pir_redetect_cancels_pending(monkeypatch):
     # A re-detect within the grace cancels the pending vacancy.
     pe.on_message(None, None, _FakeMsg("snzb_test", {"occupancy": True}))
     assert pe._state["hall_test"]["pending_vacant_since"] == 0.0
+
+
+# ── Stale/dead sensor demotes a vacant room's confidence ──────────────────────
+def _capture_emit(monkeypatch):
+    """Point emit_room at the real function but capture the published confidence,
+    stubbing the MQTT client + InfluxDB write."""
+    published = {}
+    monkeypatch.setattr(pe, "_rooms",
+                        {"r": {"type": "mmwave", "linger_s": 7200, "confidence": 0.95}})
+    class _Client:
+        def publish(self, topic, payload, qos=0, retain=False):
+            published["confidence"] = json.loads(payload)["confidence"]
+    monkeypatch.setattr(pe, "client", _Client())
+    monkeypatch.setattr(pe, "write_api", type("W", (), {"write": lambda *a, **k: None})())
+    return published
+
+
+def test_fresh_vacant_keeps_full_confidence(monkeypatch):
+    pub = _capture_emit(monkeypatch)
+    monkeypatch.setattr(pe, "_state",
+                        {"r": {"occupied": False, "last_positive": 0.0, "illuminance": None,
+                               "battery": None, "source": "s", "last_emit": 0.0,
+                               "pending_vacant_since": 0.0, "sensor_occupied": False,
+                               "last_msg": time.time()}})  # just heard from the sensor
+    pe.emit_room("r")
+    assert pub["confidence"] == 0.95
+
+
+def test_stale_vacant_demoted_to_zero_confidence(monkeypatch):
+    pub = _capture_emit(monkeypatch)
+    monkeypatch.setattr(pe, "_state",
+                        {"r": {"occupied": False, "last_positive": 0.0, "illuminance": None,
+                               "battery": None, "source": "s", "last_emit": 0.0,
+                               "pending_vacant_since": 0.0, "sensor_occupied": False,
+                               "last_msg": time.time() - pe.STALE_SENSOR_S - 1}})  # sensor silent
+    pe.emit_room("r")
+    # Below the optimizer's PRESENCE_MIN_CONFIDENCE gate → room degrades to
+    # comfort-first (hold), so a dead sensor can't keep culling lights.
+    assert pub["confidence"] == 0.0
+
+
+def test_stale_but_occupied_keeps_confidence(monkeypatch):
+    # A stuck-occupied sensor is bounded by its own failsafe/linger, not demoted.
+    pub = _capture_emit(monkeypatch)
+    monkeypatch.setattr(pe, "_state",
+                        {"r": {"occupied": True, "last_positive": 0.0, "illuminance": None,
+                               "battery": None, "source": "s", "last_emit": 0.0,
+                               "pending_vacant_since": 0.0, "sensor_occupied": True,
+                               "last_msg": time.time() - pe.STALE_SENSOR_S - 1}})
+    pe.emit_room("r")
+    assert pub["confidence"] == 0.95
