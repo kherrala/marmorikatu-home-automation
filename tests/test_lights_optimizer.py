@@ -373,26 +373,46 @@ def test_theater_never_auto_on_even_with_presence(harness):
     assert harness["published"] == []
 
 
-def test_kitchen_uses_own_sensor_not_living_fp300(harness):
-    # The living-room FP300 reading vacant must NOT turn off the kitchen (idx 40) —
-    # it now has its own snzb_kitchen sensor. Kitchen present => held on.
+def test_open_plan_one_sensor_holds_the_whole_zone(harness):
+    # Kitchen occupied but living FP300 vacant: BOTH the kitchen ceiling (40) and the
+    # living ceiling (54) stay on — it's one open-plan zone, held if either half sees
+    # someone. (The old per-room logic wrongly culled 54 here.)
+    harness["state"]["co2"] = "BASELINE"
     harness["state"]["presence_rooms"] = {"living_room": False, "kitchen": True}
     harness["state"]["since"] = datetime.now(timezone.utc) - timedelta(minutes=30)
     _eval(40, True, _local(2026, 1, 15, 14, 0))
-    assert harness["published"] == []
-    # ...while the living-room ceiling (54, room=living_room) IS turned off.
     _eval(54, True, _local(2026, 1, 15, 14, 0))
+    assert harness["published"] == []
+
+
+def test_open_plan_culled_only_when_whole_zone_empty(harness):
+    # Both halves vacant AND CO₂ not elevated → the open-plan lights cull.
+    harness["state"]["co2"] = "BASELINE"
+    harness["state"]["presence_rooms"] = {"living_room": False, "kitchen": False}
+    harness["state"]["since"] = datetime.now(timezone.utc) - timedelta(minutes=30)
+    _eval(40, True, _local(2026, 1, 15, 14, 0))
+    _eval(54, True, _local(2026, 1, 15, 14, 0))
+    assert (40, False, "vacancy_off") in harness["published"]
     assert (54, False, "vacancy_off") in harness["published"]
 
 
-def test_kitchen_auto_on_and_off_by_sensor(harness):
-    # The kitchen sensor drives BOTH directions now.
+def test_open_plan_co2_vetoes_vacancy(harness):
+    # Both PIRs vacant but CO₂ ELEVATED (still occupants) → NOT culled.
+    harness["state"]["co2"] = "ELEVATED"
+    harness["state"]["presence_rooms"] = {"living_room": False, "kitchen": False}
+    harness["state"]["since"] = datetime.now(timezone.utc) - timedelta(minutes=30)
+    _eval(40, True, _local(2026, 1, 15, 14, 0))
+    assert harness["published"] == []
+
+
+def test_open_plan_auto_on_from_kitchen_then_off_when_empty(harness):
+    harness["state"]["co2"] = "BASELINE"
     harness["state"]["presence_rooms"] = {"kitchen": True}
-    _eval(40, False, _local(2026, 1, 15, 18, 0), dark=True)          # occupied + dark
+    _eval(40, False, _local(2026, 1, 15, 18, 0), dark=True)          # kitchen occupied + dark
     assert (40, True, "auto_on_comfort") in harness["published"]
     harness["published"].clear()
     lo._memo.clear()                                                # new tick: re-read presence
-    harness["state"]["presence_rooms"] = {"kitchen": False}          # vacant
+    harness["state"]["presence_rooms"] = {"kitchen": False, "living_room": False}
     harness["state"]["since"] = datetime.now(timezone.utc) - timedelta(minutes=30)
     _eval(40, True, _local(2026, 1, 15, 18, 0), dark=True)
     assert (40, False, "vacancy_off") in harness["published"]

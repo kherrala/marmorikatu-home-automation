@@ -233,7 +233,7 @@ LIGHT_ROOM: dict[int, str] = {
     8: "kitchen", 40: "kitchen",                              # kitchen ceilings — dedicated snzb_kitchen PIR.
     # Was on living_core (CO₂, no vacancy) so the living FP300 couldn't kill the
     # kitchen; the kitchen now has its own sensor, so it auto-ons AND auto-offs on
-    # it (CO₂ via living_core_occupied stays a dead-sensor fallback in evaluate_light).
+    # it, unified with the living room as one open-plan zone (see living_core_presence).
     5: "living_room",                                          # Olohuone LED, full room light (FP300)
     17: "office",                                              # office (future FP300)
     49: "theater", 50: "theater", 51: "theater",              # basement theater
@@ -643,18 +643,31 @@ from(bucket: "{INFLUXDB_BUCKET}")
     return "BASELINE"
 
 
-def living_core_occupied() -> bool | None:
-    """Interim living-core occupancy: normalized presence if available, else
-    kitchen CO₂. None if no signal at all."""
-    p = presence_for_room("living_core")
-    if p is not None:
-        return p
-    c = co2_signal_class()
-    if c == "ELEVATED":
+# The kitchen and living room are ONE open-plan space, lit by both the kitchen
+# ceilings (8,40) and the living ceilings (19,54). A single sensor never covers all
+# of it — the kitchen PIR misses the sofa, the living FP300 misses the counter, and
+# either can drop off the mesh — so driving each half off its own sensor culled the
+# whole room's lights whenever one half read vacant (people on the sofa, kitchen PIR
+# quiet → lights off). Treat the two as one occupancy zone.
+OPEN_PLAN_ROOMS = ("kitchen", "living_room")
+
+
+def living_core_presence() -> bool | None:
+    """Unified open-plan occupancy for the `living` category. OCCUPIED if ANY zone
+    sensor sees someone, or CO₂ is ELEVATED (a rising-CO₂ veto catches still
+    occupants the PIRs miss — CO₂ only ever holds/enables, never culls). VACANT only
+    when EVERY zone sensor that has a reading says empty AND CO₂ isn't elevated. None
+    (comfort-first hold) when nothing is confident — e.g. every zone sensor is dead
+    (demoted to <PRESENCE_MIN_CONFIDENCE) so presence_for_room returns None."""
+    readings = [presence_for_room(r) for r in OPEN_PLAN_ROOMS]
+    if any(p is True for p in readings):
         return True
-    if c == "DROPPED":
+    if co2_signal_class() == "ELEVATED":
+        return True
+    real = [p for p in readings if p is not None]
+    if real and all(p is False for p in real):
         return False
-    return None  # BASELINE / UNKNOWN → no strong signal
+    return None
 
 
 def ble_present_count() -> int | None:
@@ -1002,7 +1015,11 @@ def evaluate_light(idx: int, is_on: bool, now: datetime, sunrise: datetime,
     # bug that turned off the occupied kitchen/living room. The room is the
     # light's physical room (LIGHT_ROOM) or its category default.
     room = LIGHT_ROOM.get(idx) or cat.presence_room
-    presence = presence_for_room(room)
+    # The open-plan living category (kitchen + living ceilings) is one occupancy
+    # zone — held if ANY zone sensor (or CO₂) sees someone, culled only when the
+    # WHOLE zone reads empty. Every other light uses just its own room. `room` still
+    # drives the per-room lux gates (dark/bright) below — only presence is unified.
+    presence = living_core_presence() if cat_name == "living" else presence_for_room(room)
 
     # ---- OFF (light currently on) ----
     if is_on:
@@ -1072,13 +1089,10 @@ def evaluate_light(idx: int, is_on: bool, now: datetime, sunrise: datetime,
     if idx in _dismissed:
         log_decision(idx, "hold", "dismissed_session", cat_name)
         return
-    # Auto-ON occupancy: real presence if available, else the CO₂ interim signal
-    # for the living category (kitchen/dining/living). CO₂ is allowed to turn
-    # lights ON (it never turns off), so living lights keep comfort auto-on even
-    # before an FP300 is installed.
+    # Auto-ON occupancy. For the living category `presence` is already the unified
+    # open-plan signal (any zone sensor OR elevated CO₂), so it needs no extra
+    # fallback here. Every other light uses its own room's presence.
     occ_for_on = presence
-    if occ_for_on is None and cat_name == "living":
-        occ_for_on = living_core_occupied()
     if occ_for_on is True:
         if publish_state(idx, True, "auto_on_comfort"):
             log_decision(idx, "on", "auto_on_comfort", cat_name)
