@@ -128,7 +128,15 @@ PRESENCE_MIN_CONFIDENCE = float(os.environ.get("PRESENCE_MIN_CONFIDENCE", "0.6")
 # daylight ~50-80) while the FP300 runs 95-180. Rooms without a lux sensor fall
 # back to the sun-elevation gate.
 DARK_LUX_THRESHOLD = float(os.environ.get("DARK_LUX_THRESHOLD", "40"))   # SNZB PIR default
-ILLUMINANCE_WINDOW_MIN = float(os.environ.get("ILLUMINANCE_WINDOW_MIN", "10"))  # lux mean window
+# Lux mean window for the dark/auto-on gate. A long mean smooths partly-cloudy
+# flicker but LAGS a sudden real darkening: during a storm the room went dark (13
+# lux) but the 10-min mean — still averaging in the prior bright readings, some of
+# them the light's OWN output from a brief earlier on — didn't cross the 60 lux
+# dark threshold for ~5 min, so auto-on was ~15 min late. The dark(60)/bright(200)
+# hysteresis gap is what actually prevents flicker (the bright-day lux floor ~107
+# sits well above 60, so daylight never crosses the dark bar), NOT this window — so
+# a short window is safe and much more responsive to a genuine darkening.
+ILLUMINANCE_WINDOW_MIN = float(os.environ.get("ILLUMINANCE_WINDOW_MIN", "4"))
 # Per-room overrides. living_room: FP300 scale. Its bright-day floor is ~107 lux
 # (observed a partly-cloudy day swinging 107..537), so the dark-on threshold MUST
 # sit below that floor — else cloud dips cross it and auto_on_comfort fires, then

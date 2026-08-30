@@ -73,10 +73,14 @@ TICK_S = float(os.environ.get("PRESENCE_TICK_S", "5"))
 # Re-publish/re-write each room at least this often (liveness + InfluxDB freshness).
 HEARTBEAT_S = float(os.environ.get("PRESENCE_HEARTBEAT_S", "60"))
 # Level (mmWave) falling-edge debounce: after an explicit `presence:false`, wait
-# this long for a re-detect before declaring the room vacant. Absorbs a lone
-# spurious false from a battery mmWave sensor (which can't run the radar
-# continuously); a genuine departure simply stays false and clears after it.
-FALLING_CONFIRM_S = float(os.environ.get("PRESENCE_FALLING_CONFIRM_S", "60"))
+# this long for a re-detect before declaring the room vacant. Absorbs the blind
+# gaps of a BATTERY mmWave sensor (it can't run the radar continuously, so it loses
+# a still target and re-acquires on the next micro-motion). Observed on the living
+# FP300: vacant→occupied gaps of 78–114 s while someone sat still, which at the old
+# 60 s confirm culled the lights and then re-lit them (flapping). Must exceed those
+# gaps; 150 s bridges them. A genuine departure simply stays false and clears after
+# it — the only cost is the room takes this long to go vacant once truly empty.
+FALLING_CONFIRM_S = float(os.environ.get("PRESENCE_FALLING_CONFIRM_S", "150"))
 # Dead/silent-sensor guard. A vacant room re-emits an occupied=0 heartbeat every
 # HEARTBEAT_S forever, so a sensor that has gone offline keeps asserting a *fresh,
 # confident* vacancy — and the optimizer culls lights off it (observed: the living
