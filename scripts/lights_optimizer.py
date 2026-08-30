@@ -144,7 +144,13 @@ ILLUMINANCE_WINDOW_MIN = float(os.environ.get("ILLUMINANCE_WINDOW_MIN", "4"))
 # the two fight (the reported on/off flicker in a bright, occupied room). 60 auto-ons
 # only at genuine dusk (<60), never on a daytime cloud dip. khh: strict — its sensor
 # reads ~19-21 lux even at midday (window barely lights it).
-ROOM_DARK_LUX = {"living_room": 60, "khh": 12}
+# living_room reads on the FP300 mmWave scale (24h: p50≈62, p75≈102, p95≈185),
+# which runs far higher than the SONOFF PIR rooms (kitchen p50≈36). 60 sat right at
+# its median so the room had to get genuinely dark before auto-on; 80 activates on a
+# merely-dim evening while still below its bright-ambient band (~100+), so daylight
+# doesn't cross it. NOTE: the FP300's lux unit/scale is unverified vs the SONOFFs —
+# see docs; calibrate against a lights-OFF day if this needs another nudge.
+ROOM_DARK_LUX = {"living_room": 80, "khh": 12}
 # Bright-again cull: a light WE auto-on'd in the dim is turned back off once the
 # room's own sensor reads above this (lux). ONLY listed rooms qualify, and the
 # value must sit ABOVE what the room's own lights add to the reading — otherwise
