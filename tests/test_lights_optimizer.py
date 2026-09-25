@@ -6,7 +6,9 @@ and capture the resulting publishes / decision-log rows. (scripts/ is put on
 the path by tests/conftest.py.)
 """
 import time
+import re
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -124,30 +126,6 @@ def test_porch_daylight_off_if_left_on(porch):
     assert (47, False, "daylight_off") in porch["pub"]
 
 
-# ── co2_signal_class ──────────────────────────────────────────────────────────
-@pytest.mark.parametrize("recent,base,expected", [
-    (700, 500, "ELEVATED"),
-    (560, 500, "ELEVATED"),
-    (430, 600, "DROPPED"),
-    (500, 650, "DROPPED"),
-    (520, 515, "BASELINE"),
-    (None, 500, "UNKNOWN"),
-])
-def test_co2_signal_class(monkeypatch, recent, base, expected):
-    calls = {"n": 0}
-
-    def fake_query(flux):
-        calls["n"] += 1
-        val = recent if calls["n"] == 1 else base
-        if val is None:
-            return []
-        return [type("R", (), {"get_value": lambda self, v=val: v})()]
-
-    lo._memo.clear()
-    monkeypatch.setattr(lo, "_query", fake_query)
-    assert lo.co2_signal_class() == expected
-
-
 # ── classify_origin ───────────────────────────────────────────────────────────
 def test_classify_origin_optimizer(monkeypatch):
     since = datetime(2026, 1, 15, 20, 0, tzinfo=timezone.utc)
@@ -167,6 +145,18 @@ def test_classify_origin_wall_when_no_breadcrumb(monkeypatch):
     since = datetime(2026, 1, 15, 20, 0, tzinfo=timezone.utc)
     monkeypatch.setattr(lo, "fetch_recent_commands", lambda idx, lookback_min=180: [])
     assert lo.classify_origin(40, True, since) == "wall"
+
+
+def test_command_provenance_uses_latest_across_source_tables(monkeypatch):
+    from influxdb_client.client.flux_table import FluxRecord
+    since = datetime.now(timezone.utc)
+    # Influx sorts inside each source table, not across source tables.
+    rows = [FluxRecord(0, {"_time": since - timedelta(seconds=5), "_value": 1,
+                           "source": "mobile"}),
+            FluxRecord(1, {"_time": since - timedelta(seconds=20), "_value": 1,
+                           "source": "optimizer"})]
+    monkeypatch.setattr(lo, "_query", lambda _: rows)
+    assert lo.classify_origin(54, True, since) == "human"
 
 
 # ── evaluate_light decision engine ────────────────────────────────────────────
@@ -189,15 +179,23 @@ def harness(monkeypatch):
                         lambda room: state["presence_rooms"].get(room, state["presence"]))
     monkeypatch.setattr(lo, "_room_illuminance_uncached",
                         lambda room: state["lux"].get(room))
-    monkeypatch.setattr(lo, "_co2_signal_class_uncached", lambda: state["co2"])
+    def fake_query(flux):
+        if '"co2"' in flux:
+            value = 700 if state["co2"] == "ELEVATED" else 430
+            return [type("R", (), {"get_value": lambda self: value})()]
+        raise AssertionError(f"Unexpected unmocked Flux query: {flux}")
+    monkeypatch.setattr(lo, "_query", fake_query)
     monkeypatch.setattr(lo, "within_min_dwell", lambda idx: state["dwell"])
     monkeypatch.setattr(lo, "publish_state",
                         lambda idx, on, reason: (published.append((idx, on, reason)) or True))
     monkeypatch.setattr(lo, "log_decision",
                         lambda idx, decision, reason, category="", manual_locked=False, on_dur=None:
                         decisions.append((idx, decision, reason)))
+    monkeypatch.setattr(lo.time, "sleep", lambda _: None)
     lo._memo.clear()
     lo._dismissed.clear()
+    monkeypatch.setattr(lo, "_dismissal_seen", {})
+    monkeypatch.setattr(lo, "_last_publish_ts", {})
     return {"published": published, "decisions": decisions, "state": state}
 
 
@@ -249,6 +247,7 @@ def test_toilet_duration_cap(harness):
 
 
 def test_whole_house_away_turns_off_living(harness):
+    harness["state"]["presence"] = False
     _eval(54, True, _local(2026, 1, 15, 14, 0), away=True)
     assert (54, False, "away_off") in harness["published"]
 
@@ -324,6 +323,71 @@ def test_dismissal_safety_cap_clears_without_vacancy(harness):
     assert 54 not in lo._dismissed
 
 
+def test_occupied_dismissal_does_not_expire_and_relight_room(harness):
+    lo._dismissed[54] = time.monotonic() - lo.DISMISSAL_SAFETY_CAP_S - 1
+    harness["state"]["presence"] = True
+    lo.maintain_dismissals(_local(2026, 9, 25, 2, 0))
+    _eval(54, False, _local(2026, 9, 25, 2, 0))
+    assert harness["published"] == []
+
+
+def test_living_dismissal_uses_the_same_occupancy_zone_as_auto_on(harness):
+    lo._dismissed[54] = time.monotonic()
+    harness["state"]["presence_rooms"] = {"kitchen": True, "living_room": False}
+    lo.maintain_dismissals(_local(2026, 9, 25, 2, 0))
+    _eval(54, False, _local(2026, 9, 25, 2, 0))
+    assert harness["published"] == []
+
+
+def test_mobile_off_is_respected_even_when_it_is_the_last_command(harness, monkeypatch):
+    harness["state"]["origin"] = "human"
+    harness["state"]["since"] = datetime.now(timezone.utc) - timedelta(seconds=5)
+    harness["state"]["presence"] = True
+    monkeypatch.setattr(lo, "fetch_recent_commands", lambda idx: [
+        (True, "optimizer", harness["state"]["since"] - timedelta(minutes=5)),
+        (False, "mobile", harness["state"]["since"]),
+    ])
+    now = _local(2026, 9, 25, 2, 0)
+    lo.detect_dismissals(now, {54: False})
+    _eval(54, False, now)
+    assert harness["published"] == []
+
+
+def test_cleared_dismissal_does_not_rearm_from_the_same_off_edge(harness):
+    harness["state"]["since"] = datetime.now(timezone.utc) - timedelta(seconds=5)
+    harness["state"]["presence"] = False
+    now = _local(2026, 9, 25, 2, 0)
+    lo.detect_dismissals(now, {44: False})
+    lo.maintain_dismissals(now)
+    lo.detect_dismissals(now, {44: False})  # still within DISMISSAL_FRESH_S
+    harness["state"]["presence"] = True
+    lo._memo.clear()
+    _eval(44, False, now)
+    assert (44, True, "auto_on_comfort") in harness["published"]
+
+
+def test_off_snapshot_while_our_on_is_in_flight_is_not_a_dismissal(harness):
+    harness["state"]["since"] = datetime.now(timezone.utc) - timedelta(seconds=20)
+    lo._last_publish_ts[44] = time.time() - 5
+    lo.detect_dismissals(_local(2026, 9, 25, 2, 0), {44: False})
+    assert 44 not in lo._dismissed
+
+
+def test_compose_dwell_allows_reentry_after_plc_round_trip(harness, monkeypatch):
+    compose = (Path(__file__).resolve().parents[1] / "docker-compose.yml").read_text()
+    dwell = float(re.search(r"MIN_DWELL_SECONDS=(\d+)", compose).group(1))
+    monkeypatch.setattr(lo, "MIN_DWELL_SECONDS", dwell)
+    # Use the actual guard (the harness normally bypasses the clock).
+    monkeypatch.setattr(lo, "within_min_dwell", _real_within_min_dwell)
+    lo._last_publish_ts[44] = time.time() - 35
+    harness["state"]["presence_rooms"] = {"wc_down": True}
+    _eval(44, False, _local(2026, 9, 25, 2, 0))
+    assert (44, True, "auto_on_comfort") in harness["published"]
+
+
+_real_within_min_dwell = lo.within_min_dwell
+
+
 def test_min_dwell_holds(harness):
     harness["state"]["dwell"] = True
     _eval(54, True, _local(2026, 1, 15, 14, 0))
@@ -396,12 +460,58 @@ def test_open_plan_culled_only_when_whole_zone_empty(harness):
     assert (54, False, "vacancy_off") in harness["published"]
 
 
-def test_open_plan_co2_vetoes_vacancy(harness):
-    # Both PIRs vacant but CO₂ ELEVATED (still occupants) → NOT culled.
+def test_open_plan_vacancy_is_not_overridden_by_co2(harness):
+    # Both installed sensors confirm vacancy: elevated CO₂ must not hold lights.
     harness["state"]["co2"] = "ELEVATED"
     harness["state"]["presence_rooms"] = {"living_room": False, "kitchen": False}
     harness["state"]["since"] = datetime.now(timezone.utc) - timedelta(minutes=30)
     _eval(40, True, _local(2026, 1, 15, 14, 0))
+    assert (40, False, "vacancy_off") in harness["published"]
+
+
+@pytest.mark.parametrize("readings", [
+    {"kitchen": False, "living_room": False},
+    {"kitchen": None, "living_room": None},
+    {"kitchen": False, "living_room": None},
+])
+def test_co2_alone_never_switches_on_an_empty_or_unknown_room(harness, readings):
+    harness["state"]["presence_rooms"] = readings
+    # Replay CO2 crossing the 580 ppm threshold repeatedly during the night.
+    for co2 in ("ELEVATED", "BASELINE", "ELEVATED", "BASELINE"):
+        lo._memo.clear()
+        harness["state"]["co2"] = co2
+        _eval(54, False, _local(2026, 9, 25, 2, 12))
+    assert harness["published"] == []
+
+
+@pytest.mark.parametrize("hour,away", [(18, False), (2, False), (2, True)])
+def test_open_plan_missing_sensor_cannot_confirm_vacancy(harness, hour, away):
+    harness["state"]["presence_rooms"] = {"kitchen": False, "living_room": None}
+    harness["state"]["since"] = _local(2026, 9, 24, 20, 0)
+    _eval(54, True, _local(2026, 9, 25, hour, 0), away=away)
+    assert harness["published"] == []
+
+
+@pytest.mark.parametrize("idx,room", [(44, "wc_down"), (6, "khh"),
+                                         (26, "hall_up"), (54, "living_room")])
+def test_occupied_room_vetoes_away_cull(harness, idx, room):
+    harness["state"]["presence_rooms"] = {room: True}
+    _eval(idx, True, _local(2026, 9, 25, 2, 0), away=True)
+    assert harness["published"] == []
+
+
+def test_presence_vetoes_whole_house_away(harness, monkeypatch):
+    harness["state"]["presence_rooms"] = {"wc_down": True}
+    monkeypatch.setattr(lo, "activity_recent", lambda _: False)
+    monkeypatch.setattr(lo, "BLE_AWAY_ENABLED", False)
+    assert lo.whole_house_away() is False
+
+
+def test_nighttime_lamp_brightness_cannot_switch_its_own_light_off(harness):
+    harness["state"]["presence_rooms"] = {"living_room": True}
+    harness["state"]["origin"] = "optimizer"
+    harness["state"]["lux"] = {"living_room": 300}
+    _eval(54, True, _local(2026, 9, 25, 2, 0), dark=True)
     assert harness["published"] == []
 
 

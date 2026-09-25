@@ -520,7 +520,8 @@ services:
       - PORCH_OFF_HOUR=22
       # Whole-house-away: BLE-identity when available, else activity fallback.
       - LONG_ABSENCE_MIN=180
-      - MIN_DWELL_SECONDS=300
+      # Cover the PLC round trip without blocking the next room visit.
+      - MIN_DWELL_SECONDS=30
       # Shadow mode: set LIGHTS_DRY_RUN=1 to log decisions without actuating.
       - DRY_RUN=${LIGHTS_DRY_RUN:-0}
     depends_on:

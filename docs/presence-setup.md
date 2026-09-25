@@ -120,9 +120,10 @@ its category defines the behaviour. Once a room has presence:
 
 | Room group | With presence installed |
 |---|---|
-| Living room (54/55/19 → `living_room`, FP300) | auto-on when dark+present; **vacancy-off when the FP300 says empty** (kitchen 8/40 stay on `living_core`/CO₂, so a vacant living room can't kill kitchen lights) |
-| Halls / stairs (PIR) | motion + dark → on; off shortly after vacant |
-| WC / bathroom (PIR) | motion → on; off after vacant (bath uses a long `linger_s` so a still shower isn't cut) |
+| Kitchen/living (8/40/19/54, kitchen PIR + living FP300) | dark + either sensor occupied → on; both sensors must confirm vacancy → off. No CO₂ lighting trigger. Output 55 is disconnected. |
+| Halls / stairs (PIR) | motion + dark → on; vacancy after 90 s grace following the device false |
+| WC / bathroom (PIR) | motion → on; vacancy after 300 s grace following the device false |
+| KHH (PIR) | LED 6: motion + dark → on; vacancy after 180 s grace. Ceiling 56 stays manual-on. |
 | Bedrooms (PIR) | motion + dark → on; off when vacant/overnight *(set the `bedroom` category `auto_on=False` in the code if you don't want ceilings coming on at night)* |
 | Office (future FP300) | dark + present → on; only off when away (never mid-work) |
 | Theater (future FP300) | **never auto-on** (manual mood); mmWave only prevents wrong auto-off during a movie |

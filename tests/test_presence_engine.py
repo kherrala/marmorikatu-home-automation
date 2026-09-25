@@ -4,6 +4,9 @@
 """
 import json
 import time
+from pathlib import Path
+
+import pytest
 
 import presence_engine as pe
 
@@ -179,6 +182,39 @@ def test_pir_redetect_cancels_pending(monkeypatch):
     # A re-detect within the grace cancels the pending vacancy.
     pe.on_message(None, None, _FakeMsg("snzb_test", {"occupancy": True}))
     assert pe._state["hall_test"]["pending_vacant_since"] == 0.0
+
+
+@pytest.mark.parametrize("room,gap", [("hall_up", 45), ("hall_down", 45),
+                                     ("khh", 120), ("wc_down", 120), ("bath_up", 120)])
+def test_configured_pir_rooms_bridge_brief_motion_gaps(monkeypatch, room, gap):
+    config = json.loads((Path(__file__).resolve().parents[1] /
+                         "config/presence_rooms.json").read_text())
+    rc = config["rooms"][room]
+    monkeypatch.setattr(pe, "_devices", {"snzb_test": room})
+    monkeypatch.setattr(pe, "_rooms", {room: rc})
+    monkeypatch.setattr(pe, "_state", {})
+    monkeypatch.setattr(pe, "emit_room", lambda _: None)
+    monkeypatch.setattr(pe, "touch_health", lambda: None)
+    clock = {"now": 100_000.0}
+    monkeypatch.setattr(pe.time, "time", lambda: clock["now"])
+    pe.on_message(None, None, _FakeMsg("snzb_test", {"occupancy": True}))
+    clock["now"] += 60
+    pe.on_message(None, None, _FakeMsg("snzb_test", {"occupancy": False}))
+    st = pe._state[room]
+    confirm, failsafe = pe._vacancy_params(rc)
+    clock["now"] += gap
+    assert pe._tick_vacancy(st["occupied"], st["pending_vacant_since"],
+                            st["last_positive"], st["last_emit"], clock["now"],
+                            confirm, failsafe, pe.HEARTBEAT_S) != "clear"
+    pe.on_message(None, None, _FakeMsg("snzb_test", {"occupancy": True}))
+    assert st["occupied"] is True
+    assert st["pending_vacant_since"] == 0.0
+    # A real departure still clears once the configured grace has elapsed.
+    pe.on_message(None, None, _FakeMsg("snzb_test", {"occupancy": False}))
+    clock["now"] += confirm + 1
+    assert pe._tick_vacancy(st["occupied"], st["pending_vacant_since"],
+                            st["last_positive"], st["last_emit"], clock["now"],
+                            confirm, failsafe, pe.HEARTBEAT_S) == "clear"
 
 
 # ── Stale/dead sensor demotes a vacant room's confidence ──────────────────────

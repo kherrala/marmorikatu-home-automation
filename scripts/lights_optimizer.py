@@ -25,8 +25,9 @@ Provenance (the core fix for v1's "flapping"):
 
 Presence (Core C): the optimizer consumes a NORMALIZED per-room occupancy
   signal (`presence` measurement / `presence/<room>` — written by the separate
-  Presence Service project). Until that lands, it degrades to interim signals:
-  kitchen-CO₂ for the open-plan living core, astronomical darkness, and
+  Presence Service project). Auto-on requires real occupancy. Kitchen CO₂
+  is not used for lighting decisions now that both zone sensors are installed.
+  Other interim signals are astronomical darkness and
   BLE-identity "anyone home" (`ble` measurement) for whole-house-away, with a
   legacy activity fallback.
 
@@ -167,12 +168,6 @@ ROOM_BRIGHT_LUX = {"living_room": 200}
 # bridges the race where a light is switched on a beat before the sensor reports
 # presence, so we don't instantly turn it back off.
 VACANCY_GRACE_MIN = float(os.environ.get("VACANCY_GRACE_MIN", "1.5"))
-
-# CO₂ (interim living-core occupancy). Ported from v1.
-CO2_AUTO_ON_DELTA_PPM = float(os.environ.get("CO2_AUTO_ON_DELTA_PPM", "20"))
-CO2_AUTO_ON_ABSOLUTE_PPM = float(os.environ.get("CO2_AUTO_ON_ABSOLUTE_PPM", "580"))
-CO2_AUTO_OFF_DELTA_PPM = float(os.environ.get("CO2_AUTO_OFF_DELTA_PPM", "100"))
-CO2_AUTO_OFF_ABSOLUTE_PPM = float(os.environ.get("CO2_AUTO_OFF_ABSOLUTE_PPM", "450"))
 
 # Front porch schedule (idx 47).
 PORCH_OFF_HOUR = int(os.environ.get("PORCH_OFF_HOUR", os.environ.get("TERRACE_OFF_HOUR", "23")))
@@ -360,9 +355,11 @@ _last_publish_ts: dict[int, float] = {}
 # A dismissal registers only for an off that JUST happened (within this window); an
 # older off still lingering as the last transition must not re-arm it on return.
 DISMISSAL_FRESH_S = float(os.environ.get("DISMISSAL_FRESH_S", "120"))
-# Safety cap: drop a dismissal after this long even if the room never reports vacant
-# (CO2/sensorless rooms), so auto-on can never be wedged.
+# Safety cap for unknown/sensorless rooms. Known occupancy keeps the dismissal
+# until departure, so turning lights off to sleep cannot relight them on a timer.
 DISMISSAL_SAFETY_CAP_S = float(os.environ.get("DISMISSAL_SAFETY_CAP_S", "1800"))
+# Process each observed OFF edge once, including after a dismissal is cleared.
+_dismissal_seen: dict[int, datetime] = {}
 # Per-tick memoization of expensive shared queries (cleared each tick).
 _memo: dict = {}
 
@@ -524,7 +521,7 @@ from(bucket: "{INFLUXDB_BUCKET}")
         src = r.values.get("source") or "unknown"
         if t is not None:
             out.append((target, str(src), t))
-    return out
+    return sorted(out, key=lambda cmd: cmd[2])
 
 
 def classify_origin(idx: int, is_on: bool, since: datetime | None) -> str:
@@ -614,49 +611,6 @@ from(bucket: "{INFLUXDB_BUCKET}")
     return bool(occ)
 
 
-def co2_signal_class() -> str:
-    return _memoize("co2", _co2_signal_class_uncached)
-
-
-def _co2_signal_class_uncached() -> str:
-    """Kitchen Ruuvi CO₂ trend for the living core: ELEVATED / DROPPED /
-    BASELINE / UNKNOWN. Baseline anchored 2 h→1 h back so a slow occupancy ramp
-    stays visible; absolute fallbacks catch sustained occupancy with no
-    baseline (cold start)."""
-    def _mean(rng: str) -> float | None:
-        rows = _query(f'''
-from(bucket: "{INFLUXDB_BUCKET}")
-  |> range({rng})
-  |> filter(fn: (r) => r._measurement == "ruuvi" and r.sensor_name == "Keittiö" and r._field == "co2")
-  |> mean()
-''')
-        if not rows:
-            return None
-        v = rows[0].get_value()
-        try:
-            return float(v) if v is not None else None
-        except (TypeError, ValueError):
-            return None
-
-    recent = _mean("start: -5m")
-    if recent is None:
-        return "UNKNOWN"
-    base = _mean("start: -2h, stop: -1h")
-    if base is None:
-        base = _mean("start: -6h, stop: -1h")  # cold-start widen
-    if recent >= CO2_AUTO_ON_ABSOLUTE_PPM:
-        return "ELEVATED"
-    if recent <= CO2_AUTO_OFF_ABSOLUTE_PPM:
-        return "DROPPED"
-    if base is not None:
-        delta = recent - base
-        if delta >= CO2_AUTO_ON_DELTA_PPM:
-            return "ELEVATED"
-        if delta <= -CO2_AUTO_OFF_DELTA_PPM:
-            return "DROPPED"
-    return "BASELINE"
-
-
 # The kitchen and living room are ONE open-plan space, lit by both the kitchen
 # ceilings (8,40) and the living ceilings (19,54). A single sensor never covers all
 # of it — the kitchen PIR misses the sofa, the living FP300 misses the counter, and
@@ -667,19 +621,15 @@ OPEN_PLAN_ROOMS = ("kitchen", "living_room")
 
 
 def living_core_presence() -> bool | None:
-    """Unified open-plan occupancy for the `living` category. OCCUPIED if ANY zone
-    sensor sees someone, or CO₂ is ELEVATED (a rising-CO₂ veto catches still
-    occupants the PIRs miss — CO₂ only ever holds/enables, never culls). VACANT only
-    when EVERY zone sensor that has a reading says empty AND CO₂ isn't elevated. None
-    (comfort-first hold) when nothing is confident — e.g. every zone sensor is dead
-    (demoted to <PRESENCE_MIN_CONFIDENCE) so presence_for_room returns None."""
+    """Real occupancy across the open-plan zone. Any occupied sensor holds the
+    zone; vacancy requires BOTH sensors to confidently report empty. An unavailable
+    sensor cannot prove its half empty. CO₂ is excluded:
+    residual CO₂ crossing a threshold must never relight an empty room at night.
+    """
     readings = [presence_for_room(r) for r in OPEN_PLAN_ROOMS]
     if any(p is True for p in readings):
         return True
-    if co2_signal_class() == "ELEVATED":
-        return True
-    real = [p for p in readings if p is not None]
-    if real and all(p is False for p in real):
+    if all(p is False for p in readings):
         return False
     return None
 
@@ -737,6 +687,11 @@ def whole_house_away() -> bool:
     """High-confidence 'nobody home'. BLE advertiser-count is opt-in
     (BLE_AWAY_ENABLED) because an always-on basement SmartTag never lets the
     count reach zero; by default use the legacy activity heuristic."""
+    # Lack of switch presses does not mean an occupied house is empty. Evaluate
+    # real presence first, including rooms outside the open-plan living area.
+    rooms = set(LIGHT_ROOM.values()) | {c.presence_room for c in CATS.values() if c.presence_room}
+    if any(presence_for_room(room) is True for room in sorted(rooms)):
+        return False
     if BLE_AWAY_ENABLED:
         n = ble_present_count()
         if n is not None:
@@ -1022,15 +977,12 @@ def evaluate_light(idx: int, is_on: bool, now: datetime, sunrise: datetime,
         log_decision(idx, "hold", "min_dwell_hold", cat_name)
         return
 
-    # REAL per-room presence from the Presence Engine ONLY (None until a sensor
-    # exists for this light's room). Deliberately does NOT include kitchen-CO₂:
-    # CO₂ lags and reads "dropped" when people sit still, so it may only ever
-    # turn a light ON (comfort), never OFF — using it for vacancy-off was the v1
-    # bug that turned off the occupied kitchen/living room. The room is the
-    # light's physical room (LIGHT_ROOM) or its category default.
+    # Real sensor occupancy only. Missing or low-confidence readings are unknown;
+    # CO₂ is not an occupancy substitute. The room is the light's physical room
+    # (LIGHT_ROOM) or its category default.
     room = LIGHT_ROOM.get(idx) or cat.presence_room
     # The open-plan living category (kitchen + living ceilings) is one occupancy
-    # zone — held if ANY zone sensor (or CO₂) sees someone, culled only when the
+    # zone — held if ANY zone sensor sees someone, culled only when the
     # WHOLE zone reads empty. Every other light uses just its own room. `room` still
     # drives the per-room lux gates (dark/bright) below — only presence is unified.
     presence = living_core_presence() if cat_name == "living" else presence_for_room(room)
@@ -1042,7 +994,8 @@ def evaluate_light(idx: int, is_on: bool, now: datetime, sunrise: datetime,
                       if since is not None else float("inf"))
         human_on = classify_origin(idx, is_on, since) in ("human", "wall")
         # 1) Whole-house away — highest-confidence cull, overrides manual.
-        if cat.away_off and away:
+        vacant_for_cull = presence is False if cat_name == "living" else presence is not True
+        if cat.away_off and away and vacant_for_cull:
             _act_off(idx, "away_off", cat_name, human_on, on_dur_min)
             return
         # 2) Daylight waste (window / accent-opt / outdoor) — overrides manual;
@@ -1055,7 +1008,8 @@ def evaluate_light(idx: int, is_on: bool, now: datetime, sunrise: datetime,
         #     not astronomical, so it catches overcast→sun. Never culls a human's
         #     light, and only rooms in ROOM_BRIGHT_LUX (big enough that the light
         #     can't push the sensor over the bar). Grace floor avoids flapping.
-        if (cat.auto_on and not human_on and on_dur_min >= VACANCY_GRACE_MIN
+        if (cat.auto_on and not human_on and not is_dark
+                and in_daylight(now, sunrise, sunset) and on_dur_min >= VACANCY_GRACE_MIN
                 and room in ROOM_BRIGHT_LUX):
             room_lux = room_illuminance(room)
             if room_lux is not None and room_lux > ROOM_BRIGHT_LUX[room]:
@@ -1073,7 +1027,7 @@ def evaluate_light(idx: int, is_on: bool, now: datetime, sunrise: datetime,
         #    presence (occupied) is never culled.
         if cat.overnight_off and in_overnight_window(now):
             turned_on_in_window = since is not None and since.astimezone(LOCAL_TZ) >= overnight_start_dt(now)
-            if not turned_on_in_window and presence is not True:
+            if not turned_on_in_window and vacant_for_cull:
                 _act_off(idx, "overnight_off", cat_name, human_on, on_dur_min)
                 return
         # 5) Duration cap (transient categories) — after the manual grace. Real
@@ -1104,7 +1058,7 @@ def evaluate_light(idx: int, is_on: bool, now: datetime, sunrise: datetime,
         log_decision(idx, "hold", "dismissed_session", cat_name)
         return
     # Auto-ON occupancy. For the living category `presence` is already the unified
-    # open-plan signal (any zone sensor OR elevated CO₂), so it needs no extra
+    # open-plan signal (any real zone sensor), so it needs no extra
     # fallback here. Every other light uses its own room's presence.
     occ_for_on = presence
     if occ_for_on is True:
@@ -1131,8 +1085,9 @@ def maintain_dismissals(now: datetime):
     (the user left → a fresh arrival should get light again) or the safety cap
     elapsed (rooms whose occupancy we can't sense never wedge auto-on)."""
     for idx in list(_dismissed):
-        occ = presence_for_room(_room_of(idx))
-        capped = (time.monotonic() - _dismissed[idx]) > DISMISSAL_SAFETY_CAP_S
+        occ = (living_core_presence() if CATEGORY_OF.get(idx) == "living"
+               else presence_for_room(_room_of(idx)))
+        capped = occ is None and (time.monotonic() - _dismissed[idx]) > DISMISSAL_SAFETY_CAP_S
         if occ is False or capped:
             del _dismissed[idx]
             log.info("light %d dismissal cleared (%s)", idx,
@@ -1140,31 +1095,34 @@ def maintain_dismissals(now: datetime):
 
 
 def detect_dismissals(now: datetime, states: dict[int, bool]):
-    """Register a SESSION dismissal the moment the user turns OFF a light we
-    auto-on'd, so we stop fighting them. Edge-triggered on the FRESH off transition
+    """Register a SESSION dismissal when the user turns OFF an auto-on-capable
+    light, so we stop fighting them. Edge-triggered on the FRESH off transition
     — an old off still sitting as the last transition (e.g. the user walking back
     into a room they darkened hours ago) must NOT re-arm suppression. Cleared by
     maintain_dismissals when the room goes vacant."""
     for idx, cat_name in CATEGORY_OF.items():
         if not CATS[cat_name].auto_on:
             continue
-        if states.get(idx):
-            continue  # still on
+        if states.get(idx) is not False:
+            continue  # still on, or no current observation
         if idx in _dismissed:
             continue
         _, since = fetch_last_transition(idx)
         if since is None:
             continue
+        if _dismissal_seen.get(idx) == since:
+            continue
+        _dismissal_seen[idx] = since
         # Only a JUST-happened off is a dismissal — this is what makes it
         # session-scoped rather than a stale-history day-lock.
         if (datetime.now(timezone.utc) - since).total_seconds() > DISMISSAL_FRESH_S:
             continue
-        cmds = fetch_recent_commands(idx)
-        if not cmds:
+        # While our ON command is in flight, the last observed OFF predates it.
+        # That old state is not the user rejecting the new command.
+        if since.timestamp() <= _last_publish_ts.get(idx, 0.0):
             continue
-        last_target, last_src, _ = cmds[-1]
         off_origin = classify_origin(idx, False, since)
-        if last_src == "optimizer" and last_target is True and off_origin in ("human", "wall"):
+        if off_origin in ("human", "wall"):
             _dismissed[idx] = time.monotonic()
             log.info("light %d dismissed by %s — suppress auto-on until the room is next vacant",
                      idx, off_origin)

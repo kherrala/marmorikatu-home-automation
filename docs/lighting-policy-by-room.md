@@ -8,26 +8,24 @@ criteria** (all must hold to turn one off), plus guardrails.
 Cross-cutting rules apply to **every** group and are not repeated below:
 
 - **Manual-wins on the re-fight.** If the optimizer auto-turned a light ON and a
-  human turns it OFF, it is *dismissed* and not re-enabled until the next day.
-- **Min-dwell.** The optimizer never reverses its own command within 5 min.
+  human turns it OFF, it is *dismissed* and not re-enabled until the room/zone next goes vacant. Each OFF edge is handled once.
+- **Min-dwell.** The optimizer never reverses its own command within 30 s (PLC actuation plus state broadcast).
 - **Provenance.** Every decision records whether the current state came from a
   human (wall / mobile / voice) or the optimizer (`manual_locked`).
 - **High-confidence culls fire regardless of who turned a light on.** Provenance
   does not veto daylight / overnight / away / duration-cap offs — it only
   prevents the auto-on re-fight. What protects a room from being turned off is
   its **category** simply not having that off-rule.
-- **CO₂ is an auto-ON signal only** — it never turns a light off (it lags and
-  reads low when people sit still). Turning a room off on "empty" requires a
-  **real presence signal** (Zigbee mmWave/PIR via the Presence Service), which
-  activates per room as sensors are installed. Until then, living spaces are
-  simply held during awake hours.
-- **Darkness** = astronomical sun elevation < 8°. **Whole-house-away** = no
-  wall-switch / light activity for 3 h (activity heuristic). *BLE advertiser
-  counting is deliberately NOT used for away by default* (`BLE_AWAY_ENABLED=0`):
-  an always-on, MAC-rotating Samsung SmartTag in the basement (the bike) would
-  keep the count above zero forever, and carried keychain tags stay quiet near
-  their owner's phone — so raw BLE is not a reliable occupancy signal here. Real
-  occupancy will come from the Zigbee Presence Service.
+- **Occupancy comes from the installed Zigbee sensors. CO₂ does not control lighting.**
+  Kitchen and living room share one zone: either occupied sensor holds/activates
+  the lights; both must confirm vacancy for vacancy/away/overnight culls. Unknown
+  occupancy holds existing living lights and cannot trigger auto-on.
+- **Darkness** = astronomical sun elevation < 8° or measured room illuminance below
+  its threshold; windowless WCs skip this gate. Brightness culls only run in daylight.
+- **Whole-house-away** falls back to no switch/light activity for 3 h, but any
+  mapped occupied room vetoes it. BLE advertiser counting remains opt-in.
+- **PIR vacancy grace** starts after the device's explicit `false`: halls 90 s,
+  KHH/kitchen 180 s, WCs/upstairs bathroom 300 s. Re-detection cancels vacancy.
 
 Household context: two remote-working adults + two children (8–9), home most of
 the day; free time spent in the theater, downstairs living room, and dining
@@ -39,8 +37,7 @@ the evening).
 ## 1. Living core — kitchen · dining · downstairs living room
 
 **Lights:** 8 Keittiö katto, 40 Keittiö kattovalo, 19 Ruokailu, 54 Olohuone
-kattovalo, 55 Olohuone kattovalo 2. *(Open-plan; the kitchen Ruuvi CO₂ sensor +
-the living-room FP300 cover the area.)*
+kattovalo. *(Open-plan; kitchen PIR + living-room FP300. Output 55 is disconnected.)*
 
 > **5 Olohuone LED** is a full room light too, but the household wants **only the
 > kattovalo to auto-on**. It's category `secondary`: never auto-on (switched on
@@ -48,12 +45,11 @@ the living-room FP300 cover the area.)*
 
 - **Need:** where the family lives — must be lit when someone is here in the
   dark, and **must never go dark on an occupied room**.
-- **Auto-ON:** it's dark **AND** the space reads occupied (kitchen CO₂ elevated,
-  or real presence) **AND** not dismissed today.
-- **Auto-OFF:** only **whole-house-away**, or **overnight** if the light was
-  left on and forgotten (on since before 00:30, room not occupied). **No daytime
-  off, no occupancy-off during awake hours.**
-- **Guardrail:** a person sitting still with low CO₂ never triggers an off.
+- **Auto-ON:** it's dark **AND** either zone sensor reads occupied **AND** the current occupancy session is not dismissed.
+- **Auto-OFF:** both zone sensors confidently vacant after their grace; away or
+  forgotten overnight culls also require confirmed vacancy. Optimizer-lit living
+  lights may turn off when genuinely bright in daylight; manual lights are protected.
+- **Guardrail:** either occupied sensor vetoes vacancy/away/overnight culls; CO₂ has no effect.
 
 ## 2. Window & decorative window lights
 
@@ -182,7 +178,7 @@ lights 23/30/32 are in group 2; the adults' walk-in closet 31 is in group 5.)*
 
 | Room group | Auto-ON when… | Auto-OFF when… |
 |---|---|---|
-| Living core | dark + occupied (CO₂/presence) | away · overnight-if-forgotten |
+| Living core | dark + either sensor occupied | both sensors vacant; daylight brightness cull only for optimizer-lit lights |
 | Window | — | daylight · overnight · away |
 | Accent LED | — | overnight · away |
 | Circulation | (PIR: motion + dark) | duration cap · overnight · away |
