@@ -25,6 +25,7 @@ Complete schema reference for the building automation InfluxDB database.
 | `plc_publisher` | MQTT (`marmorikatu/status`) | ~13 s | — | PLC publisher heartbeat counters |
 | `light_command` | MQTT (`marmorikatu/light/<idx>/command`) | per command | `light_id`, `light_name`, `source` | Provenance breadcrumb — who commanded a light (`optimizer`/`mobile`/`mcp`/`voice`); field `is_on` (0/1) |
 | `ble` | MQTT (Ruuvi Gateway raw BLE) | per sighting | `mac`, `device_class`, `name`? | BLE-identity sightings for whole-house presence; field `rssi` (int dBm) |
+| `presence` | Presence Engine / Zigbee2MQTT | on change + 60 s heartbeat | `room`, `source` | `occupied` (debounced 0/1), `sensor_occupied` (combined raw 0/1), `confidence`, `illuminance`, `battery`; FP300 also exposes `sensor_presence` and `sensor_motion` (raw 0/1 inputs) |
 | `lights_optimizer` | `scripts/lights_optimizer.py` | per tick/light | `light_id`, `light_name`, `category` | Lights-optimizer decision log; fields `decision`, `reason`, `manual_locked`, `on_duration_min`, `dry_run` |
 
 For the publishing protocol see `../marmorikatu-plc/MQTT.md`.

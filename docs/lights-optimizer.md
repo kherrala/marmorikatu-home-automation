@@ -64,7 +64,14 @@ brightness gate. `bright_enough` applies only in daylight, never at night.
 The Presence Engine owns vacancy timing. After the PIR's explicit `false`,
 halls wait 90 s, KHH/kitchen 180 s, and WCs/upstairs bathroom 300 s. Motion during
 this grace cancels vacancy immediately. The device's own detection duration is
-additional. The living FP300 retains its 150 s falling-edge debounce.
+additional. The living FP300 combines its radar presence and PIR motion inputs:
+either positive holds the room occupied. Both must stay clear for 300 s before
+vacancy (`falling_confirm_s`); a new positive cancels that timer. Other mmWave
+rooms retain the global 150 s default.
+
+KHH uses a 40-lux auto-on threshold. Its former 12-lux override blocked real
+morning arrivals at 17–18 lux once astronomical darkness ended. Only LED 6
+auto-ons; ceiling 56 remains manual-on.
 
 ## Tick
 

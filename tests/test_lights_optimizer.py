@@ -590,6 +590,23 @@ def test_khh_led_auto_ons_when_dark(harness):
     assert (6, True, "auto_on_comfort") in harness["published"]
 
 
+@pytest.mark.parametrize("lux", [17, 18, 39])
+def test_khh_morning_motion_lights_dim_room_after_sunrise(harness, lux):
+    # Actual morning readings were 17–18 lux (up to 39 with lamps on). The
+    # old 12-lux override suppressed auto-on once the sun crossed 8 degrees.
+    harness["state"]["presence_rooms"] = {"khh": True}
+    harness["state"]["lux"] = {"khh": lux}
+    _eval(6, False, _local(2026, 9, 26, 8, 34), dark=False)
+    assert (6, True, "auto_on_comfort") in harness["published"]
+
+
+def test_khh_genuinely_bright_room_stays_off(harness):
+    harness["state"]["presence_rooms"] = {"khh": True}
+    harness["state"]["lux"] = {"khh": 60}
+    _eval(6, False, _local(2026, 9, 26, 10), dark=False)
+    assert harness["published"] == []
+
+
 def test_portaikko_not_driven_by_hall_down_sensor():
     # The hall_down PIR is nowhere near the portaikko (42) — must stay unmapped.
     assert lo.LIGHT_ROOM.get(42) != "hall_down"

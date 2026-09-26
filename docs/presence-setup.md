@@ -103,13 +103,24 @@ tick — no restart needed.
 
 The Presence Engine publishes to `presence/<room>` (retained) and writes the
 `presence` InfluxDB measurement (tags `room`, `source`; fields `occupied` 0/1,
-`confidence`, `illuminance`, `battery`):
+`sensor_occupied`, `confidence`, `illuminance`, `battery`):
 ```json
 { "room": "living_room", "occupied": true, "confidence": 0.95,
   "source": "fp300_living", "illuminance": 40, "battery": 100, "ts": 1784... }
 ```
 Consumers **never** see vendor payloads — add a new sensor brand later and only
 the engine's normalization changes.
+
+FP300 occupancy combines both enabled inputs: `presence` (radar) OR
+`pir_detection` (motion). The device can report `presence:false` while its PIR
+still detects moving people. Conversely, a false PIR must not cancel radar
+presence. `sensor_occupied` is this combined raw level; optional
+`sensor_presence` and `sensor_motion` expose the individual inputs as 0/1 fields
+(booleans on MQTT). Partial reports preserve the other channel's last level.
+The explicitly disabled channel is ignored in `mmwave`-only or `pir`-only mode.
+
+Olohuone/Ruokailu uses 300 s of continuously clear inputs before going vacant.
+Its `linger_s=7200` is only the dead-sensor failsafe, not the vacancy delay.
 
 ---
 
@@ -123,12 +134,12 @@ its category defines the behaviour. Once a room has presence:
 | Kitchen/living (8/40/19/54, kitchen PIR + living FP300) | dark + either sensor occupied → on; both sensors must confirm vacancy → off. No CO₂ lighting trigger. Output 55 is disconnected. |
 | Halls / stairs (PIR) | motion + dark → on; vacancy after 90 s grace following the device false |
 | WC / bathroom (PIR) | motion → on; vacancy after 300 s grace following the device false |
-| KHH (PIR) | LED 6: motion + dark → on; vacancy after 180 s grace. Ceiling 56 stays manual-on. |
+| KHH (PIR) | LED 6: motion + dark (below 40 lux or astronomical darkness) → on; vacancy after 180 s grace. Ceiling 56 stays manual-on. |
 | Bedrooms (PIR) | motion + dark → on; off when vacant/overnight *(set the `bedroom` category `auto_on=False` in the code if you don't want ceilings coming on at night)* |
 | Office (future FP300) | dark + present → on; only off when away (never mid-work) |
 | Theater (future FP300) | **never auto-on** (manual mood); mmWave only prevents wrong auto-off during a movie |
 
-The engine owns the vacancy *timing* (per-room `linger_s`); the optimizer adds
+The engine owns vacancy *timing* (PIR `linger_s`, mmWave `falling_confirm_s`); the optimizer adds
 only a small `VACANCY_GRACE_MIN` (90 s) on-time floor to bridge the
 switch-on-before-sensor race, plus the global `MIN_DWELL_SECONDS`.
 
@@ -136,8 +147,10 @@ switch-on-before-sensor race, plus the global `MIN_DWELL_SECONDS`.
 
 ## Tuning
 
-- **`config/presence_rooms.json`** — `linger_s` per room (raise for rooms where
-  people sit still without a mmWave sensor; the `bath_up` default is 600 s).
+- **`config/presence_rooms.json`** — PIR `linger_s` is grace after the explicit
+  false (300 s for `bath_up`). For mmWave, `falling_confirm_s` is the vacancy
+  confirmation (300 s in the living room, otherwise global default 150 s),
+  while `linger_s` is the long dead-sensor failsafe.
   Hot-reloaded.
 - **SNZB-03PR2 occupancy timeout / illuminance reporting** — set per-device in
   the Z2M frontend or `zigbee2mqtt/configuration.yaml`.

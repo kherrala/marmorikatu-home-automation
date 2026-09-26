@@ -24,7 +24,9 @@ differs by sensor kind:
     holds presence while it sees you — but Z2M only re-publishes that level
     sporadically (seconds to minutes apart). So the room is HELD occupied from
     the `true` edge until the `false` edge; `linger_s` is only a long
-    dead-sensor failsafe, not the primary timer.
+    dead-sensor failsafe, not the primary timer. For the FP300, either enabled
+    channel (`presence` OR `pir_detection`) means occupied. Only both clear
+    can start vacancy confirmation; PIR alone can detect motion the radar misses.
   * PIR (SNZB-03P/PR2) is NOT a bare pulse: it holds `occupancy:true` internally
     for its Detection Duration (pir_occupied_to_unoccupied_delay, ≤60 s) after the
     LAST motion, then emits ONE explicit `occupancy:false`. It never re-sends an
@@ -167,18 +169,37 @@ def load_config(force=False):
          f"({', '.join(sorted(_rooms)) or 'none'})")
 
 
+def _occupancy_value(value) -> bool | None:
+    """Decode a binary sensor level; unavailable/invalid is not vacancy."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        value = value.strip().lower()
+        if value in ("true", "occupied", "presence", "detected", "1"):
+            return True
+        if value in ("false", "vacant", "clear", "0"):
+            return False
+    if isinstance(value, (int, float)) and value in (0, 1):
+        return bool(value)
+    return None
+
+
 def _positive(payload: dict) -> bool | None:
-    """Is this a positive occupancy/motion signal? None if the message carries
-    no occupancy field (e.g. a battery-only report)."""
-    for key in ("occupancy", "presence"):
-        if key in payload:
-            v = payload[key]
-            if isinstance(v, bool):
-                return v
-            if isinstance(v, str):
-                return v.lower() in ("true", "occupied", "presence", "detected", "1")
-            if isinstance(v, (int, float)):
-                return v > 0
+    """Any enabled detection channel proves occupancy. The FP300 can report
+    presence:false while its PIR detects people; ignoring that channel caused
+    occupied-room shutoffs. A false PIR must likewise never veto active radar.
+    """
+    mode = payload.get("presence_detection_options")
+    keys = ["occupancy"]
+    if mode != "pir":
+        keys.append("presence")
+    if mode != "mmwave":
+        keys.append("pir_detection")
+    values = [_occupancy_value(payload.get(key)) for key in keys if key in payload]
+    if any(v is True for v in values):
+        return True
+    if values and all(v is False for v in values):
+        return False
     return None
 
 
@@ -212,12 +233,12 @@ def _vacancy_params(rc: dict) -> tuple[float, float]:
       * PIR — the device already held ~60 s before its `false`, so `linger_s` is a
         short grace AFTER that falling edge, and the last-positive guard is a long
         stuck-sensor failsafe (PIR_DEAD_SENSOR_FAILSAFE_S), never a presence cap.
-      * mmWave — a short FALLING_CONFIRM_S absorbs a lone spurious `false`, and
-        `linger_s` is the long dead-sensor failsafe.
+      * mmWave — room falling_confirm_s (default FALLING_CONFIRM_S) absorbs
+        detection gaps; `linger_s` is the long dead-sensor failsafe.
     """
     if rc.get("type") == "pir":
         return float(rc["linger_s"]), PIR_DEAD_SENSOR_FAILSAFE_S
-    return FALLING_CONFIRM_S, float(rc["linger_s"])
+    return float(rc.get("falling_confirm_s", FALLING_CONFIRM_S)), float(rc["linger_s"])
 
 
 def _num(payload: dict, *keys):
@@ -267,10 +288,16 @@ def on_message(client, userdata, msg):
     if batt is not None:
         st["battery"] = batt
 
-    pos = _positive(payload)
+    # Z2M normally publishes full state, but partial reports must retain the
+    # other channel's level. PIR going quiet cannot clear still-active radar.
+    signals = st.setdefault("occupancy_signals", {})
+    signal_keys = ("occupancy", "presence", "pir_detection", "presence_detection_options")
+    updates = {key: payload[key] for key in signal_keys if key in payload}
+    signals.update(updates)
+    pos = _positive(signals) if updates else None
     room_type = (_rooms.get(room) or {}).get("type")
 
-    # Raw sensor occupancy (matches Z2M) — tracked and emitted separately from the
+    # Raw combined sensor occupancy — tracked and emitted separately from the
     # debounced `occupied` so the dashboard can show the real sensor state, not
     # only the lingered one. A raw change alone (e.g. a PIR falling edge, which the
     # debounce below ignores) still writes a point so Grafana clears in step.
@@ -278,6 +305,13 @@ def on_message(client, userdata, msg):
     if pos is not None and pos != st.get("sensor_occupied"):
         st["sensor_occupied"] = pos
         emit_needed = True
+    # Keep both FP300 inputs observable so radar loss vs actual motion is visible.
+    for source_key, field in (("presence", "sensor_presence"),
+                              ("pir_detection", "sensor_motion")):
+        value = _occupancy_value(signals.get(source_key))
+        if value is not None and value != st.get(field):
+            st[field] = value
+            emit_needed = True
 
     if pos is True:
         st["last_positive"] = time.time()   # refresh the failsafe / linger window
@@ -327,6 +361,9 @@ def emit_room(room: str):
     }
     if st.get("sensor_occupied") is not None:
         payload["sensor_occupied"] = bool(st["sensor_occupied"])
+    for field in ("sensor_presence", "sensor_motion"):
+        if st.get(field) is not None:
+            payload[field] = bool(st[field])
     if st["illuminance"] is not None:
         payload["illuminance"] = st["illuminance"]
     if st["battery"] is not None:
@@ -345,6 +382,9 @@ def emit_room(room: str):
          .time(datetime.now(timezone.utc), WritePrecision.S))
     if st.get("sensor_occupied") is not None:
         p = p.field("sensor_occupied", 1 if st["sensor_occupied"] else 0)
+    for field in ("sensor_presence", "sensor_motion"):
+        if st.get(field) is not None:
+            p = p.field(field, 1 if st[field] else 0)
     if st["illuminance"] is not None:
         p = p.field("illuminance", float(st["illuminance"]))
     if st["battery"] is not None:
