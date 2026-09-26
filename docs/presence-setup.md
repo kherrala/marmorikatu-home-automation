@@ -133,22 +133,27 @@ its category defines the behaviour. Once a room has presence:
 |---|---|
 | Kitchen/living (8/40/19/54, kitchen PIR + living FP300) | dark + either sensor occupied → on; both sensors must confirm vacancy → off. No CO₂ lighting trigger. Output 55 is disconnected. |
 | Halls / stairs (PIR) | motion + dark → on; vacancy after 90 s grace following the device false |
-| WC / bathroom (PIR) | motion → on; vacancy after 300 s grace following the device false |
+| WC / bathroom (PIR) | motion → on; vacancy after 900 s (15 min) grace following the device false |
 | KHH (PIR) | LED 6: motion + dark (below 40 lux or astronomical darkness) → on; vacancy after 180 s grace. Ceiling 56 stays manual-on. |
 | Bedrooms (PIR) | motion + dark → on; off when vacant *(set the `bedroom` category `auto_on=False` in the code if you don't want ceilings coming on at night)* |
 | Office (future FP300) | dark + present → on; off on confirmed vacancy; hold when presence is unknown |
-| Theater (future FP300) | **never auto-on** (manual mood); off only on confirmed vacancy; hold when presence is unknown |
+| Basement (49–53, no sensors) | Manual ON; forgotten lights OFF at 20:00 for front/rear/store, 00:30 for billiard/WC. ON after each cutoff protected through the night. No upstairs presence rule, daylight shutoff, or duration cap. |
 
 The engine owns vacancy *timing* (PIR `linger_s`, mmWave `falling_confirm_s`); the optimizer adds
 only a small `VACANCY_GRACE_MIN` (1.5 min = 90 s) on-time floor to bridge the
-switch-on-before-sensor race, plus the global `MIN_DWELL_SECONDS`.
+switch-on-before-sensor race, plus the global `MIN_DWELL_SECONDS`. A manual ON in a sensor-controlled room
+gets at least 10 minutes before vacancy can switch it OFF (`ROOM_MANUAL_HOLD_MIN`).
+Basement lights have no sensor mappings; only the separate overnight rule may
+switch them OFF, starting at 20:00 for front/rear/store or 00:30 for billiard/WC.
+A light switched ON after its cutoff is held through that night. The basement
+20:00 cutoff does not affect other floors.
 
 ---
 
 ## Tuning
 
 - **`config/presence_rooms.json`** — PIR `linger_s` is grace after the explicit
-  false (300 s for `bath_up`). For mmWave, `falling_confirm_s` is the vacancy
+  false (900 s for `wc_down` and `bath_up`, to allow sitting still). For mmWave, `falling_confirm_s` is the vacancy
   confirmation (300 s in the living room, otherwise global default 150 s),
   while `linger_s` is the long dead-sensor failsafe.
   Hot-reloaded.
@@ -174,7 +179,7 @@ switch-on-before-sensor race, plus the global `MIN_DWELL_SECONDS`.
 
 ## Future expansion
 
-Add an FP300 to the office/theater; Zigbee contact sensors for doors; fuse
+Add an FP300 to the office; Zigbee contact sensors for doors; fuse
 `presence` with Ruuvi BLE, Yale, UniFi, time-of-day and `illuminance` into a
 richer occupancy model — all downstream of the same `presence` measurement, with
 no optimizer change.

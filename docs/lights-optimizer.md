@@ -9,7 +9,7 @@ and brightness. Implementation: `scripts/lights_optimizer.py`; room policy:
 `decide_room_light()` is a pure decision function with these rules:
 
 1. **Occupied and dim:** turn on the room's permitted automatic lights.
-2. **Confirmed vacant:** turn off the room's lights.
+2. **Confirmed vacant:** turn off the room's lights, after any manual-ON grace.
 3. **Bright daylight:** turn off optimizer-lit lights in rooms with a calibrated
    brightness threshold, even while occupied. A manual ON prevents this shutoff.
 4. **Manual OFF:** suppress automatic relighting until confirmed vacancy ends
@@ -17,6 +17,9 @@ and brightness. Implementation: `scripts/lights_optimizer.py`; room policy:
 5. **Unknown occupancy:** do not auto-on or infer vacancy. Missing data never
    enables a duration, overnight, or away-based shutoff. An independently valid
    daylight threshold can still turn off an optimizer-lit light.
+6. **Manual ON:** keep the light ON for at least 10 minutes, even if a PIR reports
+   no movement. After that, confirmed vacancy may switch it OFF. Continued
+   occupancy keeps it ON; manual ON still protects against daylight shutoff.
 
 There is no CO₂, BLE, switch-activity, or whole-house-away heuristic. Sensor rooms
 have no competing overnight schedules or maximum visit durations. Rooms mapped
@@ -43,14 +46,16 @@ before vacancy. Its 7200-second linger is a dead-sensor failsafe, not a departur
 countdown.
 
 PIR vacancy grace starts after the device's explicit false: halls 90 seconds,
-KHH/kitchen 180 seconds, WCs/upstairs bathroom 300 seconds. The sensor's detection
+KHH/kitchen 180 seconds, downstairs WC/upstairs bathroom 900 seconds. The sensor's detection
 duration is additional. A new positive cancels the pending vacancy immediately.
-These values live in `config/presence_rooms.json`.
+These values live in `config/presence_rooms.json`. The 15-minute WC/bathroom
+grace allows someone to sit still; after departure, lights may stay ON for that
+period. The basement has no presence sensors: manual ON, scheduled forgotten-light OFF only.
 
 ### Brightness and command timing
 
 Automatic ON requires astronomical darkness (sun elevation below 8°) **or** a
-room illuminance mean below its threshold. Windowless WC lights 44/45/52 bypass
+room illuminance mean below its threshold. Windowless WC lights 44/45 bypass
 the brightness gate. Lux is averaged over four minutes:
 
 | Physical room | ON below | Occupied daylight OFF above |
@@ -95,8 +100,13 @@ a new dismissal. Confirmed room/zone vacancy clears it. There is no timeout that
 re-enables a manually darkened occupied room, and unknown occupancy cannot clear
 it. Dismissals are in memory and reset on service restart.
 
-Manual ON protects against measured-brightness shutoff in sensor rooms. It does
-not override confirmed vacancy or the explicit sensorless-light policies below.
+Manual ON protects sensor rooms against all automatic shutoff for the first
+`ROOM_MANUAL_HOLD_MIN` (10 minutes), measured from the observed ON transition.
+This works for any wall/app/voice ON, including immediately correcting an
+automatic OFF; no frustration detector or extra history state is needed. The
+transition timestamp can be recovered after a restart. After the minimum,
+confirmed vacancy may turn it OFF; measured-brightness shutoff remains blocked.
+The explicit sensorless-light policies below are separate.
 `manual_locked` in the decision log records manual provenance, not an absolute
 veto of every OFF rule.
 
@@ -110,16 +120,28 @@ Category settings are just `auto_on`, `daylight_off`, `overnight_off`, and
 |---|---|
 | Window lights 18/20/23/24/30/32/41/46 | Daylight or forgotten overnight |
 | Kitchen cabinet strips 2/7 | Forgotten overnight |
-| Upstairs aula LED 3, basement store 53 | Forgotten overnight |
+| Upstairs aula LED 3 | Forgotten overnight |
+| Basement front/rear/store 49/50/53 | Forgotten lights OFF from 20:00; manual ON afterward protected |
+| Basement billiard/WC 51/52 | Forgotten lights OFF from 00:30; manual ON afterward protected |
 | Portaikko 42 | 25-minute duration cap or forgotten overnight |
 | Closets/stores 31/36/43/61 | 30-minute duration cap or forgotten overnight |
 | Terrace/carport/storage exterior 48/59/60 | Daylight or forgotten overnight |
 
-“Forgotten overnight” means ON before 00:30 and still ON during 00:30–06:00.
+Except for basement front/rear/store 49/50/53, “forgotten overnight” means ON
+before 00:30 and still ON during 00:30–06:00.
 A light switched on during that window is protected from the overnight rule;
 its separate duration cap, if configured, still applies. Daylight means
 sunrise + 60 minutes through sunset. These policies remain deliberate exceptions
 for outputs without room sensors, not fallbacks when a sensor stops reporting.
+
+The basement is a separate, sensorless workspace used for long workdays into
+late evening. Front/rear/store outputs 49/50/53 use the `basement` category:
+manual ON and a 20:00–06:00 forgotten-light OFF window. Billiard table 51 and
+basement WC 52 use `secondary` with the later 00:30–06:00 window. A light
+switched ON after its own cutoff is held for the rest of that night, including
+after midnight for the 20:00 group. The next night can switch it OFF if still
+forgotten. There are no presence mappings, daylight shutoffs, duration caps or
+future-sensor placeholders. Upstairs activity cannot control basement lighting.
 
 Special controls remain separate:
 
@@ -167,9 +189,11 @@ Connection settings are in Compose. Main behavior settings:
 | `PRESENCE_MIN_CONFIDENCE` | 0.6 | Normalized presence confidence gate |
 | `MIN_DWELL_SECONDS` | 30 s | Command round-trip guard |
 | `VACANCY_GRACE_MIN` | 1.5 min | Initial ON floor for sensor rooms |
-| `WINDOWLESS_LIGHTS` | 44,45,52 | Lights that bypass the ON brightness gate |
+| `WINDOWLESS_LIGHTS` | 44,45 | Lights that bypass the ON brightness gate |
 | `CIRCULATION_TIMEOUT_MIN` / `UTILITY_TIMEOUT_MIN` | 25 / 30 min | Sensorless duration caps |
-| `OVERNIGHT_START_HOUR` / `OVERNIGHT_START_MIN` / `OVERNIGHT_END_HOUR` | 0 / 30 / 6 | Sensorless overnight window |
+| `OVERNIGHT_START_HOUR` / `OVERNIGHT_START_MIN` / `OVERNIGHT_END_HOUR` | 0 / 30 / 6 | Other sensorless overnight window; shared end hour |
+| `BASEMENT_OFF_HOUR` | 20 | Front/rear/store cutoff; billiard/WC retain the 00:30 default |
+| `ROOM_MANUAL_HOLD_MIN` | 10 min | Minimum ON time after a manual ON in sensor rooms |
 | `MANUAL_HOLD_MIN` | 90 min | Post-sauna switch-on grace only |
 | `SAUNA_LAUDE_ON_C` / `SAUNA_LAUDE_OFF_C` | 55 / 50°C | Laude hysteresis |
 | `SAUNA_AFTER_PEAK_C` / `SAUNA_AFTER_OFF_C` / `SAUNA_AFTER_DELAY_MIN` / `SAUNA_AFTER_LOOKBACK_H` | 55°C / 40°C / 30 min / 6 h | Post-sauna detection |

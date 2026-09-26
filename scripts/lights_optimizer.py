@@ -2,8 +2,9 @@
 """Room lighting controller.
 
 Sensor rooms: occupied + dim -> on; confirmed vacancy -> off. Optional measured
-bright-day shutoff applies only to optimizer-lit lights. Unknown occupancy holds
-existing lights. Manual OFF suppresses auto-on until that occupancy session ends.
+bright-day shutoff applies only to optimizer-lit lights. A manual ON gets at least
+10 minutes before vacancy can switch it off. Manual OFF suppresses auto-on until
+that occupancy session ends. Unknown occupancy never proves vacancy.
 
 The Presence Engine owns sensor fusion and vacancy timers. Sensorless lights use
 explicit daylight/overnight/timeout policies. Porch detection and sauna control
@@ -58,6 +59,9 @@ SUNRISE_GRACE_MIN = int(os.environ.get("SUNRISE_GRACE_MIN", "60"))
 
 # Manual grace for the post-sauna block only.
 MANUAL_HOLD_MIN = int(os.environ.get("MANUAL_HOLD_MIN", "90"))
+# A wall/app ON is stronger evidence than a PIR missing a person sitting still.
+# Keep this separate from the post-sauna grace; no correction-history heuristic.
+ROOM_MANUAL_HOLD_MIN = float(os.environ.get("ROOM_MANUAL_HOLD_MIN", "10"))
 # Timeouts only apply to sensorless stairs and utility/closet lights.
 CIRCULATION_TIMEOUT_MIN = int(os.environ.get("CIRCULATION_TIMEOUT_MIN", "25"))
 UTILITY_TIMEOUT_MIN = int(os.environ.get("UTILITY_TIMEOUT_MIN", "30"))
@@ -67,6 +71,7 @@ UTILITY_TIMEOUT_MIN = int(os.environ.get("UTILITY_TIMEOUT_MIN", "30"))
 OVERNIGHT_START_HOUR = int(os.environ.get("OVERNIGHT_START_HOUR", "0"))
 OVERNIGHT_START_MIN = int(os.environ.get("OVERNIGHT_START_MIN", "30"))
 OVERNIGHT_END_HOUR = int(os.environ.get("OVERNIGHT_END_HOUR", "6"))
+BASEMENT_OFF_HOUR = int(os.environ.get("BASEMENT_OFF_HOUR", "20"))
 
 # Cover command -> PLC actuation -> broadcast (~26 s), without a long re-entry lockout.
 MIN_DWELL_SECONDS = float(os.environ.get("MIN_DWELL_SECONDS", "30"))
@@ -128,7 +133,7 @@ CATS: dict[str, Cat] = {
     "toilet":      Cat(auto_on=True),
     "bedroom":     Cat(auto_on=True),
     "office":      Cat(auto_on=True),
-    "theater":     Cat(),
+    "basement":    Cat(overnight_off=True),
     "outdoor":     Cat(daylight_off=True, overnight_off=True),
 }
 
@@ -140,11 +145,10 @@ LIGHT_ROOM: dict[int, str] = {
     # Kitchen and living room share occupancy, but keep their own lux thresholds.
     5: "living_room",                                          # Olohuone LED, full room light (FP300)
     17: "office",                                              # office (future FP300)
-    49: "theater", 50: "theater", 51: "theater",              # basement theater
     35: "hall_down", 37: "hall_down",                         # eteinen + tuulikaappi (PIR). Portaikko 42 excluded — the hall_down sensor is nowhere near it
     25: "hall_up", 26: "hall_up",                             # upstairs hall kattovalo (26) + stairs (25), PIR.
     # 3 "Yläkerta aula LED" intentionally omitted — manual-on, no sensor link.
-    44: "wc_down", 45: "wc_down", 52: "wc_basement",          # WCs (PIR)
+    44: "wc_down", 45: "wc_down",                            # downstairs WC (PIR)
     29: "bath_up", 34: "bath_up",                             # upstairs bathroom (PIR)
     6: "khh", 56: "khh",                                     # KHH LED (6) + ceiling (56), one indoor PIR.
     # NOTE: 61 "Varasto" is the detached AUTOKATOS (carport) storage — a separate
@@ -156,7 +160,7 @@ LIGHT_ROOM: dict[int, str] = {
 
 # Windowless WCs auto-on on occupancy at any hour, regardless of brightness.
 WINDOWLESS_LIGHTS = set(
-    int(x) for x in os.environ.get("WINDOWLESS_LIGHTS", "44,45,52").split(",") if x.strip()
+    int(x) for x in os.environ.get("WINDOWLESS_LIGHTS", "44,45").split(",") if x.strip()
 )
 
 # Light index → category. Every index in LIGHT_LABELS is covered. Special-block
@@ -170,10 +174,6 @@ CATEGORY_OF: dict[int, str] = {
     # 3 = Yläkerta aula LED: manual-on, NOT sensor-driven — user wants only the
     # aula kattovalo (26) to auto-on from the upstairs-hall PIR, not the LED too.
     3: "secondary", 5: "secondary",
-    # 53 = Kellari varasto: sensorless storeroom used for long spells. Was 'utility'
-    # (30-min duration cap) which kept cutting off work sessions — secondary drops
-    # the cap but keeps the overnight forgotten-light cull.
-    53: "secondary",
     # WINDOW — decorative window lights, pointless in daylight
     18: "window", 20: "window", 23: "window", 24: "window",
     30: "window", 32: "window", 41: "window", 46: "window",
@@ -194,13 +194,17 @@ CATEGORY_OF: dict[int, str] = {
     6: "workroom",
     56: "secondary",
     # TOILET — WCs + mirror lights
-    29: "toilet", 34: "toilet", 44: "toilet", 45: "toilet", 52: "toilet",
+    29: "toilet", 34: "toilet", 44: "toilet", 45: "toilet",
     # BEDROOM (sleep) — ceilings/wardrobes upstairs (no daylight-off, nap-safe)
     22: "bedroom", 28: "bedroom", 33: "bedroom",
     # OFFICE — downstairs bedroom / workspace
     17: "office",
-    # THEATER — windowless basement leisure/work (never off during use)
-    49: "theater", 50: "theater", 51: "theater",
+    # Basement is a separate, sensorless workspace used until late evening.
+    # Manual ON, 20:00 forgotten-light OFF only; ON after cutoff is held all night.
+    # No upstairs sensor, daylight, or duration rule controls the basement.
+    49: "basement", 50: "basement", 53: "basement",
+    # Billiard table and basement WC keep the later 00:30 cutoff.
+    51: "secondary", 52: "secondary",
     # OUTDOOR — terrace / carport / storage exterior (porch 47 = special block)
     48: "outdoor", 59: "outdoor", 60: "outdoor",
 }
@@ -666,17 +670,19 @@ def log_decision(idx: int, decision: str, reason: str, category: str = "",
 
 
 # ── Windows ───────────────────────────────────────────────────────────────────
-def in_overnight_window(now: datetime) -> bool:
-    start = dtime(OVERNIGHT_START_HOUR, OVERNIGHT_START_MIN)
+def in_overnight_window(now: datetime, start: dtime | None = None) -> bool:
+    start = start if start is not None else dtime(OVERNIGHT_START_HOUR, OVERNIGHT_START_MIN)
     end = dtime(OVERNIGHT_END_HOUR, 0)
+    if start > end:  # An evening cutoff continues across midnight.
+        return now.time() >= start or now.time() < end
     return start <= now.time() < end
 
 
-def overnight_start_dt(now: datetime) -> datetime:
+def overnight_start_dt(now: datetime, start: dtime | None = None) -> datetime:
     """The datetime at which tonight's overnight window began (for on_since)."""
-    today_start = now.replace(hour=OVERNIGHT_START_HOUR, minute=OVERNIGHT_START_MIN,
-                              second=0, microsecond=0)
-    return today_start
+    start = start if start is not None else dtime(OVERNIGHT_START_HOUR, OVERNIGHT_START_MIN)
+    cutoff = now.replace(hour=start.hour, minute=start.minute, second=0, microsecond=0)
+    return cutoff - timedelta(days=1) if now < cutoff else cutoff
 
 
 def in_daylight(now: datetime, sunrise: datetime, sunset: datetime) -> bool:
@@ -787,6 +793,8 @@ def decide_room_light(*, is_on: bool, occupied: bool | None, auto_on: bool,
     calibrated daylight threshold, not merely the lamp illuminating its sensor.
     """
     if is_on:
+        if manual_on and on_minutes < ROOM_MANUAL_HOLD_MIN:
+            return "hold", "manual_hold"
         if on_minutes >= VACANCY_GRACE_MIN:
             if occupied is False:
                 return "off", "vacancy_off"
@@ -836,10 +844,11 @@ def evaluate_light(idx: int, is_on: bool, now: datetime, sunrise: datetime,
             dismissed=idx in _dismissed, on_minutes=on_minutes)
     elif is_on:
         # Sensorless lights keep only their explicit, predictable schedules.
+        night_start = dtime(BASEMENT_OFF_HOUR) if cat_name == "basement" else None
         if cat.daylight_off and in_daylight(now, sunrise, sunset):
             decision, reason = "off", "daylight_off"
-        elif (cat.overnight_off and in_overnight_window(now)
-              and (since is None or since.astimezone(LOCAL_TZ) < overnight_start_dt(now))):
+        elif (cat.overnight_off and in_overnight_window(now, night_start)
+              and (since is None or since.astimezone(LOCAL_TZ) < overnight_start_dt(now, night_start))):
             decision, reason = "off", "overnight_off"
         elif cat.duration_cap_min is not None and on_minutes >= cat.duration_cap_min:
             decision, reason = "off", "duration_cap"

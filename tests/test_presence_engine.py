@@ -266,7 +266,7 @@ def test_fp300_partial_pir_false_cannot_clear_active_radar(monkeypatch):
 
 
 @pytest.mark.parametrize("room,gap", [("hall_up", 45), ("hall_down", 45),
-                                     ("khh", 120), ("wc_down", 120), ("bath_up", 120)])
+                                     ("khh", 120), ("wc_down", 14 * 60), ("bath_up", 14 * 60)])
 def test_configured_pir_rooms_bridge_brief_motion_gaps(monkeypatch, room, gap):
     config = json.loads((Path(__file__).resolve().parents[1] /
                          "config/presence_rooms.json").read_text())

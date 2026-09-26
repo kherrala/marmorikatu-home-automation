@@ -7,7 +7,7 @@ the path by tests/conftest.py.)
 """
 import time
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, time as dtime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -44,7 +44,7 @@ def test_every_category_has_a_behaviour():
 def test_comfort_first_invariants():
     assert lo.CATS["living"].daylight_off is False
     assert lo.CATS["office"].overnight_off is False
-    assert lo.CATS["theater"].overnight_off is False
+    assert lo.CATS["secondary"].overnight_off is True
     assert lo.CATS["office"].daylight_off is False
 
 
@@ -55,6 +55,20 @@ def test_comfort_first_invariants():
 ])
 def test_overnight_window(h, m, expected):
     assert lo.in_overnight_window(_local(2026, 1, 15, h, m)) is expected
+
+
+@pytest.mark.parametrize("h,m,expected", [
+    (19, 59, False), (20, 0, True), (23, 59, True), (0, 0, True),
+    (5, 59, True), (6, 0, False), (12, 0, False),
+])
+def test_evening_cutoff_window_continues_across_midnight(h, m, expected):
+    assert lo.in_overnight_window(_local(2026, 9, 26, h, m), dtime(20)) is expected
+
+
+def test_evening_cutoff_keeps_same_start_after_midnight():
+    cutoff = _local(2026, 9, 26, 20)
+    assert lo.overnight_start_dt(_local(2026, 9, 26, 23), dtime(20)) == cutoff
+    assert lo.overnight_start_dt(_local(2026, 9, 27, 2), dtime(20)) == cutoff
 
 
 # ── Porch (idx 47) — optimizer is the sole controller ─────────────────────────
@@ -424,7 +438,7 @@ def test_hall_motion_auto_on_when_dark(harness):
 
 
 def test_theater_never_auto_on_even_with_presence(harness):
-    # mmWave present + dark, but theater must not relight (movie mood is manual).
+    # Even a stray theater presence reading cannot activate the manual basement.
     harness["state"]["presence_rooms"] = {"theater": True}
     _eval(49, False, _local(2026, 1, 15, 20, 0), dark=True)
     assert harness["published"] == []
@@ -522,8 +536,9 @@ def test_motion_auto_on_suppressed_when_not_dark(harness):
 
 
 def test_windowless_wc_auto_ons_in_daylight(harness):
-    # WC lights (44/45) + kellari WC (52) are windowless → auto-on any hour.
-    assert {44, 45, 52} <= lo.WINDOWLESS_LIGHTS
+    # Downstairs WC lights are windowless; basement WC remains entirely manual.
+    assert {44, 45} <= lo.WINDOWLESS_LIGHTS
+    assert 52 not in lo.WINDOWLESS_LIGHTS
     harness["state"]["presence_rooms"] = {"wc_down": True}
     _eval(44, False, _local(2026, 6, 15, 13, 0), dark=False)
     assert (44, True, "auto_on_comfort") in harness["published"]
@@ -687,4 +702,91 @@ def test_fresh_on_is_protected_while_presence_and_light_readings_catch_up(occupi
 def test_living_manual_secondary_shares_kitchen_occupancy(harness):
     harness["state"]["presence_rooms"] = {"kitchen": True, "living_room": False}
     _eval(5, True, _local(2026, 9, 26, 14))
+    assert harness["published"] == []
+
+
+@pytest.mark.parametrize("idx", [54, 19, 26, 6, 44, 45, 29, 34])
+@pytest.mark.parametrize("origin", ["wall", "human"])
+def test_manual_on_is_not_reversed_by_a_vacant_sensor_after_two_minutes(harness, idx, origin):
+    # A person corrects an automatic OFF, but the sensor still misses them.
+    # The generic 90-second initial ON floor must not be the only protection.
+    now = _local(2026, 9, 26, 14)
+    harness["state"].update(since=now - timedelta(minutes=2), origin=origin,
+                            presence=False, lux={"living_room": 500})
+    _eval(idx, True, now, dark=False)
+    assert harness["published"] == []
+    assert harness["decisions"][-1][1:] == ("hold", "manual_hold")
+
+
+@pytest.mark.parametrize("elapsed_minutes,occupied,expected", [
+    (9.99, False, "hold"), (10, False, "off"), (11, False, "off"),
+    (11, True, "hold"), (11, None, "hold"),
+])
+def test_manual_toilet_on_has_ten_minute_minimum_then_uses_occupancy(
+        harness, elapsed_minutes, occupied, expected):
+    now = _local(2026, 9, 26, 14)
+    harness["state"].update(since=now - timedelta(minutes=elapsed_minutes),
+                            origin="wall", presence=occupied)
+    _eval(44, True, now)
+    assert harness["decisions"][-1][1] == expected
+    assert harness["published"] == ([(44, False, "vacancy_off")] if expected == "off" else [])
+
+
+def test_automatic_toilet_on_does_not_get_the_manual_override(harness):
+    now = _local(2026, 9, 26, 14)
+    harness["state"].update(since=now - timedelta(minutes=2), origin="optimizer",
+                            presence=False)
+    _eval(44, True, now)
+    assert harness["published"] == [(44, False, "vacancy_off")]
+
+
+@pytest.mark.parametrize("idx", [idx for idx, (_, floor) in lo.LIGHT_LABELS.items() if floor == 0])
+@pytest.mark.parametrize("hour,is_on", [(14, False), (14, True), (19, True), (20, True),
+                                      (23, True), (2, True)])
+def test_basement_uses_only_overnight_shutoff_not_upstairs_sensors(harness, monkeypatch, idx, hour, is_on):
+    # Long basement workdays must not inherit upstairs motion or time limits.
+    assert idx not in lo.LIGHT_ROOM
+    harness["state"].update(since=_local(2026, 9, 24, 8), presence=False,
+                            lux={"living_room": 500})
+    def no_presence_query(_):
+        raise AssertionError("Basement must not consult room sensors")
+    monkeypatch.setattr(lo, "presence_for_light", no_presence_query)
+    _eval(idx, is_on, _local(2026, 9, 26, hour), dark=hour != 14)
+    cutoff_active = hour < 6 or (hour >= 20 and idx in (49, 50, 53))
+    expected = [(idx, False, "overnight_off")] if cutoff_active and is_on else []
+    assert harness["published"] == expected
+
+
+@pytest.mark.parametrize("idx", [49, 50, 53])
+def test_basement_light_turned_back_on_after_overnight_off_stays_on(harness, idx):
+    # The user rejects the overnight OFF to continue working. Do not repeat it.
+    harness["state"].update(since=_local(2026, 9, 26, 20, 5), origin="wall",
+                            presence=False)
+    for day, hour in ((26, 21), (26, 23), (27, 1), (27, 3), (27, 5)):
+        _eval(idx, True, _local(2026, 9, day, hour))
+    assert harness["published"] == []
+    # If forgotten the following day, the next evening's cutoff still applies.
+    _eval(idx, True, _local(2026, 9, 27, 20))
+    assert harness["published"] == [(idx, False, "overnight_off")]
+
+
+@pytest.mark.parametrize("idx", [51, 52])
+def test_billiard_and_basement_wc_keep_later_cutoff_and_respect_manual_return(harness, idx):
+    harness["state"].update(since=_local(2026, 9, 26, 18), origin="wall", presence=False)
+    for now in (_local(2026, 9, 26, 20), _local(2026, 9, 26, 23),
+                _local(2026, 9, 27, 0, 29)):
+        _eval(idx, True, now)
+    assert harness["published"] == []
+    _eval(idx, True, _local(2026, 9, 27, 0, 30))
+    assert harness["published"] == [(idx, False, "overnight_off")]
+    harness["published"].clear()
+    harness["state"]["since"] = _local(2026, 9, 27, 0, 35)
+    for hour in (1, 3, 5):
+        _eval(idx, True, _local(2026, 9, 27, hour))
+    assert harness["published"] == []
+
+
+@pytest.mark.parametrize("idx", [2, 3, 7])
+def test_basement_evening_cutoff_does_not_apply_to_other_floors(harness, idx):
+    _eval(idx, True, _local(2026, 9, 26, 20))
     assert harness["published"] == []

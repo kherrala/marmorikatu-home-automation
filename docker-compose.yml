@@ -505,11 +505,16 @@ services:
       - CHECK_INTERVAL=1
       - SUN_DARK_ELEVATION_DEG=8
       - SUNRISE_GRACE_MIN=60
+      # Manual room ON survives missed PIR motion for at least 10 minutes.
+      - ROOM_MANUAL_HOLD_MIN=10
       # Post-sauna manual grace; timeouts apply only to sensorless lights.
       - MANUAL_HOLD_MIN=90
       - CIRCULATION_TIMEOUT_MIN=25
       - UTILITY_TIMEOUT_MIN=30
-      # Sensorless lights only: forgotten-light cull 00:30 to 06:00.
+      # Basement front/rear/store: 20:00; billiard/WC keep 00:30.
+      # A manual ON after its cutoff stays on all night.
+      - BASEMENT_OFF_HOUR=20
+      # Other sensorless lights: forgotten-light cull 00:30 to 06:00.
       # Lights switched on during this window are protected.
       - OVERNIGHT_START_HOUR=0
       - OVERNIGHT_START_MIN=30

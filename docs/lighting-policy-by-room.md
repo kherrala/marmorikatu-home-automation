@@ -4,6 +4,10 @@ Sensor-controlled rooms share one policy: occupied + dim turns automatic lights
 ON; confirmed vacancy turns lights OFF. Olohuone/Ruokailu may also switch OFF in
 bright daylight while occupied, unless the user turned the light ON manually.
 A manual OFF prevents automatic relighting until that room/zone becomes vacant.
+A manual ON in a sensor-controlled room guarantees at least 10 minutes of light,
+even with no detected movement. After that minimum, normal vacancy control
+resumes; continued occupancy keeps the light ON. This also covers turning a light
+back ON immediately after an incorrect automatic OFF.
 
 No CO₂, BLE, activity-based away detection, overnight rule, or visit duration cap
 competes with presence in a sensor-controlled room. Missing presence does not
@@ -20,11 +24,10 @@ count as vacancy and does not enable a fallback timer.
 | Eteinen 35, Tuulikaappi 37 | Hall-down PIR occupied + dim | Hall-down vacant |
 | KHH LED 6 | KHH PIR occupied + dim | KHH vacant |
 | KHH ceiling 56 | Manual only | KHH vacant |
-| Downstairs WC 44/45, basement WC 52 | Own room occupied, at any brightness | Own room vacant |
+| Downstairs WC 44/45 | Own room occupied, at any brightness | Own room vacant |
 | Upstairs bathroom 29/34 | Bathroom occupied + dim | Bathroom vacant |
 | Bedrooms 22/28/33 | Own room occupied + dim, once sensors are installed | Own room vacant; no daylight shutoff |
 | Office 17 | Occupied + dim, once its sensor is installed | Confirmed vacancy; no daylight shutoff |
-| Theater / billiard 49/50/51 | Manual only | Confirmed vacancy once its sensor is installed |
 
 A room mapped for a future sensor stays unknown until it has reliable data:
 no automatic ON or vacancy OFF. Installing a sensor activates its mapped policy.
@@ -48,14 +51,16 @@ Brightness uses the physical room's four-minute lux mean:
   OFF threshold is enabled for the kitchen yet.
 
 The 80/200 gap prevents an immediate ON after daylight OFF. A manual ON protects
-against measured daylight OFF, but confirmed zone vacancy still switches it OFF.
+against measured daylight OFF. Confirmed zone vacancy can switch it OFF only
+after the 10-minute manual-ON minimum.
 Olohuone LED 5 stays manual-on and has no brightness shutoff. Output 55 is
 physically disconnected and excluded.
 
 ### Halls, KHH and bathrooms
 
 Hall PIRs wait 90 seconds after explicit false before vacancy; KHH waits 180
-seconds; WCs and upstairs bathroom wait 300 seconds. Re-detection cancels vacancy.
+seconds; downstairs WC and upstairs bathroom wait 900 seconds (15 minutes),
+allowing someone to sit still. Re-detection cancels vacancy.
 The device's own detection duration is additional. There is no maximum visit
 length and no overnight shutoff while occupied.
 
@@ -63,11 +68,27 @@ KHH uses 40 lux for automatic LED ON; the old 12-lux limit blocked real morning
 arrivals at 17–18 lux. Ceiling 56 and the separate wardrobe 43 remain manual-on.
 Varasto 61 is the detached carport storage, not KHH, and has no KHH sensor link.
 
-Windowless WC outputs 44/45/52 bypass the darkness gate. Upstairs bathroom lights
+Windowless WC outputs 44/45 bypass the darkness gate. Upstairs bathroom lights
 use the normal brightness gate. Bedroom and office lights do not get daylight
 shutoff; they rely on their own occupancy when a sensor is installed.
 
-## Lights without room sensors
+## Basement: separate workspace, scheduled forgotten-light cutoffs
+
+Kellari etuosa 49, Kellari takaosa 50 and Kellari varasto 53 are **manual ON,
+20:00 forgotten-light OFF only**. Biljardipöytä 51 and WC kellari 52 keep the
+later **00:30** cutoff. There are no basement
+sensors. The user works here through the day and late evening: upstairs motion,
+vacancy, daylight and duration caps must never control these lights. Even a stray
+presence reading must not affect them. The basement WC is not sensor-controlled.
+
+At each group's cutoff, switch OFF lights left ON before it. The OFF window
+lasts until 06:00, but any light manually switched ON after its own cutoff is
+protected for the rest of that night. The 20:00 group keeps that protection
+across midnight. The next night can switch it OFF if still forgotten. This
+clears lights the kids leave ON without repeatedly interrupting someone who
+switches a light back ON to keep working.
+
+## Other lights without room sensors
 
 These lights are manual-on and keep only the explicit policies below. Their
 rules never serve as fallbacks for a missing room-sensor reading.
@@ -76,7 +97,7 @@ rules never serve as fallbacks for a missing room-sensor reading.
 |---|---|
 | Window lights 18/20/23/24/30/32/41/46 | Daylight or forgotten overnight |
 | Kitchen cabinet strips 2/7 | Forgotten overnight |
-| Upstairs aula LED 3, basement store 53 | Forgotten overnight |
+| Upstairs aula LED 3 | Forgotten overnight |
 | Portaikko 42 | 25-minute duration cap or forgotten overnight |
 | Closets/stores 31/36/43/61 | 30-minute duration cap or forgotten overnight |
 | Terrace 48, carport 59, storage exterior 60 | Daylight or forgotten overnight |
@@ -84,8 +105,8 @@ rules never serve as fallbacks for a missing room-sensor reading.
 Daylight OFF runs from sunrise + 60 minutes to sunset. Forgotten overnight OFF
 runs 00:30–06:00 only for lights switched ON before 00:30. Switching a light ON
 during this window protects it from the overnight rule; a separately configured
-duration cap still applies. Basement store 53 has no duration cap, so a long work
-session is not interrupted by a 30-minute timer.
+duration cap still applies. Basement lights use only the overnight rule described
+above, with no daylight shutoff or duration cap.
 
 ## Porch and sauna
 
