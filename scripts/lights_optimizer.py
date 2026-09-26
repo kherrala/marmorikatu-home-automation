@@ -1,39 +1,14 @@
 #!/usr/bin/env python3
-"""
-Lights optimizer v2 — comfort-first, provenance-aware.
+"""Room lighting controller.
 
-Design goals (see docs/lights-optimizer.md and the v2 spec):
-  * NEVER fight an active user. A light a human turned on (wall switch, mobile
-    app, or voice/MCP) is held; the optimizer only ever turns OFF lights that
-    are demonstrably forgotten.
-  * Comfort auto-ON in the dark for the rooms the family lives in.
-  * Energy savings only from HIGH-confidence culls: daylight waste on
-    window/outdoor/decorative lights, whole-house-away, deep-night overnight,
-    and duration caps on transient rooms.
+Sensor rooms: occupied + dim -> on; confirmed vacancy -> off. Optional measured
+bright-day shutoff applies only to optimizer-lit lights. Unknown occupancy holds
+existing lights. Manual OFF suppresses auto-on until that occupancy session ends.
 
-Provenance (the core fix for v1's "flapping"):
-  Every software controller (this optimizer, the mobile app, MCP/voice) also
-  publishes a breadcrumb to `marmorikatu/light/<idx>/command`
-  {"on":bool,"src":...} beside its `/set` command. `plc_mqtt_subscriber`
-  records these as the `light_command` measurement. A `lights/is_on`
-  transition with NO matching breadcrumb is inferred to be a physical wall
-  press. So the optimizer can tell WHO last set a light and never auto-offs a
-  human's light during awake hours. (The PLC `/set` accepts only bare
-  `true`/`false` — enriching that payload was tested and rejected; see
-  docs/plc-command-channel.md. Commands actuate ~12–13 s later, so all
-  confirm/min-dwell windows sit well above that.)
-
-Presence (Core C): the optimizer consumes a NORMALIZED per-room occupancy
-  signal (`presence` measurement / `presence/<room>` — written by the separate
-  Presence Service project). Auto-on requires real occupancy. Kitchen CO₂
-  is not used for lighting decisions now that both zone sensors are installed.
-  Other interim signals are astronomical darkness and
-  BLE-identity "anyone home" (`ble` measurement) for whole-house-away, with a
-  legacy activity fallback.
-
-Special blocks (ported from v1, they work well): front porch (idx 47,
-  sun-elevation schedule + Unifi hold), sauna laude LED (idx 4, temperature
-  hysteresis), post-sauna cooldown (idx 1/38/39).
+The Presence Engine owns sensor fusion and vacancy timers. Sensorless lights use
+explicit daylight/overnight/timeout policies. Porch detection and sauna control
+are separate. InfluxDB supplies observations/history and records decisions; MQTT
+commands remain bare true/false with a separate provenance breadcrumb.
 """
 
 import json
@@ -44,7 +19,7 @@ import signal
 import sys
 import time
 from dataclasses import dataclass
-from datetime import date, datetime, time as dtime, timedelta, timezone
+from datetime import datetime, time as dtime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 import paho.mqtt.publish as mqtt_publish
@@ -73,7 +48,7 @@ HOME_LON = float(os.environ.get("HOME_LON") or os.environ.get("WEATHER_LON") or 
 CHECK_INTERVAL = int(os.environ.get("CHECK_INTERVAL", "60"))
 TICK_LOG_S = float(os.environ.get("TICK_LOG_S", "60"))   # throttle the per-tick log line
 _last_tick_log = 0.0
-_last_tick_state: tuple = (None, None)
+_last_tick_state: bool | None = None
 MAX_CONSECUTIVE_FAILURES = int(os.environ.get("MAX_CONSECUTIVE_FAILURES", "5"))
 
 # Darkness threshold (astronomical sun elevation, °). Shared by porch + auto-on.
@@ -81,14 +56,9 @@ SUN_DARK_ELEVATION_DEG = float(os.environ.get("SUN_DARK_ELEVATION_DEG", "8"))
 # Daylight-off only fires between sunrise+grace and sunset (real daylight hours).
 SUNRISE_GRACE_MIN = int(os.environ.get("SUNRISE_GRACE_MIN", "60"))
 
-# Manual-grace windows (minutes) — after a human turns a light on, the "soft"
-# rules (duration cap) are suppressed for at least this long.
+# Manual grace for the post-sauna block only.
 MANUAL_HOLD_MIN = int(os.environ.get("MANUAL_HOLD_MIN", "90"))
-BEDROOM_HOLD_MIN = int(os.environ.get("BEDROOM_HOLD_MIN", "30"))
-SHORT_HOLD_MIN = int(os.environ.get("SHORT_HOLD_MIN", "5"))
-
-# Duration caps for transient categories (minutes since on).
-TOILET_TIMEOUT_MIN = int(os.environ.get("TOILET_TIMEOUT_MIN", "30"))
+# Timeouts only apply to sensorless stairs and utility/closet lights.
 CIRCULATION_TIMEOUT_MIN = int(os.environ.get("CIRCULATION_TIMEOUT_MIN", "25"))
 UTILITY_TIMEOUT_MIN = int(os.environ.get("UTILITY_TIMEOUT_MIN", "30"))
 
@@ -98,79 +68,23 @@ OVERNIGHT_START_HOUR = int(os.environ.get("OVERNIGHT_START_HOUR", "0"))
 OVERNIGHT_START_MIN = int(os.environ.get("OVERNIGHT_START_MIN", "30"))
 OVERNIGHT_END_HOUR = int(os.environ.get("OVERNIGHT_END_HOUR", "6"))
 
-# Whole-house-away confirmation.
-LONG_ABSENCE_MIN = int(os.environ.get("LONG_ABSENCE_MIN", "180"))
-AWAY_CONFIRM_MIN = int(os.environ.get("AWAY_CONFIRM_MIN", "15"))
-BLE_RSSI_INSIDE = float(os.environ.get("BLE_RSSI_INSIDE", "-80"))
-BLE_WINDOW_MIN = int(os.environ.get("BLE_WINDOW_MIN", "5"))
-# BLE-based away detection is OPT-IN and OFF by default. Raw advertiser-count
-# presence is unreliable here: an always-on, MAC-rotating Samsung SmartTag (the
-# basement bike) never lets the count reach zero, so away would never fire; and
-# carried keychain tags stay quiet near their owner's phone. Leave off and use
-# the activity fallback until real occupancy comes from the Presence Service.
-BLE_AWAY_ENABLED = os.environ.get("BLE_AWAY_ENABLED", "0") in ("1", "true", "yes")
-
-# Idempotent reconciler: don't re-issue/reverse a light within MIN_DWELL_SECONDS of
-# our own last command, so a stale state read during the command→actuate→broadcast
-# round-trip (~13 s PLC actuation + ~13 s state broadcast) can't cause a double
-# command. It only needs to cover that round-trip — NOT act as a long lockout. The
-# old 300 s (5 min) value meant re-entering a room within 5 min of an auto-off was
-# ignored ("nothing happens on the second visit"): a real bug for bathrooms/halls.
+# Cover command -> PLC actuation -> broadcast (~26 s), without a long re-entry lockout.
 MIN_DWELL_SECONDS = float(os.environ.get("MIN_DWELL_SECONDS", "30"))
 
-# Presence-Service contract (Core C). Consumed once the Presence Engine writes a
-# `presence` measurement for a room; until then presence_for_room() returns None
-# and the room keeps its interim (comfort-first) behaviour.
+# The Presence Engine owns detection fusion, debounce and confidence.
 PRESENCE_MIN_CONFIDENCE = float(os.environ.get("PRESENCE_MIN_CONFIDENCE", "0.6"))
-# Measured-brightness auto-on: a room whose sensor reports illuminance below its
-# threshold (lux) counts as "dark" for comfort auto-on even before astronomical
-# dusk — so an overcast, dim afternoon lights up. The threshold is PER-ROOM
-# because sensor scales differ wildly: the SNZB PIRs read low (ambient ~17-22,
-# daylight ~50-80) while the FP300 runs 95-180. Rooms without a lux sensor fall
-# back to the sun-elevation gate.
-DARK_LUX_THRESHOLD = float(os.environ.get("DARK_LUX_THRESHOLD", "40"))   # SNZB PIR default
-# Lux mean window for the dark/auto-on gate. A long mean smooths partly-cloudy
-# flicker but LAGS a sudden real darkening: during a storm the room went dark (13
-# lux) but the 10-min mean — still averaging in the prior bright readings, some of
-# them the light's OWN output from a brief earlier on — didn't cross the 60 lux
-# dark threshold for ~5 min, so auto-on was ~15 min late. The dark(60)/bright(200)
-# hysteresis gap is what actually prevents flicker (the bright-day lux floor ~107
-# sits well above 60, so daylight never crosses the dark bar), NOT this window — so
-# a short window is safe and much more responsive to a genuine darkening.
+DARK_LUX_THRESHOLD = float(os.environ.get("DARK_LUX_THRESHOLD", "40"))
 ILLUMINANCE_WINDOW_MIN = float(os.environ.get("ILLUMINANCE_WINDOW_MIN", "4"))
-# Per-room overrides. living_room: FP300 scale. Its bright-day floor is ~107 lux
-# (observed a partly-cloudy day swinging 107..537), so the dark-on threshold MUST
-# sit below that floor — else cloud dips cross it and auto_on_comfort fires, then
-# sun + the light's own output crosses ROOM_BRIGHT_LUX and bright_enough culls, and
-# the two fight (the reported on/off flicker in a bright, occupied room). 60 auto-ons
-# only at genuine dusk (<60), never on a daytime cloud dip. KHH uses the normal
-# PIR threshold: its 17–18 lux occupied morning readings must trigger auto-on.
-# living_room reads on the FP300 mmWave scale (24h: p50≈62, p75≈102, p95≈185),
-# which runs far higher than the SONOFF PIR rooms (kitchen p50≈36). 60 sat right at
-# its median so the room had to get genuinely dark before auto-on; 80 activates on a
-# merely-dim evening while still below its bright-ambient band (~100+), so daylight
-# doesn't cross it. NOTE: the FP300's lux unit/scale is unverified vs the SONOFFs —
-# see docs; calibrate against a lights-OFF day if this needs another nudge.
+# FP300 and SONOFF sensor scales differ. KHH's morning ambient is 17–18 lux.
 ROOM_DARK_LUX = {"living_room": 80, "khh": 40}
-# Bright-again cull: a light WE auto-on'd in the dim is turned back off once the
-# room's own sensor reads above this (lux). ONLY listed rooms qualify, and the
-# value must sit ABOVE what the room's own lights add to the reading — otherwise
-# the light's own output would flip it off (feedback flap). So it's a big room
-# where only real daylight crosses it: the living room. Compared against the
-# 5-min MEAN lux (partly-cloudy daytime mean sits ~250-300), so the light stays
-# on when it's genuinely dim and off when the room is bright on average. Above
-# the 120 dark-on threshold with margin, so culling then reading daylight-only
-# doesn't immediately re-auto-on (no flap). Not set for small rooms (KHH etc.)
-# where the light dominates the sensor. Never culls a human-on light.
+# Only calibrated rooms get daylight shutoff: the threshold must exceed the
+# lamps' own contribution, with a wide gap from the dark-on threshold.
 ROOM_BRIGHT_LUX = {"living_room": 200}
 # Per-room vacancy TIMING lives in the Presence Engine (its per-room linger_s),
 # so the optimizer just needs a small on-time floor before a vacancy-off — it
 # bridges the race where a light is switched on a beat before the sensor reports
 # presence, so we don't instantly turn it back off.
 VACANCY_GRACE_MIN = float(os.environ.get("VACANCY_GRACE_MIN", "1.5"))
-
-# Front porch schedule (idx 47).
-PORCH_OFF_HOUR = int(os.environ.get("PORCH_OFF_HOUR", os.environ.get("TERRACE_OFF_HOUR", "23")))
 
 # Sauna laude LED (idx 4) hysteresis.
 SAUNA_LAUDE_IDX = 4
@@ -196,53 +110,34 @@ CMD_CORRELATION_LAG_S = float(os.environ.get("CMD_CORRELATION_LAG_S", "10"))
 # ── Behaviour categories ──────────────────────────────────────────────────────
 @dataclass(frozen=True)
 class Cat:
-    """Behaviour of a light category. Auto-OFF only fires for the flags set
-    here (comfort-first: absent flag ⇒ that cull never happens for the room)."""
-    auto_on: bool                 # comfort auto-on when dark + occupied
-    daylight_off: bool            # off when sun clearly up
-    overnight_off: bool           # off in the deep-night window if forgotten
-    away_off: bool                # off when the whole house is away
-    duration_cap_min: int | None  # transient duration cap (minutes)
-    manual_hold_min: int          # grace after a human-on before soft rules
-    presence_room: str | None     # normalized Presence-Service room key
-    presence_kind: str | None     # "mmwave" (hold-while-still) | "motion" (transit)
+    """Auto-on permission; the remaining rules apply ONLY without a room sensor."""
+    auto_on: bool = False
+    daylight_off: bool = False
+    overnight_off: bool = False
+    duration_cap_min: int | None = None
 
 
 CATS: dict[str, Cat] = {
-    #                 auto_on daylt  overn  away   cap                     hold             room            kind
-    "living":     Cat(True,  False, True,  True,  None,                    MANUAL_HOLD_MIN, "living_core",  "mmwave"),
-    # Full room light switched on deliberately (e.g. Olohuone LED next to the
-    # auto-on kattovalo): NEVER auto-on, but still vacancy/overnight/away-off.
-    "secondary":  Cat(False, False, True,  True,  None,                    MANUAL_HOLD_MIN, None,           "mmwave"),
-    "window":     Cat(False, True,  True,  True,  None,                    SHORT_HOLD_MIN,  None,           None),
-    "accent":     Cat(False, False, True,  True,  None,                    MANUAL_HOLD_MIN, None,           None),
-    # Transit + toilet + bedroom auto-ON on motion when dark (needs a real PIR
-    # in that room — no-op until the Presence Engine publishes it).
-    "circulation":Cat(True,  False, True,  True,  CIRCULATION_TIMEOUT_MIN, SHORT_HOLD_MIN,  "hall",         "motion"),
-    "utility":    Cat(False, False, True,  True,  UTILITY_TIMEOUT_MIN,     SHORT_HOLD_MIN,  None,           "motion"),
-    # KHH utility room (indoor): motion auto-ON via the snzb_khh PIR, held while
-    # present, vacancy/duration/overnight/away-off. KHH has a window so it's
-    # daylight-gated.
-    "workroom":   Cat(True,  False, True,  True,  UTILITY_TIMEOUT_MIN,     SHORT_HOLD_MIN,  None,           "motion"),
-    "toilet":     Cat(True,  False, False, True,  TOILET_TIMEOUT_MIN,      SHORT_HOLD_MIN,  None,           "motion"),
-    "bedroom":    Cat(True,  False, True,  True,  None,                    BEDROOM_HOLD_MIN,None,           "motion"),
-    "office":     Cat(True,  False, False, True,  None,                    MANUAL_HOLD_MIN, "office",       "mmwave"),
-    # Theater: mmWave prevents wrong auto-OFF during a movie, but NEVER auto-on
-    # (you set the mood manually) — motion mid-film must not relight it.
-    "theater":    Cat(False, False, False, True,  None,                    MANUAL_HOLD_MIN, "theater",      "mmwave"),
-    "outdoor":    Cat(False, True,  True,  False, None,                    SHORT_HOLD_MIN,  None,           None),
+    "living":      Cat(auto_on=True),
+    "secondary":   Cat(overnight_off=True),
+    "window":      Cat(daylight_off=True, overnight_off=True),
+    "accent":      Cat(overnight_off=True),
+    "circulation": Cat(auto_on=True, overnight_off=True, duration_cap_min=CIRCULATION_TIMEOUT_MIN),
+    "utility":     Cat(overnight_off=True, duration_cap_min=UTILITY_TIMEOUT_MIN),
+    "workroom":    Cat(auto_on=True),
+    "toilet":      Cat(auto_on=True),
+    "bedroom":     Cat(auto_on=True),
+    "office":      Cat(auto_on=True),
+    "theater":     Cat(),
+    "outdoor":     Cat(daylight_off=True, overnight_off=True),
 }
 
-# Per-light PHYSICAL room → matches a room in config/presence_rooms.json. A light
-# uses this room's presence for auto-on/vacancy-off; lights not listed fall back
-# to their category's presence_room. Populate as sensors are installed; a room
-# with no sensor simply yields no presence (comfort-first hold), so this is safe.
+# Physical sensor room per light. A mapped room with missing/unreliable data
+# stays unknown: it never falls through to guessed-away or duration-based culls.
 LIGHT_ROOM: dict[int, str] = {
     54: "living_room", 19: "living_room",                      # living-room proper (FP300)
     8: "kitchen", 40: "kitchen",                              # kitchen ceilings — dedicated snzb_kitchen PIR.
-    # Was on living_core (CO₂, no vacancy) so the living FP300 couldn't kill the
-    # kitchen; the kitchen now has its own sensor, so it auto-ons AND auto-offs on
-    # it, unified with the living room as one open-plan zone (see living_core_presence).
+    # Kitchen and living room share occupancy, but keep their own lux thresholds.
     5: "living_room",                                          # Olohuone LED, full room light (FP300)
     17: "office",                                              # office (future FP300)
     49: "theater", 50: "theater", 51: "theater",              # basement theater
@@ -259,11 +154,7 @@ LIGHT_ROOM: dict[int, str] = {
     22: "bedroom_seela", 28: "bedroom_aarni", 33: "bedroom_adults",  # bedrooms (PIR)
 }
 
-# Windowless LIGHTS have no natural light, so their motion-auto-on is never gated
-# on brightness — walking in at any hour lights them. Keyed per-light (not
-# per-room) so a room can mix windowed + windowless lights (the KHH room has a
-# window, but its attached varasto 61 does not).
-#   44,45 = alakerta WC · 52 = kellari WC · 61 = varasto (borrows KHH's windowed sensor)
+# Windowless WCs auto-on on occupancy at any hour, regardless of brightness.
 WINDOWLESS_LIGHTS = set(
     int(x) for x in os.environ.get("WINDOWLESS_LIGHTS", "44,45,52").split(",") if x.strip()
 )
@@ -281,7 +172,7 @@ CATEGORY_OF: dict[int, str] = {
     3: "secondary", 5: "secondary",
     # 53 = Kellari varasto: sensorless storeroom used for long spells. Was 'utility'
     # (30-min duration cap) which kept cutting off work sessions — secondary drops
-    # the cap but keeps the overnight/away forgotten-light culls.
+    # the cap but keeps the overnight forgotten-light cull.
     53: "secondary",
     # WINDOW — decorative window lights, pointless in daylight
     18: "window", 20: "window", 23: "window", 24: "window",
@@ -306,7 +197,7 @@ CATEGORY_OF: dict[int, str] = {
     29: "toilet", 34: "toilet", 44: "toilet", 45: "toilet", 52: "toilet",
     # BEDROOM (sleep) — ceilings/wardrobes upstairs (no daylight-off, nap-safe)
     22: "bedroom", 28: "bedroom", 33: "bedroom",
-    # OFFICE — downstairs bedroom / workspace (never off during work)
+    # OFFICE — downstairs bedroom / workspace
     17: "office",
     # THEATER — windowless basement leisure/work (never off during use)
     49: "theater", 50: "theater", 51: "theater",
@@ -340,24 +231,11 @@ influx_client: InfluxDBClient | None = None
 write_api = None
 query_api = None
 
-# Per-light runtime state (in-memory; dismissals are NOT reconstructed from history
-# on boot — see the model below).
-#   _dismissed[idx]       = monotonic time a fresh human-off of OUR auto-on began.
-#                           SESSION-SCOPED: suppresses re-auto-on only until the
-#                           room next goes vacant (a new arrival is a new intent to
-#                           have light), with a safety cap. Edge-triggered on the
-#                           actual off transition — NEVER re-derived from stale
-#                           history, so walking back into the room later is a clean
-#                           slate, not a day-long suppression.
-#   _last_publish_ts[idx] = monotonic-ish epoch of our last command (min-dwell).
-_dismissed: dict[int, float] = {}
+# Manual OFF lasts until confirmed departure, not until an arbitrary timer.
+# These sessions are in-memory and start fresh after a service restart.
+_dismissed: set[int] = set()
 _last_publish_ts: dict[int, float] = {}
-# A dismissal registers only for an off that JUST happened (within this window); an
-# older off still lingering as the last transition must not re-arm it on return.
 DISMISSAL_FRESH_S = float(os.environ.get("DISMISSAL_FRESH_S", "120"))
-# Safety cap for unknown/sensorless rooms. Known occupancy keeps the dismissal
-# until departure, so turning lights off to sleep cannot relight them on a timer.
-DISMISSAL_SAFETY_CAP_S = float(os.environ.get("DISMISSAL_SAFETY_CAP_S", "1800"))
 # Process each observed OFF edge once, including after a dismissal is cleared.
 _dismissal_seen: dict[int, datetime] = {}
 # Per-tick memoization of expensive shared queries (cleared each tick).
@@ -634,71 +512,6 @@ def living_core_presence() -> bool | None:
     return None
 
 
-def ble_present_count() -> int | None:
-    """Distinct strong-RSSI BLE MACs seen in the last BLE_WINDOW_MIN — a
-    whole-house 'anyone home' proxy. None if the `ble` measurement has no data
-    (subsystem not deployed yet) → caller falls back to activity heuristic."""
-    flux = f'''
-from(bucket: "{INFLUXDB_BUCKET}")
-  |> range(start: -{BLE_WINDOW_MIN}m)
-  |> filter(fn: (r) => r._measurement == "ble" and r._field == "rssi")
-  |> filter(fn: (r) => r._value >= {BLE_RSSI_INSIDE})
-  |> group(columns: ["mac"])
-  |> last()
-'''
-    rows = _query(flux)
-    if not rows:
-        # Distinguish "no ble measurement at all" from "measured, nobody home".
-        any_ble = _query(f'''
-from(bucket: "{INFLUXDB_BUCKET}")
-  |> range(start: -30m)
-  |> filter(fn: (r) => r._measurement == "ble")
-  |> limit(n: 1)
-''')
-        return 0 if any_ble else None
-    macs = {r.values.get("mac") for r in rows}
-    macs.discard(None)
-    return len(macs)
-
-
-def activity_recent(minutes: int) -> bool:
-    """Legacy fallback: any wall-switch press or light-on transition in window."""
-    presses = _query(f'''
-from(bucket: "{INFLUXDB_BUCKET}")
-  |> range(start: -{minutes}m)
-  |> filter(fn: (r) => r._measurement == "switches" and r._field == "pressed" and r._value == 1)
-  |> count()
-''')
-    if any((r.get_value() or 0) > 0 for r in presses):
-        return True
-    ons = _query(f'''
-from(bucket: "{INFLUXDB_BUCKET}")
-  |> range(start: -{minutes}m)
-  |> filter(fn: (r) => r._measurement == "lights" and r._field == "is_on")
-  |> sort(columns: ["_time"])
-  |> difference(nonNegative: false)
-  |> filter(fn: (r) => r._value == 1)
-  |> count()
-''')
-    return any((r.get_value() or 0) > 0 for r in ons)
-
-
-def whole_house_away() -> bool:
-    """High-confidence 'nobody home'. BLE advertiser-count is opt-in
-    (BLE_AWAY_ENABLED) because an always-on basement SmartTag never lets the
-    count reach zero; by default use the legacy activity heuristic."""
-    # Lack of switch presses does not mean an occupied house is empty. Evaluate
-    # real presence first, including rooms outside the open-plan living area.
-    rooms = set(LIGHT_ROOM.values()) | {c.presence_room for c in CATS.values() if c.presence_room}
-    if any(presence_for_room(room) is True for room in sorted(rooms)):
-        return False
-    if BLE_AWAY_ENABLED:
-        n = ble_present_count()
-        if n is not None:
-            return n == 0
-    return not activity_recent(LONG_ABSENCE_MIN)
-
-
 # ── Sauna ─────────────────────────────────────────────────────────────────────
 def fetch_sauna_temp_recent() -> float | None:
     rows = _query(f'''
@@ -964,144 +777,101 @@ def run_post_sauna(now: datetime, states: dict[int, bool]):
             log_decision(idx, "hold", "mqtt_publish_failed", "bath")
 
 
-# ── Per-light category evaluation ─────────────────────────────────────────────
-def evaluate_light(idx: int, is_on: bool, now: datetime, sunrise: datetime,
-                   sunset: datetime, is_dark: bool, away: bool):
-    """Decide + act on one categorized light. Comfort-first: auto-OFF only on
-    high-confidence culls; a human's light is held during awake hours."""
-    cat_name = CATEGORY_OF.get(idx, "utility")
-    cat = CATS[cat_name]
+# ── Room decisions ───────────────────────────────────────────────────────────
+def decide_room_light(*, is_on: bool, occupied: bool | None, auto_on: bool,
+                      dim: bool, bright: bool, manual_on: bool, dismissed: bool,
+                      on_minutes: float) -> tuple[str, str]:
+    """Pure room policy. No clocks, history queries, or overlapping schedules.
 
-    # Min-dwell: never reverse our own very recent command.
+    `occupied` is already debounced by the Presence Engine. `bright` means a
+    calibrated daylight threshold, not merely the lamp illuminating its sensor.
+    """
+    if is_on:
+        if on_minutes >= VACANCY_GRACE_MIN:
+            if occupied is False:
+                return "off", "vacancy_off"
+            if bright and not manual_on:
+                return "off", "bright_enough"
+        return "hold", "manual_hold" if manual_on else "no_off_rule"
+    if not auto_on:
+        return "hold", "manual_only"
+    if dismissed:
+        return "hold", "dismissed_session"
+    if occupied is not True:
+        return "hold", "presence_unknown" if occupied is None else "room_vacant"
+    if not dim:
+        return "hold", "not_dark"
+    return "on", "auto_on_comfort"
+
+
+def presence_for_light(idx: int) -> bool | None:
+    """Use the same zone for decisions and manual-OFF session clearing."""
+    room = LIGHT_ROOM.get(idx)
+    return living_core_presence() if room in OPEN_PLAN_ROOMS else presence_for_room(room)
+
+
+def evaluate_light(idx: int, is_on: bool, now: datetime, sunrise: datetime,
+                   sunset: datetime, is_dark: bool):
+    cat_name = CATEGORY_OF[idx]
+    cat = CATS[cat_name]
     if within_min_dwell(idx):
         log_decision(idx, "hold", "min_dwell_hold", cat_name)
         return
 
-    # Real sensor occupancy only. Missing or low-confidence readings are unknown;
-    # CO₂ is not an occupancy substitute. The room is the light's physical room
-    # (LIGHT_ROOM) or its category default.
-    room = LIGHT_ROOM.get(idx) or cat.presence_room
-    # The open-plan living category (kitchen + living ceilings) is one occupancy
-    # zone — held if ANY zone sensor sees someone, culled only when the
-    # WHOLE zone reads empty. Every other light uses just its own room. `room` still
-    # drives the per-room lux gates (dark/bright) below — only presence is unified.
-    presence = living_core_presence() if cat_name == "living" else presence_for_room(room)
-
-    # ---- OFF (light currently on) ----
-    if is_on:
-        _, since = fetch_last_transition(idx)
-        on_dur_min = ((datetime.now(timezone.utc) - since).total_seconds() / 60.0
-                      if since is not None else float("inf"))
-        human_on = classify_origin(idx, is_on, since) in ("human", "wall")
-        # 1) Whole-house away — highest-confidence cull, overrides manual.
-        vacant_for_cull = presence is False if cat_name == "living" else presence is not True
-        if cat.away_off and away and vacant_for_cull:
-            _act_off(idx, "away_off", cat_name, human_on, on_dur_min)
-            return
-        # 2) Daylight waste (window / accent-opt / outdoor) — overrides manual;
-        #    these serve no purpose once the sun is clearly up.
+    since = fetch_last_transition(idx)[1] if is_on else None
+    on_minutes = ((now - since).total_seconds() / 60.0 if since else float("inf"))
+    manual_on = is_on and classify_origin(idx, True, since) in ("human", "wall")
+    room = LIGHT_ROOM.get(idx)
+    decision, reason = "hold", "manual_hold" if manual_on else "no_off_rule"
+    if room:
+        lux = room_illuminance(room)
+        dim = idx in WINDOWLESS_LIGHTS or is_dark or (
+            lux is not None and lux < ROOM_DARK_LUX.get(room, DARK_LUX_THRESHOLD))
+        bright = (cat.auto_on and not is_dark and in_daylight(now, sunrise, sunset)
+                  and room in ROOM_BRIGHT_LUX and lux is not None
+                  and lux > ROOM_BRIGHT_LUX[room])
+        decision, reason = decide_room_light(
+            is_on=is_on, occupied=presence_for_light(idx), auto_on=cat.auto_on,
+            dim=dim, bright=bright, manual_on=manual_on,
+            dismissed=idx in _dismissed, on_minutes=on_minutes)
+    elif is_on:
+        # Sensorless lights keep only their explicit, predictable schedules.
         if cat.daylight_off and in_daylight(now, sunrise, sunset):
-            _act_off(idx, "daylight_off", cat_name, human_on, on_dur_min)
-            return
-        # 2b) Bright again — a light WE auto-on'd in the dim is redundant once its
-        #     room measures clearly bright (clouds cleared / sun out). Measured,
-        #     not astronomical, so it catches overcast→sun. Never culls a human's
-        #     light, and only rooms in ROOM_BRIGHT_LUX (big enough that the light
-        #     can't push the sensor over the bar). Grace floor avoids flapping.
-        if (cat.auto_on and not human_on and not is_dark
-                and in_daylight(now, sunrise, sunset) and on_dur_min >= VACANCY_GRACE_MIN
-                and room in ROOM_BRIGHT_LUX):
-            room_lux = room_illuminance(room)
-            if room_lux is not None and room_lux > ROOM_BRIGHT_LUX[room]:
-                _act_off(idx, "bright_enough", cat_name, human_on, on_dur_min)
-                return
-        # 3) Presence vacancy-off — ONLY when a REAL presence signal says empty
-        #    (mmWave/PIR via the Presence Engine, which already applied the
-        #    room's linger). Never fires on CO₂/no-data. Small on-time floor
-        #    bridges the switch-on-before-sensor race.
-        if cat.presence_kind and presence is False and on_dur_min >= VACANCY_GRACE_MIN:
-            _act_off(idx, "vacancy_off", cat_name, human_on, on_dur_min)
-            return
-        # 4) Overnight cull — forgotten lights only. A light turned on DURING
-        #    the window (on_since ≥ window start) is protected. A room with real
-        #    presence (occupied) is never culled.
-        if cat.overnight_off and in_overnight_window(now):
-            turned_on_in_window = since is not None and since.astimezone(LOCAL_TZ) >= overnight_start_dt(now)
-            if not turned_on_in_window and vacant_for_cull:
-                _act_off(idx, "overnight_off", cat_name, human_on, on_dur_min)
-                return
-        # 5) Duration cap (transient categories) — after the manual grace. Real
-        #    presence (occupied) vetoes the cap.
-        if cat.duration_cap_min is not None and on_dur_min >= max(cat.duration_cap_min, cat.manual_hold_min):
-            if presence is not True:
-                _act_off(idx, "duration_cap", cat_name, human_on, on_dur_min)
-                return
-        # Otherwise: HOLD. This is the comfort-first default — living spaces,
-        # a human's light, anything without a high-confidence off reason.
-        reason = "manual_hold" if human_on else "no_off_rule"
-        log_decision(idx, "hold", reason, cat_name, human_on, on_dur_min)
-        return
-
-    # ---- ON (light currently off) → comfort auto-on ----
-    if not cat.auto_on:
-        return  # category never auto-ons (no log spam for the many off lights)
-    # Darkness gate — the room is "dark enough" if the sun is down (astronomical)
-    # OR its own sensor measures dim light (overcast afternoon). Windowless lights
-    # skip the gate entirely (no natural light — auto-on any hour).
-    if idx not in WINDOWLESS_LIGHTS:
-        room_lux = room_illuminance(room)
-        threshold = ROOM_DARK_LUX.get(room, DARK_LUX_THRESHOLD)
-        dim = is_dark or (room_lux is not None and room_lux < threshold)
-        if not dim:
-            return
-    if idx in _dismissed:
-        log_decision(idx, "hold", "dismissed_session", cat_name)
-        return
-    # Auto-ON occupancy. For the living category `presence` is already the unified
-    # open-plan signal (any real zone sensor), so it needs no extra
-    # fallback here. Every other light uses its own room's presence.
-    occ_for_on = presence
-    if occ_for_on is True:
-        if publish_state(idx, True, "auto_on_comfort"):
-            log_decision(idx, "on", "auto_on_comfort", cat_name)
-            time.sleep(0.3)  # pace successive publishes for the PLC
-        else:
-            log_decision(idx, "hold", "mqtt_publish_failed", cat_name)
-
-
-def _act_off(idx: int, reason: str, cat_name: str, human_on: bool, on_dur: float):
-    if publish_state(idx, False, reason):
-        log_decision(idx, "off", reason, cat_name, human_on, on_dur)
+            decision, reason = "off", "daylight_off"
+        elif (cat.overnight_off and in_overnight_window(now)
+              and (since is None or since.astimezone(LOCAL_TZ) < overnight_start_dt(now))):
+            decision, reason = "off", "overnight_off"
+        elif cat.duration_cap_min is not None and on_minutes >= cat.duration_cap_min:
+            decision, reason = "off", "duration_cap"
     else:
-        log_decision(idx, "hold", "mqtt_publish_failed", cat_name, human_on, on_dur)
+        return  # No sensor -> no automatic arrival trigger.
+
+    if decision in ("on", "off"):
+        if publish_state(idx, decision == "on", reason):
+            if decision == "on":
+                time.sleep(0.3)  # pace successive PLC commands
+        else:
+            decision, reason = "hold", "mqtt_publish_failed"
+    log_decision(idx, decision, reason, cat_name, manual_on,
+                 on_minutes if is_on else None)
 
 
-def _room_of(idx: int) -> str | None:
-    return LIGHT_ROOM.get(idx) or CATS[CATEGORY_OF.get(idx, "utility")].presence_room
-
-
-def maintain_dismissals(now: datetime):
-    """Drop a session dismissal once its intent is spent: the room has gone vacant
-    (the user left → a fresh arrival should get light again) or the safety cap
-    elapsed (rooms whose occupancy we can't sense never wedge auto-on)."""
+def maintain_dismissals():
+    """Confirmed vacancy ends a manual-OFF session; unknown occupancy does not."""
     for idx in list(_dismissed):
-        occ = (living_core_presence() if CATEGORY_OF.get(idx) == "living"
-               else presence_for_room(_room_of(idx)))
-        capped = occ is None and (time.monotonic() - _dismissed[idx]) > DISMISSAL_SAFETY_CAP_S
-        if occ is False or capped:
-            del _dismissed[idx]
-            log.info("light %d dismissal cleared (%s)", idx,
-                     "room vacant" if occ is False else "safety cap")
+        if presence_for_light(idx) is False:
+            _dismissed.remove(idx)
+            log.info("light %d dismissal cleared (room vacant)", idx)
 
 
-def detect_dismissals(now: datetime, states: dict[int, bool]):
+def detect_dismissals(states: dict[int, bool]):
     """Register a SESSION dismissal when the user turns OFF an auto-on-capable
     light, so we stop fighting them. Edge-triggered on the FRESH off transition
     — an old off still sitting as the last transition (e.g. the user walking back
     into a room they darkened hours ago) must NOT re-arm suppression. Cleared by
     maintain_dismissals when the room goes vacant."""
     for idx, cat_name in CATEGORY_OF.items():
-        if not CATS[cat_name].auto_on:
+        if not CATS[cat_name].auto_on or idx not in LIGHT_ROOM:
             continue
         if states.get(idx) is not False:
             continue  # still on, or no current observation
@@ -1123,7 +893,7 @@ def detect_dismissals(now: datetime, states: dict[int, bool]):
             continue
         off_origin = classify_origin(idx, False, since)
         if off_origin in ("human", "wall"):
-            _dismissed[idx] = time.monotonic()
+            _dismissed.add(idx)
             log.info("light %d dismissed by %s — suppress auto-on until the room is next vacant",
                      idx, off_origin)
 
@@ -1137,20 +907,19 @@ def check_and_control():
     is_dark = elev < SUN_DARK_ELEVATION_DEG
     states = fetch_current_light_states()
     update_transition_cache(states)   # maintain last-transition cache (1 query/tick, not 49)
-    away = whole_house_away()
 
-    # Clear session dismissals whose room has gone vacant (or the safety cap).
-    maintain_dismissals(now)
+    # End manual-OFF sessions only on confirmed departure.
+    maintain_dismissals()
 
     # Throttle the tick summary — at 1s ticks it would be a line per second.
-    # Log at most every TICK_LOG_S, or immediately when dark/away flips.
+    # Log at most every TICK_LOG_S, or immediately when darkness changes.
     global _last_tick_log, _last_tick_state
     tnow = time.monotonic()
-    if (tnow - _last_tick_log) > TICK_LOG_S or _last_tick_state != (is_dark, away):
-        log.info("tick: %s elev=%.1f dark=%s away=%s lights=%d",
-                 now.isoformat(timespec="seconds"), elev, is_dark, away, len(states))
+    if (tnow - _last_tick_log) > TICK_LOG_S or _last_tick_state != is_dark:
+        log.info("tick: %s elev=%.1f dark=%s lights=%d",
+                 now.isoformat(timespec="seconds"), elev, is_dark, len(states))
         _last_tick_log = tnow
-        _last_tick_state = (is_dark, away)
+        _last_tick_state = is_dark
 
     # Special blocks first.
     run_porch(now, states, sunrise, sunset)
@@ -1158,32 +927,20 @@ def check_and_control():
     run_post_sauna(now, states)
 
     # Dismissal detection before auto-on so a same-tick dismissal suppresses.
-    detect_dismissals(now, states)
+    detect_dismissals(states)
 
     # Category loop.
     for idx, is_on in states.items():
         if idx in SPECIAL_IDX or idx in DISCONNECTED_IDX or idx not in CATEGORY_OF:
             continue
-        evaluate_light(idx, is_on, now, sunrise, sunset, is_dark, away)
-
-
-# ── Boot ──────────────────────────────────────────────────────────────────────
-def rebuild_state():
-    """Dismissals are session-scoped and edge-triggered, so there is deliberately
-    nothing to reconstruct on boot: a restart starts with a clean slate. The old
-    behaviour — replaying an 18 h history to re-arm day-long suppressions — was
-    exactly what let a single manual-off wedge a room's auto-on for the whole day
-    and survive restarts. If the user is genuinely present at boot, the next
-    manual-off re-registers a fresh session dismissal; if they're not, there's
-    nothing to suppress."""
-    return
+        evaluate_light(idx, is_on, now, sunrise, sunset, is_dark)
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 def main():
     global influx_client, write_api, query_api
     log.info("=" * 60)
-    log.info("Lights Optimizer v2 (comfort-first, provenance-aware)")
+    log.info("Room lighting controller (presence + brightness)")
     log.info("HOME=%.4f,%.4f TZ=%s DRY_RUN=%s CHECK_INTERVAL=%ds",
              HOME_LAT, HOME_LON, LOCAL_TZ, DRY_RUN, CHECK_INTERVAL)
     log.info("=" * 60)
@@ -1201,10 +958,6 @@ def main():
 
     sr, ss = todays_sun(now := datetime.now(LOCAL_TZ))
     log.info("Today's sun: rise=%s set=%s", sr.strftime("%H:%M"), ss.strftime("%H:%M"))
-    try:
-        rebuild_state()
-    except Exception as e:
-        log.warning("state rebuild failed (continuing): %s", e)
 
     consecutive_failures = 0
     while running:

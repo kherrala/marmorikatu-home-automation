@@ -505,21 +505,15 @@ services:
       - CHECK_INTERVAL=1
       - SUN_DARK_ELEVATION_DEG=8
       - SUNRISE_GRACE_MIN=60
-      # Manual-grace + duration caps (v2). A human's light is held; transient
-      # rooms cull after their cap; living/office/theater are never awake-hours off.
+      # Post-sauna manual grace; timeouts apply only to sensorless lights.
       - MANUAL_HOLD_MIN=90
-      - BEDROOM_HOLD_MIN=30
-      - TOILET_TIMEOUT_MIN=30
       - CIRCULATION_TIMEOUT_MIN=25
       - UTILITY_TIMEOUT_MIN=30
-      # Gentle overnight cull 00:30 → 06:00 (a light switched on during the
-      # window is protected). Front porch evening window ends 22:00.
+      # Sensorless lights only: forgotten-light cull 00:30 to 06:00.
+      # Lights switched on during this window are protected.
       - OVERNIGHT_START_HOUR=0
       - OVERNIGHT_START_MIN=30
       - OVERNIGHT_END_HOUR=6
-      - PORCH_OFF_HOUR=22
-      # Whole-house-away: BLE-identity when available, else activity fallback.
-      - LONG_ABSENCE_MIN=180
       # Cover the PLC round trip without blocking the next room visit.
       - MIN_DWELL_SECONDS=30
       # Shadow mode: set LIGHTS_DRY_RUN=1 to log decisions without actuating.

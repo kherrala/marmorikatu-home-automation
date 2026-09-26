@@ -165,7 +165,7 @@ def harness(monkeypatch):
     published: list[tuple] = []
     decisions: list[tuple] = []
     state = {
-        "since": datetime.now(timezone.utc) - timedelta(hours=2),
+        "since": _local(2026, 1, 14, 12),
         "origin": "wall",
         "presence": None,        # default per-room presence (None|True|False)
         "presence_rooms": {},    # per-room override: {room: True|False|None}
@@ -199,10 +199,10 @@ def harness(monkeypatch):
     return {"published": published, "decisions": decisions, "state": state}
 
 
-def _eval(idx, is_on, now, away=False, dark=True):
+def _eval(idx, is_on, now, dark=True):
     sr = _local(now.year, now.month, now.day, 6, 0)
     ss = _local(now.year, now.month, now.day, 21, 0)
-    lo.evaluate_light(idx, is_on, now, sr, ss, is_dark=dark, away=away)
+    lo.evaluate_light(idx, is_on, now, sr, ss, is_dark=dark)
 
 
 def test_living_manual_on_held_during_awake_hours(harness):
@@ -230,7 +230,7 @@ def test_living_not_vacancy_off_on_co2_dropped(harness):
 def test_living_vacancy_off_only_on_real_presence(harness):
     # Real mmWave presence=False (Presence Service) DOES allow vacancy-off.
     harness["state"]["presence"] = False
-    harness["state"]["since"] = datetime.now(timezone.utc) - timedelta(minutes=30)
+    harness["state"]["since"] = _local(2026, 1, 15, 13, 30)
     _eval(54, True, _local(2026, 1, 15, 17, 0), dark=False)
     assert (54, False, "vacancy_off") in harness["published"]
 
@@ -240,16 +240,10 @@ def test_window_daylight_off(harness):
     assert (46, False, "daylight_off") in harness["published"]
 
 
-def test_toilet_duration_cap(harness):
-    harness["state"]["since"] = datetime.now(timezone.utc) - timedelta(minutes=90)
-    _eval(44, True, _local(2026, 1, 15, 14, 0))
-    assert (44, False, "duration_cap") in harness["published"]
-
-
-def test_whole_house_away_turns_off_living(harness):
-    harness["state"]["presence"] = False
-    _eval(54, True, _local(2026, 1, 15, 14, 0), away=True)
-    assert (54, False, "away_off") in harness["published"]
+def test_sensorless_utility_duration_cap(harness):
+    harness["state"]["since"] = _local(2026, 1, 15, 12, 30)
+    _eval(61, True, _local(2026, 1, 15, 14, 0))
+    assert (61, False, "duration_cap") in harness["published"]
 
 
 def test_living_auto_on_when_dark_and_occupied(harness):
@@ -267,7 +261,7 @@ def test_no_auto_on_when_not_dark(harness):
 def test_dismissed_session_suppresses_auto_on(harness):
     # A live session dismissal blocks re-auto-on even while present + dark.
     harness["state"]["presence"] = True
-    lo._dismissed[54] = time.monotonic()
+    lo._dismissed.add(54)
     _eval(54, False, _local(2026, 1, 15, 18, 0), dark=True)
     assert harness["published"] == []
     assert harness["decisions"][-1][1:] == ("hold", "dismissed_session")
@@ -281,7 +275,7 @@ def test_fresh_manual_off_registers_dismissal(harness, monkeypatch):
     harness["state"]["since"] = datetime.now(timezone.utc) - timedelta(seconds=5)
     monkeypatch.setattr(lo, "fetch_recent_commands",
                         lambda idx, lookback_min=30: [(True, "optimizer", None)])
-    lo.detect_dismissals(_local(2026, 1, 15, 18, 0), {54: False})
+    lo.detect_dismissals({54: False})
     assert 54 in lo._dismissed
 
 
@@ -293,48 +287,47 @@ def test_stale_manual_off_does_not_rearm_on_return(harness, monkeypatch):
     harness["state"]["since"] = datetime.now(timezone.utc) - timedelta(hours=3)
     monkeypatch.setattr(lo, "fetch_recent_commands",
                         lambda idx, lookback_min=30: [(True, "optimizer", None)])
-    lo.detect_dismissals(_local(2026, 1, 15, 18, 0), {54: False})
+    lo.detect_dismissals({54: False})
     assert 54 not in lo._dismissed
 
 
 def test_dismissal_cleared_when_room_goes_vacant(harness):
     # Leaving the room (presence False) drops the dismissal → a fresh arrival can
     # auto-on again.
-    lo._dismissed[54] = time.monotonic()
+    lo._dismissed.add(54)
     harness["state"]["presence"] = False
-    lo.maintain_dismissals(_local(2026, 1, 15, 18, 0))
+    lo.maintain_dismissals()
     assert 54 not in lo._dismissed
 
 
 def test_dismissal_held_while_room_still_occupied(harness):
     # Still present → dismissal persists (we don't re-light what they just turned off).
-    lo._dismissed[54] = time.monotonic()
+    lo._dismissed.add(54)
     harness["state"]["presence"] = True
-    lo.maintain_dismissals(_local(2026, 1, 15, 18, 0))
+    lo.maintain_dismissals()
     assert 54 in lo._dismissed
 
 
-def test_dismissal_safety_cap_clears_without_vacancy(harness):
-    # Sensorless/CO2 room never reports vacant (presence None) → the safety cap
-    # eventually drops the dismissal so auto-on can't be wedged.
-    lo._dismissed[54] = time.monotonic() - (lo.DISMISSAL_SAFETY_CAP_S + 1)
+def test_unknown_presence_cannot_clear_a_manual_off(harness):
+    # A sensor outage is not a new visit and cannot silently undo manual OFF.
+    lo._dismissed.add(54)
     harness["state"]["presence"] = None
-    lo.maintain_dismissals(_local(2026, 1, 15, 18, 0))
-    assert 54 not in lo._dismissed
+    lo.maintain_dismissals()
+    assert 54 in lo._dismissed
 
 
 def test_occupied_dismissal_does_not_expire_and_relight_room(harness):
-    lo._dismissed[54] = time.monotonic() - lo.DISMISSAL_SAFETY_CAP_S - 1
+    lo._dismissed.add(54)
     harness["state"]["presence"] = True
-    lo.maintain_dismissals(_local(2026, 9, 25, 2, 0))
+    lo.maintain_dismissals()
     _eval(54, False, _local(2026, 9, 25, 2, 0))
     assert harness["published"] == []
 
 
 def test_living_dismissal_uses_the_same_occupancy_zone_as_auto_on(harness):
-    lo._dismissed[54] = time.monotonic()
+    lo._dismissed.add(54)
     harness["state"]["presence_rooms"] = {"kitchen": True, "living_room": False}
-    lo.maintain_dismissals(_local(2026, 9, 25, 2, 0))
+    lo.maintain_dismissals()
     _eval(54, False, _local(2026, 9, 25, 2, 0))
     assert harness["published"] == []
 
@@ -348,7 +341,7 @@ def test_mobile_off_is_respected_even_when_it_is_the_last_command(harness, monke
         (False, "mobile", harness["state"]["since"]),
     ])
     now = _local(2026, 9, 25, 2, 0)
-    lo.detect_dismissals(now, {54: False})
+    lo.detect_dismissals({54: False})
     _eval(54, False, now)
     assert harness["published"] == []
 
@@ -357,9 +350,9 @@ def test_cleared_dismissal_does_not_rearm_from_the_same_off_edge(harness):
     harness["state"]["since"] = datetime.now(timezone.utc) - timedelta(seconds=5)
     harness["state"]["presence"] = False
     now = _local(2026, 9, 25, 2, 0)
-    lo.detect_dismissals(now, {44: False})
-    lo.maintain_dismissals(now)
-    lo.detect_dismissals(now, {44: False})  # still within DISMISSAL_FRESH_S
+    lo.detect_dismissals({44: False})
+    lo.maintain_dismissals()
+    lo.detect_dismissals({44: False})  # still within DISMISSAL_FRESH_S
     harness["state"]["presence"] = True
     lo._memo.clear()
     _eval(44, False, now)
@@ -369,7 +362,7 @@ def test_cleared_dismissal_does_not_rearm_from_the_same_off_edge(harness):
 def test_off_snapshot_while_our_on_is_in_flight_is_not_a_dismissal(harness):
     harness["state"]["since"] = datetime.now(timezone.utc) - timedelta(seconds=20)
     lo._last_publish_ts[44] = time.time() - 5
-    lo.detect_dismissals(_local(2026, 9, 25, 2, 0), {44: False})
+    lo.detect_dismissals({44: False})
     assert 44 not in lo._dismissed
 
 
@@ -443,7 +436,7 @@ def test_open_plan_one_sensor_holds_the_whole_zone(harness):
     # someone. (The old per-room logic wrongly culled 54 here.)
     harness["state"]["co2"] = "BASELINE"
     harness["state"]["presence_rooms"] = {"living_room": False, "kitchen": True}
-    harness["state"]["since"] = datetime.now(timezone.utc) - timedelta(minutes=30)
+    harness["state"]["since"] = _local(2026, 1, 15, 13, 30)
     _eval(40, True, _local(2026, 1, 15, 14, 0))
     _eval(54, True, _local(2026, 1, 15, 14, 0))
     assert harness["published"] == []
@@ -453,7 +446,7 @@ def test_open_plan_culled_only_when_whole_zone_empty(harness):
     # Both halves vacant AND CO₂ not elevated → the open-plan lights cull.
     harness["state"]["co2"] = "BASELINE"
     harness["state"]["presence_rooms"] = {"living_room": False, "kitchen": False}
-    harness["state"]["since"] = datetime.now(timezone.utc) - timedelta(minutes=30)
+    harness["state"]["since"] = _local(2026, 1, 15, 13, 30)
     _eval(40, True, _local(2026, 1, 15, 14, 0))
     _eval(54, True, _local(2026, 1, 15, 14, 0))
     assert (40, False, "vacancy_off") in harness["published"]
@@ -464,7 +457,7 @@ def test_open_plan_vacancy_is_not_overridden_by_co2(harness):
     # Both installed sensors confirm vacancy: elevated CO₂ must not hold lights.
     harness["state"]["co2"] = "ELEVATED"
     harness["state"]["presence_rooms"] = {"living_room": False, "kitchen": False}
-    harness["state"]["since"] = datetime.now(timezone.utc) - timedelta(minutes=30)
+    harness["state"]["since"] = _local(2026, 1, 15, 13, 30)
     _eval(40, True, _local(2026, 1, 15, 14, 0))
     assert (40, False, "vacancy_off") in harness["published"]
 
@@ -484,27 +477,20 @@ def test_co2_alone_never_switches_on_an_empty_or_unknown_room(harness, readings)
     assert harness["published"] == []
 
 
-@pytest.mark.parametrize("hour,away", [(18, False), (2, False), (2, True)])
-def test_open_plan_missing_sensor_cannot_confirm_vacancy(harness, hour, away):
+@pytest.mark.parametrize("hour", [18, 2])
+def test_open_plan_missing_sensor_cannot_confirm_vacancy(harness, hour):
     harness["state"]["presence_rooms"] = {"kitchen": False, "living_room": None}
     harness["state"]["since"] = _local(2026, 9, 24, 20, 0)
-    _eval(54, True, _local(2026, 9, 25, hour, 0), away=away)
+    _eval(54, True, _local(2026, 9, 25, hour, 0))
     assert harness["published"] == []
 
 
 @pytest.mark.parametrize("idx,room", [(44, "wc_down"), (6, "khh"),
                                          (26, "hall_up"), (54, "living_room")])
-def test_occupied_room_vetoes_away_cull(harness, idx, room):
+def test_occupied_room_is_not_cut_off_at_night(harness, idx, room):
     harness["state"]["presence_rooms"] = {room: True}
-    _eval(idx, True, _local(2026, 9, 25, 2, 0), away=True)
+    _eval(idx, True, _local(2026, 9, 25, 2, 0))
     assert harness["published"] == []
-
-
-def test_presence_vetoes_whole_house_away(harness, monkeypatch):
-    harness["state"]["presence_rooms"] = {"wc_down": True}
-    monkeypatch.setattr(lo, "activity_recent", lambda _: False)
-    monkeypatch.setattr(lo, "BLE_AWAY_ENABLED", False)
-    assert lo.whole_house_away() is False
 
 
 def test_nighttime_lamp_brightness_cannot_switch_its_own_light_off(harness):
@@ -523,7 +509,7 @@ def test_open_plan_auto_on_from_kitchen_then_off_when_empty(harness):
     harness["published"].clear()
     lo._memo.clear()                                                # new tick: re-read presence
     harness["state"]["presence_rooms"] = {"kitchen": False, "living_room": False}
-    harness["state"]["since"] = datetime.now(timezone.utc) - timedelta(minutes=30)
+    harness["state"]["since"] = _local(2026, 1, 15, 13, 30)
     _eval(40, True, _local(2026, 1, 15, 18, 0), dark=True)
     assert (40, False, "vacancy_off") in harness["published"]
 
@@ -607,6 +593,15 @@ def test_khh_genuinely_bright_room_stays_off(harness):
     assert harness["published"] == []
 
 
+@pytest.mark.parametrize("idx", [6, 26, 35, 44, 54])
+@pytest.mark.parametrize("hour", [2, 14])
+def test_sensor_room_unknown_cannot_be_cut_by_a_timer(harness, idx, hour):
+    harness["state"]["presence"] = None
+    harness["state"]["since"] = _local(2026, 9, 24, 20)
+    _eval(idx, True, _local(2026, 9, 26, hour))
+    assert harness["published"] == []
+
+
 def test_portaikko_not_driven_by_hall_down_sensor():
     # The hall_down PIR is nowhere near the portaikko (42) — must stay unmapped.
     assert lo.LIGHT_ROOM.get(42) != "hall_down"
@@ -662,4 +657,34 @@ def test_bright_room_stays_off_in_daylight(harness):
     harness["state"]["presence_rooms"] = {"living_room": True}
     harness["state"]["lux"] = {"living_room": lo.ROOM_DARK_LUX["living_room"] + 100}
     _eval(54, False, _local(2026, 6, 15, 15, 0), dark=False)
+    assert harness["published"] == []
+
+
+def test_daylight_shutoff_does_not_relight_until_the_dark_threshold():
+    is_on = False
+    decisions = []
+    for lux in (60, 120, 250, 150, 90, 60):
+        decision, reason = lo.decide_room_light(
+            is_on=is_on, occupied=True, auto_on=True, dim=lux < 80,
+            bright=lux > 200, manual_on=False, dismissed=False, on_minutes=10)
+        decisions.append((decision, reason))
+        if decision in ("on", "off"):
+            is_on = decision == "on"
+    assert decisions == [
+        ("on", "auto_on_comfort"), ("hold", "no_off_rule"),
+        ("off", "bright_enough"), ("hold", "not_dark"),
+        ("hold", "not_dark"), ("on", "auto_on_comfort"),
+    ]
+
+
+@pytest.mark.parametrize("occupied,bright", [(False, False), (True, True)])
+def test_fresh_on_is_protected_while_presence_and_light_readings_catch_up(occupied, bright):
+    assert lo.decide_room_light(
+        is_on=True, occupied=occupied, auto_on=True, dim=False, bright=bright,
+        manual_on=False, dismissed=False, on_minutes=0.5)[0] == "hold"
+
+
+def test_living_manual_secondary_shares_kitchen_occupancy(harness):
+    harness["state"]["presence_rooms"] = {"kitchen": True, "living_room": False}
+    _eval(5, True, _local(2026, 9, 26, 14))
     assert harness["published"] == []

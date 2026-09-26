@@ -135,12 +135,12 @@ its category defines the behaviour. Once a room has presence:
 | Halls / stairs (PIR) | motion + dark → on; vacancy after 90 s grace following the device false |
 | WC / bathroom (PIR) | motion → on; vacancy after 300 s grace following the device false |
 | KHH (PIR) | LED 6: motion + dark (below 40 lux or astronomical darkness) → on; vacancy after 180 s grace. Ceiling 56 stays manual-on. |
-| Bedrooms (PIR) | motion + dark → on; off when vacant/overnight *(set the `bedroom` category `auto_on=False` in the code if you don't want ceilings coming on at night)* |
-| Office (future FP300) | dark + present → on; only off when away (never mid-work) |
-| Theater (future FP300) | **never auto-on** (manual mood); mmWave only prevents wrong auto-off during a movie |
+| Bedrooms (PIR) | motion + dark → on; off when vacant *(set the `bedroom` category `auto_on=False` in the code if you don't want ceilings coming on at night)* |
+| Office (future FP300) | dark + present → on; off on confirmed vacancy; hold when presence is unknown |
+| Theater (future FP300) | **never auto-on** (manual mood); off only on confirmed vacancy; hold when presence is unknown |
 
 The engine owns vacancy *timing* (PIR `linger_s`, mmWave `falling_confirm_s`); the optimizer adds
-only a small `VACANCY_GRACE_MIN` (90 s) on-time floor to bridge the
+only a small `VACANCY_GRACE_MIN` (1.5 min = 90 s) on-time floor to bridge the
 switch-on-before-sensor race, plus the global `MIN_DWELL_SECONDS`.
 
 ---

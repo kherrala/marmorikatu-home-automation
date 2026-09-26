@@ -1,194 +1,109 @@
-# Lighting Policy — Specification by Room Group
+# Lighting policy by room
 
-The comfort-first specification the lights-optimizer implements, organised by
-**room group**. For each group: the **family's need**, the **auto-ON approval
-criteria** (all must hold to turn a light on), and the **auto-OFF approval
-criteria** (all must hold to turn one off), plus guardrails.
+Sensor-controlled rooms share one policy: occupied + dim turns automatic lights
+ON; confirmed vacancy turns lights OFF. Olohuone/Ruokailu may also switch OFF in
+bright daylight while occupied, unless the user turned the light ON manually.
+A manual OFF prevents automatic relighting until that room/zone becomes vacant.
 
-Cross-cutting rules apply to **every** group and are not repeated below:
+No CO₂, BLE, activity-based away detection, overnight rule, or visit duration cap
+competes with presence in a sensor-controlled room. Missing presence does not
+count as vacancy and does not enable a fallback timer.
 
-- **Manual-wins on the re-fight.** If the optimizer auto-turned a light ON and a
-  human turns it OFF, it is *dismissed* and not re-enabled until the room/zone next goes vacant. Each OFF edge is handled once.
-- **Min-dwell.** The optimizer never reverses its own command within 30 s (PLC actuation plus state broadcast).
-- **Provenance.** Every decision records whether the current state came from a
-  human (wall / mobile / voice) or the optimizer (`manual_locked`).
-- **High-confidence culls fire regardless of who turned a light on.** Provenance
-  does not veto daylight / overnight / away / duration-cap offs — it only
-  prevents the auto-on re-fight. What protects a room from being turned off is
-  its **category** simply not having that off-rule.
-- **Occupancy comes from the installed Zigbee sensors. CO₂ does not control lighting.**
-  Kitchen and living room share one zone: either occupied sensor holds/activates
-  the lights; both must confirm vacancy for vacancy/away/overnight culls. Unknown
-  occupancy holds existing living lights and cannot trigger auto-on.
-- **Darkness** = astronomical sun elevation < 8° or measured room illuminance below
-  its threshold; windowless WCs skip this gate. Brightness culls only run in daylight.
-- **Whole-house-away** falls back to no switch/light activity for 3 h, but any
-  mapped occupied room vetoes it. BLE advertiser counting remains opt-in.
-- **PIR vacancy grace** starts after the device's explicit `false`: halls 90 s,
-  KHH/kitchen 180 s, WCs/upstairs bathroom 300 s. Re-detection cancels vacancy.
+## Sensor-controlled rooms
 
-Household context: two remote-working adults + two children (8–9), home most of
-the day; free time spent in the theater, downstairs living room, and dining
-area; sauna most evenings; summer days on the front terrace (bright late into
-the evening).
-
----
-
-## 1. Living core — kitchen · dining · downstairs living room
-
-**Lights:** 8 Keittiö katto, 40 Keittiö kattovalo, 19 Ruokailu, 54 Olohuone
-kattovalo. *(Open-plan; kitchen PIR + living-room FP300. Output 55 is disconnected.)*
-
-> **5 Olohuone LED** is a full room light too, but the household wants **only the
-> kattovalo to auto-on**. It's category `secondary`: never auto-on (switched on
-> deliberately), but still vacancy/overnight/away-off like the rest of the room.
-
-- **Need:** where the family lives — must be lit when someone is here in the
-  dark, and **must never go dark on an occupied room**.
-- **Auto-ON:** it's dark **AND** either zone sensor reads occupied **AND** the current occupancy session is not dismissed.
-- **Auto-OFF:** both zone sensors confidently vacant after their grace; away or
-  forgotten overnight culls also require confirmed vacancy. Optimizer-lit living
-  lights may turn off when genuinely bright in daylight; manual lights are protected.
-- **Guardrail:** either occupied sensor vetoes vacancy/away/overnight culls; CO₂ has no effect.
-
-## 2. Window & decorative window lights
-
-**Lights:** 18, 20, 23, 24, 30, 32, 41, 46 (`ikkuna` / `ikkunavalo`).
-
-- **Need:** pretty in the dark; **pointless when the sun is up**.
-- **Auto-ON:** none (manual — switched on deliberately in the evening).
-- **Auto-OFF:** the sun is clearly up (past sunrise + 60 min, before sunset),
-  **OR** overnight, **OR** whole-house-away. No occupancy-off.
-- **Guardrail:** short manual grace — a window light is only ever on in the
-  dark, so a prompt daylight-off is safe.
-
-## 3. Accent LED strips
-
-**Lights:** 2 Keittiö kaapisto ylä (mood, above cupboards), 7 Keittiö kaapisto
-ala (task, under-cabinet). *These are the only true LED strips — the other LEDs
-(5 Olohuone, 6 KHH, 3 YK aula) are full room lights, categorised with their
-rooms below.*
-
-- **Need:** mood lighting — a deliberate human choice.
-- **Auto-ON:** none.
-- **Auto-OFF:** overnight **OR** whole-house-away. Never occupancy-off; held
-  through awake hours.
-
-## 4. Circulation — halls · entry · staircases
-
-**Lights:** 25 Aula rappuset, 26 YK aula katto, 3 YK aula LED, 35 Eteinen,
-37 Tuulikaappi, 42 Portaikko.
-
-- **Need:** on briefly for passage; frequently forgotten.
-- **Auto-ON:** *deferred* — no reliable arrival signal until PIR is installed
-  (then: motion + dark → on).
-- **Auto-OFF:** duration cap (~25 min on) **OR** overnight **OR**
-  whole-house-away. With PIR: short vacancy timeout.
-- **Guardrail:** the manual grace covers "left it on for the evening" before the
-  cap applies.
-
-## 5. Utility & closets
-
-**Lights:** 6 KHH LED (full room light), 31 Aikuiset vaatehuone, 36 Tuulikaappi
-vaatehuone, 43 KHH vaatehuone, 53 Kellari varasto, 56 KHH katto 2, 61 Varasto,
-39 Tekninen tila.
-
-- **Need:** windowless, the #1 forgotten lights.
-- **Auto-ON:** none.
-- **Auto-OFF:** duration cap (~30 min) **OR** overnight **OR** whole-house-away.
-
-## 6. Toilets & bathrooms
-
-**Lights:** 29 KPH yläkerta katto, 34 KPH yläkerta peili, 44 WC alakerta katto,
-45 WC alakerta peili, 52 WC kellari.
-
-- **Need:** on for the visit; forgotten-prone; **night trips are normal**.
-- **Auto-ON:** none (with PIR later: motion → on).
-- **Auto-OFF:** duration cap (30 min) only. **No overnight-kill mid-use** — a
-  night bathroom visit is never cut off.
-- **Guardrail:** a fresh press resets the timer; a still shower (with PIR) uses a
-  longer 15-min vacancy timeout.
-
-## 7. Bedrooms (upstairs, sleeping)
-
-**Lights:** 22 Seela katto, 28 Aarni katto, 33 Aikuiset katto. *(Bedroom window
-lights 23/30/32 are in group 2; the adults' walk-in closet 31 is in group 5.)*
-
-- **Need:** lit when in use, including **daytime naps** (so no daylight-off);
-  shouldn't burn all night if forgotten.
-- **Auto-ON:** none (deferred until per-room presence).
-- **Auto-OFF:** overnight **OR** whole-house-away. **No daylight-off** (nap-safe).
-- **Guardrail:** longer manual grace; a light switched on at night (kid awake) is
-  protected.
-
-## 8. Office — downstairs bedroom / workspace
-
-**Lights:** 17 MH alakerta kattovalo. *(Window light 18 is in group 2.)*
-
-- **Need:** a parent works here on video calls; the kitchen CO₂ sensor doesn't
-  see this room — it **must never be turned off during work**.
-- **Auto-ON:** none today (with presence later: dark work-morning → on).
-- **Auto-OFF:** **only whole-house-away.** No daytime, occupancy, or overnight
-  off. This is the light v1 kept wrongly killing.
-
-## 9. Theater & billiard — basement
-
-**Lights:** 49 Kellari etuosa, 50 Kellari takaosa, 51 Biljardipöytä.
-
-- **Need:** the family watches movies / plays here for hours. Windowless, no
-  presence signal yet — **must never auto-off during use**.
-- **Auto-ON:** none.
-- **Auto-OFF:** **only whole-house-away.** (With per-room presence later: a safe
-  "room empty for 30 min" off.)
-- **Guardrail:** effectively manual; theater lights are sacred.
-
-## 10. Sauna complex — temperature-driven
-
-**Lights:** 4 Saunan laude ledi, 1 Kylpyhuone alakerta, 38 Sauna siivousvalo.
-
-- **Need:** used most evenings; driven by the sauna's own heat, not a clock.
-- **Auto-ON:** the laude LED (4) comes on automatically at ≥ 55 °C sauna temp
-  (evening löyly), off ≤ 50 °C (hysteresis).
-- **Auto-OFF:** **post-session** — once the sauna peaked > 55 °C and has been
-  < 40 °C for ≥ 30 min, the bathroom (1) + cleaning light (38) turn off.
-- **Guardrail:** a wall-clock timeout never cuts a shower/bath short — a recent
-  manual press is respected; the temperature drop is the "session over" signal.
-
-## 11. Outdoor — porch · terrace · carport · storage
-
-**Lights:** 47 Sisäänkäynti (front porch), 48 Ulkovalo terassi, 59 Autokatos,
-60 Varasto ulkovalo.
-
-- **Need:** on when dark and wanted outside; **off whenever the sun is up**. In
-  the bright Finnish summer they're essentially never needed — evenings on the
-  terrace stay light, and the darkness gate keeps them off automatically.
-- **Auto-ON:** none at dusk (removed by request). The optimizer is the porch's
-  sole controller: a Unifi front-door person-detection (webhook `light_request`
-  signal → `light_override` hold) makes the optimizer light it for the detection
-  window and turn it off after — never overriding a manual porch-on.
-- **Auto-OFF:** the sun is up, **OR** after the porch off-hour / overnight.
-  **No occupancy-off** — someone sitting on the terrace reads as "away" indoors
-  and must never be plunged into darkness.
-- **Guardrail:** terrace (48) and carport (59) are manual-on in the evening with
-  daylight/overnight auto-off only.
-
----
-
-## Approval-criteria summary
-
-| Room group | Auto-ON when… | Auto-OFF when… |
+| Room / lights | Automatic ON | Automatic OFF |
 |---|---|---|
-| Living core | dark + either sensor occupied | both sensors vacant; daylight brightness cull only for optimizer-lit lights |
-| Window | — | daylight · overnight · away |
-| Accent LED | — | overnight · away |
-| Circulation | (PIR: motion + dark) | duration cap · overnight · away |
-| Utility/closet | — | duration cap · overnight · away |
-| Toilet/bath | (PIR: motion) | duration cap (no overnight-kill) |
-| Bedroom | — | overnight · away (no daylight-off) |
-| Office | (presence: dark AM) | away only |
-| Theater | — | away only |
-| Sauna | laude ≥ 55 °C | post-session cooldown |
-| Outdoor | porch: dark + evening | daylight · overnight (no occupancy-off) |
+| Olohuone ceiling 54, Ruokailu 19 | Shared zone occupied + dim | Shared zone vacant, or calibrated daylight brightness for optimizer-lit lights |
+| Kitchen ceilings 8/40 | Shared zone occupied + dim | Shared zone vacant |
+| Olohuone LED 5 | Manual only | Shared zone vacant |
+| Upstairs aula ceiling 26 and stairs 25 | Hall-up PIR occupied + dim | Hall-up vacant |
+| Eteinen 35, Tuulikaappi 37 | Hall-down PIR occupied + dim | Hall-down vacant |
+| KHH LED 6 | KHH PIR occupied + dim | KHH vacant |
+| KHH ceiling 56 | Manual only | KHH vacant |
+| Downstairs WC 44/45, basement WC 52 | Own room occupied, at any brightness | Own room vacant |
+| Upstairs bathroom 29/34 | Bathroom occupied + dim | Bathroom vacant |
+| Bedrooms 22/28/33 | Own room occupied + dim, once sensors are installed | Own room vacant; no daylight shutoff |
+| Office 17 | Occupied + dim, once its sensor is installed | Confirmed vacancy; no daylight shutoff |
+| Theater / billiard 49/50/51 | Manual only | Confirmed vacancy once its sensor is installed |
 
-See [lights-optimizer.md](lights-optimizer.md) for the implementation, tunable
-env vars, and the provenance/presence mechanics.
+A room mapped for a future sensor stays unknown until it has reliable data:
+no automatic ON or vacancy OFF. Installing a sensor activates its mapped policy.
+
+### Olohuone, Ruokailu and kitchen
+
+The FP300 in Olohuone also covers Ruokailu; the kitchen has its own PIR. These two
+sensors form one occupancy zone. Either occupied holds the zone; both must be
+confidently vacant to end a visit. The downstairs hall PIR is excluded. This same
+zone applies to Olohuone LED 5 even though it is manual-on.
+
+The FP300's radar presence and PIR motion are combined. Both inputs must remain
+clear for five minutes before the living room reports vacant. Kitchen PIR grace
+is three minutes after its explicit false. The Presence Engine owns those timers.
+
+Brightness uses the physical room's four-minute lux mean:
+
+- Olohuone/Ruokailu: ON below 80 lux or during astronomical darkness; optimizer-lit
+  ceiling/dining lights may turn OFF above 200 lux in daylight even while occupied.
+- Kitchen: ON below 40 lux or during astronomical darkness. No measured daylight
+  OFF threshold is enabled for the kitchen yet.
+
+The 80/200 gap prevents an immediate ON after daylight OFF. A manual ON protects
+against measured daylight OFF, but confirmed zone vacancy still switches it OFF.
+Olohuone LED 5 stays manual-on and has no brightness shutoff. Output 55 is
+physically disconnected and excluded.
+
+### Halls, KHH and bathrooms
+
+Hall PIRs wait 90 seconds after explicit false before vacancy; KHH waits 180
+seconds; WCs and upstairs bathroom wait 300 seconds. Re-detection cancels vacancy.
+The device's own detection duration is additional. There is no maximum visit
+length and no overnight shutoff while occupied.
+
+KHH uses 40 lux for automatic LED ON; the old 12-lux limit blocked real morning
+arrivals at 17–18 lux. Ceiling 56 and the separate wardrobe 43 remain manual-on.
+Varasto 61 is the detached carport storage, not KHH, and has no KHH sensor link.
+
+Windowless WC outputs 44/45/52 bypass the darkness gate. Upstairs bathroom lights
+use the normal brightness gate. Bedroom and office lights do not get daylight
+shutoff; they rely on their own occupancy when a sensor is installed.
+
+## Lights without room sensors
+
+These lights are manual-on and keep only the explicit policies below. Their
+rules never serve as fallbacks for a missing room-sensor reading.
+
+| Lights | Automatic OFF |
+|---|---|
+| Window lights 18/20/23/24/30/32/41/46 | Daylight or forgotten overnight |
+| Kitchen cabinet strips 2/7 | Forgotten overnight |
+| Upstairs aula LED 3, basement store 53 | Forgotten overnight |
+| Portaikko 42 | 25-minute duration cap or forgotten overnight |
+| Closets/stores 31/36/43/61 | 30-minute duration cap or forgotten overnight |
+| Terrace 48, carport 59, storage exterior 60 | Daylight or forgotten overnight |
+
+Daylight OFF runs from sunrise + 60 minutes to sunset. Forgotten overnight OFF
+runs 00:30–06:00 only for lights switched ON before 00:30. Switching a light ON
+during this window protects it from the overnight rule; a separately configured
+duration cap still applies. Basement store 53 has no duration cap, so a long work
+session is not interrupted by a 30-minute timer.
+
+## Porch and sauna
+
+- **Porch 47:** Unifi person detection requests a timed hold through the webhook,
+  which checks the request's darkness condition. The optimizer lights the porch
+  and switches its own light OFF after the hold ends. A manual ON is protected at
+  night; a manual OFF during detection is respected. Daylight OFF still applies
+  when no detection hold is active. No dusk or fixed off-hour schedule.
+- **Sauna laude LED 4:** ON at ≥55°C, OFF at ≤50°C, hold in between.
+- **Post-sauna bathroom / cleaning / technical-room lights 1/38/39:** OFF after a
+  sauna peak ≥55°C and at least 30 minutes continuously below 40°C. A recent
+  switch-on gets 90 minutes of grace.
+
+Normal room commands have a 30-second PLC round-trip guard. Sensor-room lights
+also stay ON for at least 90 seconds so a new wall press can precede its presence
+report without being immediately reversed. Manual OFF dismissals are in memory
+and reset on restart.
+
+See [lights-optimizer.md](lights-optimizer.md) for implementation, provenance,
+configuration, and diagnostic reason codes, and [presence-setup.md](presence-setup.md)
+for sensor setup and vacancy timing.
