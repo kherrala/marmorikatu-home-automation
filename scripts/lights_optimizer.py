@@ -141,7 +141,7 @@ CATS: dict[str, Cat] = {
 # stays unknown: it never falls through to guessed-away or duration-based culls.
 LIGHT_ROOM: dict[int, str] = {
     54: "living_room", 19: "living_room",                      # living-room proper (FP300)
-    8: "kitchen", 40: "kitchen",                              # kitchen ceilings — dedicated snzb_kitchen PIR.
+    7: "kitchen", 8: "kitchen", 40: "kitchen",               # kitchen under-cabinet + ceilings — shared open-plan sensors.
     # Kitchen and living room share occupancy, but keep their own lux thresholds.
     5: "living_room",                                          # Olohuone LED, full room light (FP300)
     17: "office",                                              # office (future FP300)
@@ -168,7 +168,7 @@ WINDOWLESS_LIGHTS = set(
 CATEGORY_OF: dict[int, str] = {
     # LIVING — open-plan kitchen / dining / living core. 55 (Olohuone kattovalo 2)
     # is NOT physically connected — excluded via DISCONNECTED_IDX below.
-    8: "living", 19: "living", 40: "living", 54: "living",
+    7: "living", 8: "living", 19: "living", 40: "living", 54: "living",
     # SECONDARY — full room light, manual-on only (no auto-on), still auto-off.
     # 5 = Olohuone LED: user wants only the kattovalo (54/55) to auto-on.
     # 3 = Yläkerta aula LED: manual-on, NOT sensor-driven — user wants only the
@@ -177,9 +177,9 @@ CATEGORY_OF: dict[int, str] = {
     # WINDOW — decorative window lights, pointless in daylight
     18: "window", 20: "window", 23: "window", 24: "window",
     30: "window", 32: "window", 41: "window", 46: "window",
-    # ACCENT — kitchen cabinet LED strips only: 2 = mood (above cupboards),
-    # 7 = task (under-cabinet). Full-room LEDs (3/5/6) are NOT accent — see below.
-    2: "accent", 7: "accent",
+    # ACCENT — kitchen above-cupboard mood strip only. The under-cabinet task
+    # light (7) follows the open-plan kitchen/dining presence zone above.
+    2: "accent",
     # CIRCULATION — halls, entry, staircases (transient). 26 = aula kattovalo,
     # 25 = aula stairs. The aula LED (3) is deliberately NOT here (secondary above).
     25: "circulation", 26: "circulation", 35: "circulation", 37: "circulation", 42: "circulation",

@@ -33,7 +33,8 @@ vacancy timing. The optimizer reads its normalized `presence.occupied` and
 `confidence`, not individual Zigbee device payloads. Missing readings within the
 10-minute query window or confidence below `PRESENCE_MIN_CONFIDENCE` give unknown.
 
-Kitchen and living room share one occupancy zone, including Ruokailu:
+Kitchen and living room share one occupancy zone, including Ruokailu and the
+kitchen under-cabinet light 7:
 
 - Either the kitchen PIR or living-room FP300 occupied → occupied.
 - Both confidently vacant → vacant.
@@ -119,7 +120,7 @@ Category settings are just `auto_on`, `daylight_off`, `overnight_off`, and
 | Lights | Automatic OFF policy |
 |---|---|
 | Window lights 18/20/23/24/30/32/41/46 | Daylight or forgotten overnight |
-| Kitchen cabinet strips 2/7 | Forgotten overnight |
+| Kitchen above-cabinet strip 2 | Forgotten overnight |
 | Upstairs aula LED 3 | Forgotten overnight |
 | Basement front/rear/store 49/50/53 | Forgotten lights OFF from 20:00; manual ON afterward protected |
 | Basement billiard/WC 51/52 | Forgotten lights OFF from 00:30; manual ON afterward protected |

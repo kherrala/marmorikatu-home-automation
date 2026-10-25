@@ -18,7 +18,7 @@ count as vacancy and does not enable a fallback timer.
 | Room / lights | Automatic ON | Automatic OFF |
 |---|---|---|
 | Olohuone ceiling 54, Ruokailu 19 | Shared zone occupied + dim | Shared zone vacant, or calibrated daylight brightness for optimizer-lit lights |
-| Kitchen ceilings 8/40 | Shared zone occupied + dim | Shared zone vacant |
+| Kitchen under-cabinet 7 and ceilings 8/40 | Shared zone occupied + dim | Shared zone vacant |
 | Olohuone LED 5 | Manual only | Shared zone vacant |
 | Upstairs aula ceiling 26 and stairs 25 | Hall-up PIR occupied + dim | Hall-up vacant |
 | Eteinen 35, Tuulikaappi 37 | Hall-down PIR occupied + dim | Hall-down vacant |
@@ -35,9 +35,11 @@ no automatic ON or vacancy OFF. Installing a sensor activates its mapped policy.
 ### Olohuone, Ruokailu and kitchen
 
 The FP300 in Olohuone also covers Ruokailu; the kitchen has its own PIR. These two
-sensors form one occupancy zone. Either occupied holds the zone; both must be
-confidently vacant to end a visit. The downstairs hall PIR is excluded. This same
-zone applies to Olohuone LED 5 even though it is manual-on.
+sensors form one occupancy zone. Either occupied turns on the kitchen
+under-cabinet light 7 and the permitted ceiling lights when dim, and either
+occupied holds the zone; both must be confidently vacant to end a visit. The
+downstairs hall PIR is excluded. This same zone applies to Olohuone LED 5 even
+though it is manual-on.
 
 The FP300's radar presence and PIR motion are combined. Both inputs must remain
 clear for five minutes before the living room reports vacant. Kitchen PIR grace
@@ -96,7 +98,7 @@ rules never serve as fallbacks for a missing room-sensor reading.
 | Lights | Automatic OFF |
 |---|---|
 | Window lights 18/20/23/24/30/32/41/46 | Daylight or forgotten overnight |
-| Kitchen cabinet strips 2/7 | Forgotten overnight |
+| Kitchen above-cabinet strip 2 | Forgotten overnight |
 | Upstairs aula LED 3 | Forgotten overnight |
 | Portaikko 42 | 25-minute duration cap or forgotten overnight |
 | Closets/stores 31/36/43/61 | 30-minute duration cap or forgotten overnight |

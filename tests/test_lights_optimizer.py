@@ -528,6 +528,19 @@ def test_open_plan_auto_on_from_kitchen_then_off_when_empty(harness):
     assert (40, False, "vacancy_off") in harness["published"]
 
 
+@pytest.mark.parametrize("presence_rooms", [
+    {"kitchen": True, "living_room": False},
+    {"kitchen": False, "living_room": True},
+])
+def test_kitchen_under_cabinet_auto_on_from_either_open_plan_sensor(
+        harness, presence_rooms):
+    assert lo.LIGHT_ROOM[7] == "kitchen"
+    assert lo.CATS[lo.CATEGORY_OF[7]].auto_on is True
+    harness["state"]["presence_rooms"] = presence_rooms
+    _eval(7, False, _local(2026, 1, 15, 18, 0), dark=True)
+    assert (7, True, "auto_on_comfort") in harness["published"]
+
+
 def test_motion_auto_on_suppressed_when_not_dark(harness):
     # A WINDOWED room light (hall_down 35) with no lux reading is dark-gated.
     harness["state"]["presence_rooms"] = {"hall_down": True}
